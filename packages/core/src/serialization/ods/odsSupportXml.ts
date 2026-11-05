@@ -113,7 +113,11 @@ export const OdsSupportXml = {
     }
   },
 
-  buildManifest(parts: Iterable<string>, chartObjectDirs: Iterable<string> = []): XmlDocument {
+  buildManifest(
+    parts: Iterable<string>,
+    chartObjectDirs: Iterable<string> = [],
+    previousManifest: string | null = null,
+  ): XmlDocument {
     const manifest = new XmlElement(Manifest('manifest'))
       .declare(Manifest.prefix, Manifest.uri)
       .setAttr(Manifest('version'), '1.3');
@@ -121,9 +125,23 @@ export const OdsSupportXml = {
     manifest.add(fileEntry('/', N.mimeType));
 
     // Each embedded chart sub-document needs its directory declared with the chart media type.
-    for (const dir of chartObjectDirs) manifest.add(fileEntry(`${dir}/`, N.chartMediaType));
+    const declared = new Set<string>();
+    for (const dir of chartObjectDirs) {
+      manifest.add(fileEntry(`${dir}/`, N.chartMediaType));
+      declared.add(`${dir}/`);
+    }
 
-    for (const part of parts) {
+    // A preserved sub-document (an embedded formula, a drawing, a chart on a sheet the model does
+    // not draw) is opened by its directory's media type. Regenerating the manifest from part names
+    // alone dropped that entry, and LibreOffice showed the object as an empty frame.
+    const partList = [...parts];
+    for (const [dir, mediaType] of directoryEntries(previousManifest)) {
+      if (declared.has(dir) || !partList.some((p) => p.startsWith(dir))) continue;
+      manifest.add(fileEntry(dir, mediaType));
+      declared.add(dir);
+    }
+
+    for (const part of partList) {
       if (part === N.mimetypePart) continue;
       manifest.add(fileEntry(part, mediaTypeFor(part)));
     }
@@ -193,6 +211,19 @@ function itemValue(entry: XmlElement, name: string): string | null {
   return (
     entry.elements(Config('config-item')).find((item) => item.attr(Config('name')) === name)?.value ?? null
   );
+}
+
+/** The directory entries (`Object 1/` and the like) of a manifest, with their media types. */
+function directoryEntries(manifestXml: string | null): Array<[path: string, mediaType: string]> {
+  if (manifestXml === null) return [];
+  const root = tryParseXml(manifestXml, { preserveWhitespace: false })?.root;
+  const out: Array<[string, string]> = [];
+  for (const entry of root?.elements(Manifest('file-entry')) ?? []) {
+    const path = entry.attr(Manifest('full-path'));
+    const mediaType = entry.attr(Manifest('media-type'));
+    if (path && path !== '/' && path.endsWith('/') && mediaType) out.push([path, mediaType]);
+  }
+  return out;
 }
 
 function fileEntry(path: string, mediaType: string): XmlElement {

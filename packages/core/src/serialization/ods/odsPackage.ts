@@ -1,6 +1,14 @@
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { GeneratedParts, OdsXmlNames } from './odsXmlNames.ts';
 
+/** The most a package may expand to when read (the sum of its entries' uncompressed sizes). */
+export const MAX_UNCOMPRESSED_BYTES = 512 * 2 ** 20;
+
+/** Thrown when a package's entries would inflate past `MAX_UNCOMPRESSED_BYTES`. */
+export class OdsPackageTooLargeError extends Error {
+  override readonly name = 'OdsPackageTooLargeError';
+}
+
 /** An unmodeled child of `<office:spreadsheet>`, kept verbatim (PRD §8.1). */
 export interface ForeignXml {
   readonly beforeTables: boolean;
@@ -52,9 +60,23 @@ export class OdsPackage {
     return this.partNames.filter((name) => !GeneratedParts.has(name));
   }
 
-  static read(bytes: Uint8Array): OdsPackage {
+  static read(bytes: Uint8Array, maxUncompressedBytes = MAX_UNCOMPRESSED_BYTES): OdsPackage {
     const pkg = new OdsPackage();
-    const entries = unzipSync(bytes);
+    // A zip bomb declares tiny compressed entries that inflate to gigabytes. fflate inflates each
+    // entry into a buffer of its declared size (and never grows it), so bounding the declared sizes
+    // bounds the memory reading can take.
+    let total = 0;
+    const entries = unzipSync(bytes, {
+      filter: (file) => {
+        total += file.originalSize;
+        if (total > maxUncompressedBytes) {
+          throw new OdsPackageTooLargeError(
+            `The file expands to more than ${Math.round(maxUncompressedBytes / 2 ** 20)} MiB.`,
+          );
+        }
+        return true;
+      },
+    });
     for (const [name, data] of Object.entries(entries)) {
       if (name.endsWith('/')) continue; // directory entry
       pkg.parts.set(name, data);

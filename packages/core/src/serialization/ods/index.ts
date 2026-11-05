@@ -1,4 +1,9 @@
-export { OdsPackage, type ForeignXml } from './odsPackage.ts';
+export {
+  MAX_UNCOMPRESSED_BYTES,
+  OdsPackage,
+  OdsPackageTooLargeError,
+  type ForeignXml,
+} from './odsPackage.ts';
 export { OdsReader, type OdsReadResult } from './odsReader.ts';
 export { OdsWriter } from './odsWriter.ts';
 export { OdsSupportXml } from './odsSupportXml.ts';

@@ -30,7 +30,11 @@ export const OdsWriter = {
     // The manifest lists every part (regenerated to match the final contents), plus a directory
     // entry per embedded chart object declared with the chart media type.
     const parts = pkg.partNames.filter((p) => p !== N.manifestPart);
-    pkg.setText(N.manifestPart, serializeXml(OdsSupportXml.buildManifest(parts, chartObjectDirs)));
+    const previousManifest = pkg.getText(N.manifestPart);
+    pkg.setText(
+      N.manifestPart,
+      serializeXml(OdsSupportXml.buildManifest(parts, chartObjectDirs, previousManifest)),
+    );
 
     return pkg.write();
   },
