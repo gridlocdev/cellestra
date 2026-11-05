@@ -1,13 +1,23 @@
-import type { CellAddress } from '../model/cellAddress.ts';
+import { quoteSheetIfNeeded, type CellAddress } from '../model/cellAddress.ts';
 import type { CellRange } from '../model/cellRange.ts';
 import type { BinaryExpr, Expr, UnaryExpr } from './ast/expr.ts';
-import { BINARY_SYMBOL, binaryPrecedence, FormulaWriter, literalText } from './formulaWriter.ts';
+import {
+  BINARY_SYMBOL,
+  binaryPrecedence,
+  FormulaWriter,
+  literalText,
+  wholeLinesText,
+} from './formulaWriter.ts';
 import { Parser } from './parsing/parser.ts';
 
 const PREFIX = 'of:=';
 const ERROR_REFS = new Set(['#REF!', '#NAME?', '#N/A', '#VALUE!', '#DIV/0!']);
 
 // ---- A1 AST → OpenFormula --------------------------------------------------
+
+// Readers disagree on whether unary minus binds tighter than ^ (OpenFormula and Calc: yes; Cellestra,
+// PRD §8: no, so -2^2 = -4). The writer never leaves that to the reader: a sign on a power is written
+// `-(2^2)` and a power of a signed value `(-2)^2`, which every reader evaluates the same way.
 
 function precedence(expr: Expr): number {
   if (expr.kind === 'binary') return binaryPrecedence(expr.operator, 5);
@@ -33,21 +43,20 @@ function renderUnary(u: UnaryExpr): string {
 
 function renderBinary(b: BinaryExpr): string {
   const p = precedence(b);
-  return `${withParens(b.left, p)}${BINARY_SYMBOL[b.operator]}${withParens(b.right, p + 1)}`;
+  const signedBase = b.operator === 'power' && b.left.kind === 'unary' && b.left.operator !== 'percent';
+  const left = signedBase ? `(${render(b.left)})` : withParens(b.left, p);
+  return `${left}${BINARY_SYMBOL[b.operator]}${withParens(b.right, p + 1)}`;
 }
 
-function quoteSheet(sheet: string): string {
-  return /^[\p{L}\p{Nd}_]*$/u.test(sheet) ? sheet : `'${sheet.replaceAll("'", "''")}'`;
-}
-
-const sheetDot = (sheet: string | null): string => (sheet === null ? '.' : `${quoteSheet(sheet)}.`);
+const sheetDot = (sheet: string | null): string => (sheet === null ? '.' : `${quoteSheetIfNeeded(sheet)}.`);
 
 const cell = (a: CellAddress): string =>
   `${a.columnAbsolute ? '$' : ''}${a.columnLabel}${a.rowAbsolute ? '$' : ''}${a.rowLabel}`;
 
 const renderAddress = (a: CellAddress): string => `[${sheetDot(a.sheet)}${cell(a)}]`;
 
-const renderRange = (r: CellRange): string => `[${sheetDot(r.start.sheet)}${cell(r.start)}:.${cell(r.end)}]`;
+const renderRange = (r: CellRange): string =>
+  `[${wholeLinesText(r, sheetDot, '.') ?? `${sheetDot(r.start.sheet)}${cell(r.start)}:.${cell(r.end)}`}]`;
 
 function render(expr: Expr): string {
   switch (expr.kind) {
@@ -123,6 +132,22 @@ function convertCorner(corner: string): string {
 }
 
 /**
+ * The original OpenFormula text of formulas the parser could not read, by the internal text they
+ * were loaded as, so saving writes them back exactly as they came (bounded: oldest entries go).
+ */
+const unparsedOriginals = new Map<string, string>();
+const MAX_UNPARSED_ORIGINALS = 10_000;
+
+function rememberUnparsed(internal: string, original: string): void {
+  unparsedOriginals.delete(internal);
+  unparsedOriginals.set(internal, original);
+  if (unparsedOriginals.size > MAX_UNPARSED_ORIGINALS) {
+    const oldest = unparsedOriginals.keys().next().value;
+    if (oldest !== undefined) unparsedOriginals.delete(oldest);
+  }
+}
+
+/**
  * Converts between internal A1 formula text and ODF OpenFormula: bracketed sheet-dot references
  * (`[.A1]`, `[Sheet2.A1]`), `;` argument separators, and the `of:=` prefix. Always go through here
  * when reading/writing `.ods` formulas.
@@ -131,8 +156,9 @@ export const OpenFormulaTranslator = {
   /** Internal A1 formula (no leading `=`) → OpenFormula with the `of:=` prefix. */
   toOpenFormula(internalFormula: string): string {
     const parsed = Parser.tryParse(internalFormula);
-    // Unparseable formula: still emit something that preserves the text.
-    return PREFIX + (parsed.ok ? render(parsed.expr) : internalFormula);
+    if (parsed.ok) return PREFIX + render(parsed.expr);
+    // Unparseable: the OpenFormula it was loaded from, unchanged; else the text as typed.
+    return unparsedOriginals.get(internalFormula) ?? PREFIX + internalFormula;
   },
 
   /** OpenFormula string → internal A1 formula (no leading `=`). */
@@ -141,6 +167,8 @@ export const OpenFormulaTranslator = {
     // Normalize through the parser when possible; keep the converted text otherwise so formulas
     // using unmodeled functions still survive the round-trip.
     const parsed = Parser.tryParse(internal);
-    return parsed.ok ? FormulaWriter.write(parsed.expr) : internal;
+    if (parsed.ok) return FormulaWriter.write(parsed.expr);
+    rememberUnparsed(internal, openFormula);
+    return internal;
   },
 } as const;

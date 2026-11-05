@@ -1,4 +1,5 @@
-import { CellAddress } from '../../model/cellAddress.ts';
+import { CellAddress, findSheetSeparator, unquoteSheet } from '../../model/cellAddress.ts';
+import { SheetDimensions } from '../../model/sheetDimensions.ts';
 import { CellRange } from '../../model/cellRange.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import { Expr, type BinaryOperator } from '../ast/expr.ts';
@@ -178,9 +179,15 @@ export class Parser {
   private parsePrimary(): Expr {
     const token = this.current;
     switch (token.type) {
-      case 'number':
+      case 'number': {
         this.advance();
+        // `1:3` is a whole-row range.
+        if (this.current.type === 'colon') {
+          const rows = this.tryWholeLines(token.text);
+          if (rows) return rows;
+        }
         return Expr.literal(CellValue.number(parseNumber(token)));
+      }
       case 'text':
         this.advance();
         return Expr.literal(CellValue.text(token.text));
@@ -210,6 +217,11 @@ export class Parser {
       }
       return Expr.reference(address);
     }
+    // `A:C`, `$B:$B`, `Sheet2.A:A`, `$1:$1`: whole columns or rows.
+    if (this.current.type === 'colon') {
+      const lines = this.tryWholeLines(nameToken.text);
+      if (lines) return lines;
+    }
 
     const upper = nameToken.text.toUpperCase();
     if (upper === 'TRUE') return Expr.literal(CellValue.boolean(true));
@@ -232,16 +244,85 @@ export class Parser {
     return Expr.range(new CellRange(start, qualified));
   }
 
+  /**
+   * After a start token and before its `:`, read a whole-column (`A:C`) or whole-row (`1:3`) range.
+   * Returns null, consuming nothing, when the two sides are not lines of the same kind. The range is
+   * stored with absolute rows (columns) so it keeps spanning the whole sheet when copied.
+   */
+  private tryWholeLines(startText: string): Expr | null {
+    const start = parseLine(startText);
+    const endToken = this.tokens[this.index + 1];
+    if (!start || !endToken || (endToken.type !== 'name' && endToken.type !== 'number')) return null;
+    const end = parseLine(endToken.text);
+    if (
+      !end ||
+      end.kind !== start.kind ||
+      (end.sheet !== null && end.sheet.toLowerCase() !== start.sheet?.toLowerCase())
+    )
+      return null;
+    this.index += 2; // the colon and the end
+    const sheet = start.sheet;
+    if (start.kind === 'column') {
+      const lastRow = SheetDimensions.maxRows - 1;
+      return Expr.range(
+        new CellRange(
+          new CellAddress(start.index, 0, start.absolute, true, sheet),
+          new CellAddress(end.index, lastRow, end.absolute, true, sheet),
+        ),
+      );
+    }
+    const lastColumn = SheetDimensions.maxColumns - 1;
+    return Expr.range(
+      new CellRange(
+        new CellAddress(0, start.index, true, start.absolute, sheet),
+        new CellAddress(lastColumn, end.index, true, end.absolute, sheet),
+      ),
+    );
+  }
+
   private parseFunctionCall(nameToken: Token): Expr {
     this.expect('leftParen');
     const args: Expr[] = [];
     if (this.current.type !== 'rightParen') {
-      args.push(this.parseExpression());
-      while (this.match('comma')) args.push(this.parseExpression());
+      // An omitted argument (`IF(A1>0,,1)`) is an empty value, as in LibreOffice.
+      const argument = (): Expr =>
+        this.current.type === 'comma' || this.current.type === 'rightParen'
+          ? Expr.literal(CellValue.empty)
+          : this.parseExpression();
+      args.push(argument());
+      while (this.match('comma')) args.push(argument());
     }
     this.expect('rightParen');
     return Expr.call(nameToken.text.toUpperCase(), args);
   }
+}
+
+interface Line {
+  readonly kind: 'column' | 'row';
+  readonly index: number;
+  readonly absolute: boolean;
+  readonly sheet: string | null;
+}
+
+/** `A`, `$C`, `Sheet2.B` (a column) or `1`, `$3`, `Sheet2.4` (a row); null otherwise. */
+function parseLine(text: string): Line | null {
+  let span = text;
+  let sheet: string | null = null;
+  const dot = findSheetSeparator(span);
+  if (dot >= 0) {
+    sheet = unquoteSheet(span.slice(0, dot));
+    if (sheet === null) return null;
+    span = span.slice(dot + 1);
+  }
+  const m = /^(\$?)(?:([A-Za-z]+)|([0-9]+))$/.exec(span);
+  if (!m) return null;
+  const absolute = m[1] === '$';
+  if (m[2] !== undefined) {
+    const index = SheetDimensions.lettersToColumn(m[2]);
+    return index === null ? null : { kind: 'column', index, absolute, sheet };
+  }
+  const index = Number.parseInt(m[3]!, 10) - 1;
+  return SheetDimensions.isValidRow(index) ? { kind: 'row', index, absolute, sheet } : null;
 }
 
 function parseNumber(token: Token): number {

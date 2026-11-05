@@ -137,7 +137,17 @@ export function unquoteSheet(sheet: string): string | null {
   return sheet;
 }
 
+/**
+ * Quote a sheet name unless it reads back as a plain name: it must be letters, digits and `_` only,
+ * must not start with a digit (`'2024'.A1`), and must not itself look like a cell reference
+ * on this sheet's grid (`'AB12'.A1`; `Sheet1` is fine, SHEET is past XFD) or a boolean keyword.
+ */
 export function quoteSheetIfNeeded(sheet: string): string {
-  const needs = sheet.length === 0 || /[^\p{L}\p{N}_]/u.test(sheet);
+  const needs =
+    sheet.length === 0 ||
+    /[^\p{L}\p{N}_]/u.test(sheet) ||
+    /^\p{N}/u.test(sheet) ||
+    parseA1(sheet, null) !== null ||
+    /^(TRUE|FALSE)$/i.test(sheet);
   return needs ? `'${sheet.replaceAll("'", "''")}'` : sheet;
 }

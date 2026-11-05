@@ -1,3 +1,7 @@
+import type { CellAddress } from '../model/cellAddress.ts';
+import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
+import type { CellRange } from '../model/cellRange.ts';
+import { SheetDimensions } from '../model/sheetDimensions.ts';
 import { roundTripNumber, type CellValue } from '../values/cellValue.ts';
 import type { BinaryExpr, BinaryOperator, Expr, UnaryExpr } from './ast/expr.ts';
 
@@ -50,6 +54,34 @@ export function literalText(value: CellValue, booleanSuffix = ''): string {
   }
 }
 
+/**
+ * A range that spans every row with absolute row corners is a whole-column range (`A:C`); every
+ * column with absolute column corners, a whole-row range (`1:3`). Null for an ordinary range.
+ * `sheetPrefix` renders the start's sheet and `endPrefix` goes before the end, so both writers share it.
+ */
+export function wholeLinesText(
+  range: CellRange,
+  sheetPrefix: (sheet: string | null) => string,
+  endPrefix: string,
+): string | null {
+  const { start, end } = range;
+  const col = (a: CellAddress): string => `${a.columnAbsolute ? '$' : ''}${a.columnLabel}`;
+  const row = (a: CellAddress): string => `${a.rowAbsolute ? '$' : ''}${a.rowLabel}`;
+  if (range.top === 0 && range.bottom === SheetDimensions.maxRows - 1 && start.rowAbsolute && end.rowAbsolute)
+    return `${sheetPrefix(range.sheet)}${col(start)}:${endPrefix}${col(end)}`;
+  if (
+    range.left === 0 &&
+    range.right === SheetDimensions.maxColumns - 1 &&
+    start.columnAbsolute &&
+    end.columnAbsolute
+  )
+    return `${sheetPrefix(range.sheet)}${row(start)}:${endPrefix}${row(end)}`;
+  return null;
+}
+
+const a1SheetPrefix = (sheet: string | null): string =>
+  sheet === null ? '' : `${quoteSheetIfNeeded(sheet)}.`;
+
 // Unary +/- binds looser than ^ (5 < power's 6) so -2^2 round-trips without spurious parens;
 // percent (postfix) binds tighter than everything.
 function precedence(expr: Expr): number {
@@ -86,7 +118,7 @@ function render(expr: Expr): string {
     case 'reference':
       return expr.address.toString();
     case 'range':
-      return expr.range.toString();
+      return wholeLinesText(expr.range, a1SheetPrefix, '') ?? expr.range.toString();
     case 'name':
       return expr.name;
     case 'refError':
