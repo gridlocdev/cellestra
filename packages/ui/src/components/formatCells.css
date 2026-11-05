@@ -1,0 +1,105 @@
+/* Format Cells dialog (FormatCellsDialog.tsx). */
+.cs-format-cells {
+  width: 520px;
+}
+.cs-format-cells .cs-fc-section {
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  margin: 0 0 10px;
+  padding: 6px 12px 10px;
+}
+.cs-format-cells .cs-fc-section legend {
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cs-text-2);
+}
+.cs-format-cells .cs-fc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.cs-format-cells .cs-fc-row > label:first-child,
+.cs-format-cells .cs-fc-label {
+  flex: 0 0 80px;
+  margin: 0;
+  color: var(--cs-text-2);
+  font-size: 12px;
+}
+.cs-format-cells .cs-fc-row select,
+.cs-format-cells .cs-fc-row input[type='text'] {
+  flex: 1 1 auto;
+  width: auto;
+}
+.cs-format-cells input[type='number'] {
+  width: 90px;
+  padding: 6px 8px;
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  background: var(--cs-bg);
+  color: var(--cs-text);
+  font: inherit;
+}
+.cs-format-cells .cs-fc-code {
+  font-family: var(--cs-mono);
+}
+.cs-format-cells .cs-fc-sample {
+  display: flex;
+  gap: 12px;
+  font-family: var(--cs-mono);
+}
+.cs-format-cells .cs-fc-negative {
+  color: var(--cs-text-2);
+}
+.cs-format-cells .cs-fc-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 6px 0;
+}
+.cs-format-cells label.cs-fc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  color: var(--cs-text);
+  font-size: 13px;
+}
+.cs-format-cells .cs-fc-color input[type='color'] {
+  width: 40px;
+  height: 26px;
+  padding: 1px 2px;
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  background: var(--cs-bg);
+  cursor: pointer;
+}
+.cs-format-cells .cs-fc-color input[type='color']:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.cs-format-cells .cs-fc-color.varies input[type='color'] {
+  border-style: dashed;
+  opacity: 0.6;
+}
+.cs-format-cells .cs-fc-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.cs-format-cells .cs-fc-preview {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 2px;
+}
+.cs-format-cells .cs-fc-preview-cell {
+  display: flex;
+  box-sizing: border-box;
+  width: 220px;
+  min-height: 44px;
+  padding: 2px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
