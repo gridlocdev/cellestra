@@ -3,8 +3,12 @@ import type { Expr } from '../formulas/ast/expr.ts';
 import { FunctionRegistry } from '../formulas/functions/functionRegistry.ts';
 import { CellRef, type RangeRef } from './cellRef.ts';
 
-/** Largest range expanded cell by cell; bigger ranges are summarized by their corners. */
-export const MAX_EXPANDED_CELLS = 200_000;
+/**
+ * Largest range expanded cell by cell; bigger ranges are summarized by their corners and tracked as
+ * a large range. Kept small so running totals (`SUM($A$1:A4000)` down a column) stay linear in
+ * graph size rather than one edge per cell per formula.
+ */
+export const MAX_EXPANDED_CELLS = 1024;
 
 function expand(
   range: CellRange,

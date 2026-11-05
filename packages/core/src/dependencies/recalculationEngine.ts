@@ -19,6 +19,18 @@ export interface RecalculationResult {
   readonly hasCircularReference: boolean;
 }
 
+/** Large ranges wider than this many columns are indexed under `WIDE` rather than per column. */
+const WIDE_RANGE_COLUMNS = 64;
+const WIDE = -1;
+
+/** The index buckets a large range sits in: each of its columns, or `WIDE`. */
+function indexColumns(r: RangeRef): number[] {
+  if (r.right - r.left + 1 > WIDE_RANGE_COLUMNS) return [WIDE];
+  const out: number[] = [];
+  for (let c = r.left; c <= r.right; c++) out.push(c);
+  return out;
+}
+
 const result = (evaluated: number, circularCells: readonly CellRef[]): RecalculationResult => ({
   evaluated,
   circularCells,
@@ -40,6 +52,12 @@ export class RecalculationEngine {
   readonly #volatile = new Map<string, CellRef>();
   /** Formula cells whose precedents include a range too large to expand into the graph. */
   readonly #largeRangePrecedents = new Map<string, RangeRef[]>();
+  /**
+   * The same formulas indexed by sheet, then by each column their large ranges cover (ranges wider
+   * than `WIDE_RANGE_COLUMNS` sit under `WIDE` instead), so finding the ranges over one cell reads
+   * only that column's bucket instead of every large-range formula.
+   */
+  readonly #largeRangeIndex = new Map<string, Map<number, Set<string>>>();
   readonly #parseCache = new Map<string, Expr | null>();
 
   constructor(workbook: Workbook, functions?: FunctionRegistry, clock?: () => CivilDateTime) {
@@ -68,6 +86,7 @@ export class RecalculationEngine {
     this.#formulas.clear();
     this.#volatile.clear();
     this.#largeRangePrecedents.clear();
+    this.#largeRangeIndex.clear();
     for (const sheet of this.#workbook.worksheets) {
       for (const [row, column, cell] of sheet.enumerateCells()) {
         if (cell.isFormula) this.#registerFormula(CellRef.of(sheet.name, row, column), cell.formula!);
@@ -105,9 +124,7 @@ export class RecalculationEngine {
     const found = new Map<string, CellRef>();
     for (const cell of cells) {
       for (const [k, dependent] of this.#graph.dependentEntries(CellRef.key(cell))) found.set(k, dependent);
-      for (const [k, ranges] of this.#largeRangePrecedents) {
-        if (ranges.some((r) => rangeRefContains(r, cell))) found.set(k, this.#formulas.get(k)!.ref);
-      }
+      this.#forLargeRangesOver(cell, (k) => found.set(k, this.#formulas.get(k)!.ref));
     }
     return [...found.values()];
   }
@@ -131,7 +148,7 @@ export class RecalculationEngine {
     this.#graph.removeFormula(cell);
     this.#formulas.delete(key);
     this.#volatile.delete(key);
-    this.#largeRangePrecedents.delete(key);
+    this.#setLargeRanges(key, []);
   }
 
   #registerFormula(cell: CellRef, formula: string): void {
@@ -141,15 +158,15 @@ export class RecalculationEngine {
     if (!ast) {
       this.#graph.setPrecedents(cell, []);
       this.#volatile.delete(key);
-      this.#largeRangePrecedents.delete(key);
+      this.#setLargeRanges(key, []);
       return;
     }
     const precedents = new Map<string, CellRef>();
     const largeRanges: RangeRef[] = [];
-    ReferenceCollector.collect(ast, cell.sheet, (n) => this.#resolveName(n), precedents, largeRanges);
+    const resolve = (n: string): CellRange | null => this.#resolveName(n, cell.sheet);
+    ReferenceCollector.collect(ast, cell.sheet, resolve, precedents, largeRanges);
     this.#graph.setPrecedents(cell, precedents.values());
-    if (largeRanges.length > 0) this.#largeRangePrecedents.set(key, largeRanges);
-    else this.#largeRangePrecedents.delete(key);
+    this.#setLargeRanges(key, largeRanges);
     if (ReferenceCollector.isVolatile(ast)) this.#volatile.set(key, cell);
     else this.#volatile.delete(key);
   }
@@ -162,9 +179,49 @@ export class RecalculationEngine {
     return ast;
   }
 
-  /** Global-scope names only (the graph is built outside any one sheet's scope). */
-  #resolveName(name: string): CellRange | null {
-    return this.#workbook.findNamedRange(name)?.target ?? null;
+  /** A name as the formula on `sheet` sees it: a sheet-local name shadows a global one. */
+  #resolveName(name: string, sheet: string): CellRange | null {
+    return this.#workbook.findNamedRange(name, sheet)?.target ?? null;
+  }
+
+  /** Replace a formula's large precedent ranges, keeping the column index in step. */
+  #setLargeRanges(key: string, ranges: RangeRef[]): void {
+    for (const r of this.#largeRangePrecedents.get(key) ?? []) {
+      const columns = this.#largeRangeIndex.get(r.sheet.toLowerCase());
+      if (!columns) continue;
+      for (const column of indexColumns(r)) {
+        const bucket = columns.get(column);
+        bucket?.delete(key);
+        if (bucket?.size === 0) columns.delete(column);
+      }
+    }
+    if (ranges.length === 0) {
+      this.#largeRangePrecedents.delete(key);
+      return;
+    }
+    this.#largeRangePrecedents.set(key, ranges);
+    for (const r of ranges) {
+      const sheet = r.sheet.toLowerCase();
+      let columns = this.#largeRangeIndex.get(sheet);
+      if (!columns) this.#largeRangeIndex.set(sheet, (columns = new Map()));
+      for (const column of indexColumns(r)) {
+        let bucket = columns.get(column);
+        if (!bucket) columns.set(column, (bucket = new Set()));
+        bucket.add(key);
+      }
+    }
+  }
+
+  /** Call `visit` with the key of every formula that has a large precedent range containing `cell`. */
+  #forLargeRangesOver(cell: CellRef, visit: (formulaKey: string) => void): void {
+    const columns = this.#largeRangeIndex.get(cell.sheet.toLowerCase());
+    if (!columns) return;
+    for (const bucket of [columns.get(cell.column), columns.get(WIDE)]) {
+      if (!bucket) continue;
+      for (const fk of bucket) {
+        if (this.#largeRangePrecedents.get(fk)?.some((r) => rangeRefContains(r, cell))) visit(fk);
+      }
+    }
   }
 
   // ---- evaluation -------------------------------------------------------
@@ -194,12 +251,11 @@ export class RecalculationEngine {
         queue.push([dk, dependent]);
       }
     }
-    for (const [fk, ranges] of this.#largeRangePrecedents) {
-      if (!affected.has(fk) && ranges.some((r) => rangeRefContains(r, cell))) {
-        affected.add(fk);
-        queue.push([fk, this.#formulas.get(fk)!.ref]);
-      }
-    }
+    this.#forLargeRangesOver(cell, (fk) => {
+      if (affected.has(fk)) return;
+      affected.add(fk);
+      queue.push([fk, this.#formulas.get(fk)!.ref]);
+    });
   }
 
   #evaluate(nodes: Set<string>): RecalculationResult {
