@@ -13,6 +13,7 @@
     "package": "pnpm build && electron-builder --config electron-builder.yml"
   },
   "devDependencies": {
+    "@cellestra/web": "workspace:*",
     "electron": "45.2.3",
     "electron-builder": "26.18.0"
   }

@@ -1,0 +1,27 @@
+appId: dev.gridloc.cellestra
+productName: Cellestra
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+asar: true
+fileAssociations:
+  - ext: ods
+    name: OpenDocument Spreadsheet
+    mimeType: application/vnd.oasis.opendocument.spreadsheet
+    role: Editor
+  - ext: csv
+    name: CSV Document
+    mimeType: text/csv
+    role: Editor
+mac:
+  category: public.app-category.productivity
+  target: [dmg, zip]
+  hardenedRuntime: true
+linux:
+  target: [AppImage]
+  category: Office
+win:
+  target: [nsis]
