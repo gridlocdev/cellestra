@@ -5,7 +5,7 @@ import type { DataValidation, FilterSpec, SortSpec, Table } from '../data/types.
 import { Cell } from './cell.ts';
 import { CellAddress } from './cellAddress.ts';
 import { CellRange } from './cellRange.ts';
-import { Column, Row } from './lines.ts';
+import { bumpLineLayout, Column, lineLayoutGeneration, Row } from './lines.ts';
 import type { MergedRegion } from './mergedRegion.ts';
 import { cellKey, keyColumn, keyRow, SheetDimensions } from './sheetDimensions.ts';
 import { Defaults } from '../defaults.ts';
@@ -34,6 +34,8 @@ export class Worksheet {
   private mergedRegions: MergedRegion[] = [];
   private tableList: Table[] = [];
   private validationList: DataValidation[] = [];
+  /** Last row/column holding a stored cell; `undefined` when it must be recomputed. */
+  #cellExtent: { lastRow: number; lastColumn: number } | null | undefined = null;
 
   name: string;
   chart: ChartDefinition | null = null;
@@ -76,6 +78,7 @@ export class Worksheet {
     if (!cell) {
       cell = new Cell();
       this.cells.set(key, cell);
+      this.#grew(row, column);
     }
     return cell;
   }
@@ -103,17 +106,51 @@ export class Worksheet {
   }
 
   remove(row: number, column: number): void {
-    this.cells.delete(cellKey(row, column));
+    if (this.cells.delete(cellKey(row, column))) this.#shrank(row, column);
   }
 
   /** Put a cell object at a position (or remove when null/blank). */
   putCell(row: number, column: number, cell: Cell | null | undefined): void {
-    if (!cell || cell.isBlank) this.cells.delete(cellKey(row, column));
-    else this.cells.set(cellKey(row, column), cell);
+    if (!cell || cell.isBlank) this.remove(row, column);
+    else {
+      this.cells.set(cellKey(row, column), cell);
+      this.#grew(row, column);
+    }
   }
 
   pruneIfBlank(row: number, column: number, cell: Cell): void {
-    if (cell.isBlank) this.cells.delete(cellKey(row, column));
+    if (cell.isBlank) this.remove(row, column);
+  }
+
+  /**
+   * The last row and column that hold a stored cell (null for no cells). Cached, so formulas can
+   * clip whole-column and whole-row ranges cheaply; cells past it all read as empty.
+   */
+  cellExtent(): { readonly lastRow: number; readonly lastColumn: number } | null {
+    if (this.#cellExtent === undefined) {
+      let lastRow = -1;
+      let lastColumn = -1;
+      for (const key of this.cells.keys()) {
+        lastRow = Math.max(lastRow, keyRow(key));
+        lastColumn = Math.max(lastColumn, keyColumn(key));
+      }
+      this.#cellExtent = lastRow < 0 ? null : { lastRow, lastColumn };
+    }
+    return this.#cellExtent;
+  }
+
+  #grew(row: number, column: number): void {
+    const e = this.#cellExtent;
+    if (e === undefined) return;
+    if (e === null) this.#cellExtent = { lastRow: row, lastColumn: column };
+    else if (row > e.lastRow || column > e.lastColumn) {
+      this.#cellExtent = { lastRow: Math.max(row, e.lastRow), lastColumn: Math.max(column, e.lastColumn) };
+    }
+  }
+
+  #shrank(row: number, column: number): void {
+    const e = this.#cellExtent;
+    if (e && (row === e.lastRow || column === e.lastColumn)) this.#cellExtent = undefined;
   }
 
   /** Every stored cell, in insertion order. Don't mutate the map while iterating. */
@@ -159,6 +196,14 @@ export class Worksheet {
   }
   isColumnHidden(column: number): boolean {
     return this.columnMap.get(column)?.hidden ?? false;
+  }
+
+  /**
+   * Moves whenever row or column layout may have changed (it is shared by every sheet, so it can
+   * also move for another sheet's change). Compare it to skip re-reading `rows` and `columns`.
+   */
+  get layoutStamp(): number {
+    return lineLayoutGeneration();
   }
 
   get rows(): ReadonlyMap<number, Row> {
@@ -316,6 +361,7 @@ export class Worksheet {
   clone(newName: string): Worksheet {
     const copy = new Worksheet(newName);
     for (const [k, c] of this.cells) copy.cells.set(k, c.clone());
+    copy.#cellExtent = this.#cellExtent;
     for (const [k, r] of this.rowMap) copy.rowMap.set(k, r.clone());
     for (const [k, c] of this.columnMap) copy.columnMap.set(k, c.clone());
     // Merges, tables, validations are immutable — sharing them is a full copy.
@@ -348,6 +394,8 @@ export class Worksheet {
   restore(state: WorksheetState): void {
     this.cells.clear();
     for (const [k, c] of state.cells) this.cells.set(k, c.clone());
+    this.#cellExtent = undefined;
+    bumpLineLayout();
     this.rowMap.clear();
     for (const [k, r] of state.rows) this.rowMap.set(k, r.clone());
     this.columnMap.clear();

@@ -60,7 +60,8 @@ export function categoryLabel(chart: ResolvedChart, c: number): string {
 
 /**
  * The value-axis extent for a category chart, always including zero. Stacked bars contribute their
- * positive and negative running sums, stacked areas their positive running sum, everything else
+ * positive and negative running sums, stacked areas their positive running sum, stacked lines
+ * their running sum, everything else
  * its raw values. 100%-stacked charts span 0..1.
  */
 export function valueExtent(
@@ -74,7 +75,11 @@ export function valueExtent(
   let max = 0;
   const bars = chart.series.filter((s) => isBarType(s.type));
   const areas = chart.series.filter((s) => s.type === 'area');
-  const others = chart.series.filter((s) => !isBarType(s.type) && !(stacked && s.type === 'area'));
+  const lines = chart.series.filter((s) => s.type === 'line');
+  const others = chart.series.filter(
+    (s) => !isBarType(s.type) && !(stacked && (s.type === 'area' || s.type === 'line')),
+  );
+  const stackedLines = stacked ? stackLines(lines, categories, true, false) : [];
 
   for (let c = 0; c < categories; c++) {
     if (stacked && bars.length > 0) {
@@ -97,6 +102,12 @@ export function valueExtent(
       }
     }
     if (stacked && areas.length > 0) max = Math.max(max, positiveSum(areas, c));
+    for (const lane of stackedLines) {
+      const v = lane[c]!;
+      if (Number.isNaN(v)) continue;
+      max = Math.max(max, v);
+      min = Math.min(min, v);
+    }
     for (const s of others) {
       const v = valueAt(s, c);
       if (Number.isNaN(v)) continue;
@@ -257,6 +268,44 @@ export function stackAreas(
       lane.base.push(cursor * scale);
       lane.top.push((cursor + add) * scale);
       cursor += add;
+    });
+  }
+  return out;
+}
+
+/**
+ * The plotted value of each line series per category (NaN for a gap). Unstacked lines plot their
+ * values; stacked lines plot the running sum of the lines before them, like Calc; 100%-stacked
+ * lines plot that sum as a share of the category's positive total (negatives are left out, as
+ * for bars).
+ */
+export function stackLines(
+  series: readonly ResolvedSeries[],
+  categories: number,
+  stacked: boolean,
+  percent: boolean,
+): number[][] {
+  const out = series.map(() => [] as number[]);
+  for (let c = 0; c < categories; c++) {
+    const total = percent ? positiveSum(series, c) : 1;
+    let cursor = 0;
+    series.forEach((s, i) => {
+      const v = valueAt(s, c);
+      if (!stacked || Number.isNaN(v)) {
+        out[i]!.push(v);
+        return;
+      }
+      if (percent) {
+        if (v < 0 || total <= 0) {
+          out[i]!.push(Number.NaN);
+          return;
+        }
+        cursor += v;
+        out[i]!.push(cursor / total);
+        return;
+      }
+      cursor += v;
+      out[i]!.push(cursor);
     });
   }
   return out;

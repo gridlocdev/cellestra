@@ -7,6 +7,8 @@ export function FormulaBar(props: {
   readonly onCommit: (text: string) => void;
   readonly onGoTo: (reference: string) => boolean;
   readonly onDone: () => void;
+  /** Nothing to show or edit (a chart sheet is active): both fields are blank and disabled. */
+  readonly disabled?: boolean;
 }) {
   const [text, setText] = useState(props.content);
   const [name, setName] = useState(props.address);
@@ -25,7 +27,8 @@ export function FormulaBar(props: {
       <input
         class="cs-name-box"
         aria-label="Cell reference"
-        value={name}
+        disabled={props.disabled}
+        value={props.disabled ? '' : name}
         onFocus={(e) => {
           nameEditing.current = true;
           (e.target as HTMLInputElement).select();
@@ -56,7 +59,8 @@ export function FormulaBar(props: {
         class="cs-formula-input"
         aria-label="Cell contents"
         spellcheck={false}
-        value={text}
+        disabled={props.disabled}
+        value={props.disabled ? '' : text}
         onFocus={() => {
           editing.current = true;
         }}

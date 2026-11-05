@@ -16,6 +16,7 @@ import {
   rectRight,
   stackAreas,
   stackBars,
+  stackLines,
   valueAt,
   valueExtent,
   valuePos,
@@ -190,7 +191,15 @@ function axisArea(chart: ResolvedChart, plot: Rect, left: number, bottom: number
 
 const tickGutter = (labels: readonly string[]): number => Math.max(44, widestLabel(labels, TICK_SIZE) + 10);
 
-function drawCartesian(shapes: Shape[], chart: ResolvedChart, plot: Rect): void {
+function drawCartesian(shapes: Shape[], resolved: ResolvedChart, plot: Rect): void {
+  // A series set to draw as a type that can't share category axes (pie, scatter…) draws as the
+  // chart's own type instead of vanishing.
+  const chart: ResolvedChart = {
+    ...resolved,
+    series: resolved.series.map((s) =>
+      isBarType(s.type) || s.type === 'line' || s.type === 'area' ? s : { ...s, type: resolved.type },
+    ),
+  };
   const categories = categoryCount(chart);
   if (categories === 0) return;
 
@@ -259,8 +268,15 @@ function drawCartesian(shapes: Shape[], chart: ResolvedChart, plot: Rect): void 
     bandSize,
   );
 
-  for (const { s, i } of lines)
-    drawLineSeries(shapes, s, i, area, categories, min, max, bandSize, horizontal);
+  const lineValues = stackLines(
+    lines.map((e) => e.s),
+    categories,
+    stacked,
+    percent,
+  );
+  lines.forEach(({ i }, k) =>
+    drawLineSeries(shapes, lineValues[k]!, i, area, categories, min, max, bandSize, horizontal),
+  );
 
   // Category labels, thinned when they would overlap.
   if (horizontal) {
@@ -401,7 +417,7 @@ function drawBars(
 
 function drawLineSeries(
   shapes: Shape[],
-  series: ResolvedSeries,
+  values: readonly number[],
   seriesIndex: number,
   area: Rect,
   categories: number,
@@ -415,7 +431,7 @@ function drawLineSeries(
   let run: [number, number][] = [];
   const dots: [number, number][] = [];
   for (let c = 0; c < categories; c++) {
-    const v = valueAt(series, c);
+    const v = values[c] ?? Number.NaN;
     if (Number.isNaN(v)) {
       if (run.length > 0) runs.push(run);
       run = [];

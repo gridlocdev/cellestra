@@ -32,6 +32,7 @@ function search(
   for (let i = 0; i < values.length; i++) {
     const v = values[i]!;
     if (v.kind === 'error') return v;
+    if (v.kind === 'empty') continue; // Calc skips empty cells in a sorted lookup
     const cmp = ValueComparer.compare(v, lookup);
     if (cmp instanceof CellError) return CellValue.error(cmp);
     const onSide = matchType > 0 ? cmp <= 0 : cmp >= 0;
@@ -39,6 +40,28 @@ function search(
     best = i;
   }
   return best;
+}
+
+/**
+ * `search` over the first `used` cells of a vector of `length`, where every cell past `used` is
+ * empty (beyond the sheet's data). An exact match for an empty cell lands on the first of those.
+ */
+function searchUsed(
+  read: (i: number) => CellValue,
+  used: number,
+  length: number,
+  lookup: CellValue,
+  matchType: number,
+  locale: string,
+): number | CellValue {
+  const position = search(
+    Array.from({ length: used }, (_, i) => read(i)),
+    lookup,
+    matchType,
+    locale,
+  );
+  if (position !== -1 || used >= length || matchType !== 0) return position;
+  return search([CellValue.empty], lookup, 0, locale) === 0 ? used : -1;
 }
 
 function lookupTable(args: readonly Expr[], ev: FunctionEvaluator, vertical: boolean): CellValue {
@@ -55,9 +78,14 @@ function lookupTable(args: readonly Expr[], ev: FunctionEvaluator, vertical: boo
     approximate = a;
   }
   // The first row/column is the search vector.
-  const length = vertical ? table.rowCount : table.columnCount;
-  const vector = Array.from({ length }, (_, i) => (vertical ? table.get(i, 0) : table.get(0, i)));
-  const position = search(vector, lookup, approximate ? 1 : 0, ev.context.locale);
+  const position = searchUsed(
+    (i) => (vertical ? table.get(i, 0) : table.get(0, i)),
+    vertical ? table.usedRowCount : table.usedColumnCount,
+    vertical ? table.rowCount : table.columnCount,
+    lookup,
+    approximate ? 1 : 0,
+    ev.context.locale,
+  );
   if (typeof position !== 'number') return position;
   if (position < 0) return CellValue.error(CellError.notAvailable('No match found.'));
   const otherCount = vertical ? table.columnCount : table.rowCount;
@@ -144,7 +172,15 @@ export function lookupFunctions(): FormulaFunction[] {
         if (range.rowCount !== 1 && range.columnCount !== 1) {
           return CellValue.error(CellError.notAvailable('MATCH needs a single row or column.'));
         }
-        const position = search([...range.values()], lookup, matchType, ev.context.locale);
+        const vertical = range.columnCount === 1;
+        const position = searchUsed(
+          (i) => (vertical ? range.get(i, 0) : range.get(0, i)),
+          vertical ? range.usedRowCount : range.usedColumnCount,
+          vertical ? range.rowCount : range.columnCount,
+          lookup,
+          matchType,
+          ev.context.locale,
+        );
         if (typeof position !== 'number') return position;
         return position < 0
           ? CellValue.error(CellError.notAvailable('No match found.'))

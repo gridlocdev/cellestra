@@ -179,7 +179,30 @@ function writeRows(
       continue;
     }
 
-    table.add(writeRow(sheet, row, lastColumn, registry, cellValidation, occupied.get(row) ?? []));
+    const cells = occupied.get(row);
+    if (!cells) {
+      // No cells, only layout (a hidden or resized row): a run of rows laid out alike is one
+      // repeated element, so 200,000 filtered-out rows don't write 200,000 elements.
+      const model = sheet.findRow(row)!;
+      let repeat = 1;
+      while (row + repeat <= lastRow && !occupied.has(row + repeat)) {
+        const next = sheet.findRow(row + repeat);
+        if (
+          !next ||
+          next.height !== model.height ||
+          next.hidden !== model.hidden ||
+          next.styleId !== model.styleId
+        )
+          break;
+        repeat++;
+      }
+      const element = writeRow(sheet, row, lastColumn, registry, cellValidation, []);
+      if (repeat > 1) element.setAttr(Table('number-rows-repeated'), repeat);
+      table.add(element);
+      row += repeat;
+      continue;
+    }
+    table.add(writeRow(sheet, row, lastColumn, registry, cellValidation, cells));
     row++;
   }
 }

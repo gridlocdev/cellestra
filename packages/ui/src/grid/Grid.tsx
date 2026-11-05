@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { effect, type ReadonlySignal } from '@preact/signals';
-import type { CellRange, CellStyle, CellValue, StylePool, Worksheet } from '@cellestra/core';
+import type { CellStyle, CellValue, StylePool, Worksheet } from '@cellestra/core';
 import { Axis } from './axis.ts';
 import { chromeButtons, hitChrome, type ChromeButton } from './chrome.ts';
 import { renderGrid, CELL_PAD_X, CELL_PAD_Y, type DisplayText } from './render.ts';
@@ -53,15 +53,45 @@ const MIN_COLUMN_WIDTH = 16;
 const MIN_ROW_HEIGHT = 8;
 const RESIZE_GRAB = 4;
 
-function axesFor(sheet: Worksheet): { columns: Axis; rows: Axis } {
+interface Axes {
+  readonly columns: Axis;
+  readonly rows: Axis;
+  /** The last row and column with non-default layout (−1 for none), for the scroll extent. */
+  readonly lastRow: number;
+  readonly lastColumn: number;
+}
+
+function axesFor(sheet: Worksheet): Axes {
   const cols: [number, number][] = [];
-  for (const [i, c] of sheet.columns) cols.push([i, c.hidden ? 0 : c.width]);
+  let lastColumn = -1;
+  for (const [i, c] of sheet.columns) {
+    cols.push([i, c.hidden ? 0 : c.width]);
+    if (!c.isDefault) lastColumn = Math.max(lastColumn, i);
+  }
   const rows: [number, number][] = [];
-  for (const [i, r] of sheet.rows) rows.push([i, r.hidden ? 0 : r.height]);
+  let lastRow = -1;
+  for (const [i, r] of sheet.rows) {
+    rows.push([i, r.hidden ? 0 : r.height]);
+    if (!r.isDefault) lastRow = Math.max(lastRow, i);
+  }
   return {
     columns: new Axis(MAX_COLUMN + 1, 64, cols),
     rows: new Axis(MAX_ROW + 1, 20, rows),
+    lastRow,
+    lastColumn,
   };
+}
+
+/** The bottom-right corner the scroller must reach: cells, merges and laid-out lines. */
+function contentEnd(sheet: Worksheet, axes: Axes): { bottom: number; right: number } {
+  const cells = sheet.cellExtent();
+  let bottom = Math.max(cells?.lastRow ?? 0, axes.lastRow);
+  let right = Math.max(cells?.lastColumn ?? 0, axes.lastColumn);
+  for (const m of sheet.merges) {
+    bottom = Math.max(bottom, m.range.bottom);
+    right = Math.max(right, m.range.right);
+  }
+  return { bottom, right };
 }
 
 export function Grid({ host, selection, zoom, palette, showFormulas, controller }: GridProps) {
@@ -84,11 +114,13 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     scrollX: 0,
     scrollY: 0,
     viewport: null as Viewport | null,
-    axesVersion: -1,
+    /** The axes are rebuilt only when row/column layout moves (`layoutStamp`) or the sheet changes. */
+    axesStamp: -1,
     axesSheet: null as Worksheet | null,
-    axes: null as ReturnType<typeof axesFor> | null,
-    /** The sheet's used range for `axesVersion` — a full cell scan, so not once per frame. */
-    used: null as CellRange | null,
+    axes: null as Axes | null,
+    /** The scroll extent for `usedVersion`. */
+    usedVersion: -1,
+    used: null as { bottom: number; right: number } | null,
     drag: null as null | Drag,
     chrome: [] as ChromeButton[],
   });
@@ -105,14 +137,19 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const s = state.current;
     const version = host.version.value;
     const sheet = host.sheet.value;
-    if (!s.axes || s.axesVersion !== version || s.axesSheet !== sheet) {
+    if (!s.axes || s.axesStamp !== sheet.layoutStamp || s.axesSheet !== sheet) {
       s.axes = axesFor(sheet);
-      s.used = sheet.getUsedRange();
-      s.axesVersion = version;
+      s.axesStamp = sheet.layoutStamp;
       s.axesSheet = sheet;
+      s.usedVersion = -1;
+    }
+    if (s.usedVersion !== version) {
+      s.used = contentEnd(sheet, s.axes);
+      s.usedVersion = version;
     }
     return new Viewport({
-      ...s.axes,
+      columns: s.axes.columns,
+      rows: s.axes.rows,
       frozenColumns: sheet.frozenColumns,
       frozenRows: sheet.frozenRows,
       scrollX: s.scrollX,

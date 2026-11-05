@@ -842,23 +842,35 @@ export class AppController {
     const ctx = document.createElement('canvas').getContext('2d')!;
     const wb = this.session.workbook.peek();
     const sheet = this.sheet;
-    const used = sheet.getUsedRange();
-    if (!used) return;
     const r = this.range;
-    const left = Math.max(r.left, used.left);
-    const right = Math.min(r.right, used.right);
-    const cmds: EditCommand[] = [];
-    for (let c = left; c <= right; c++) {
-      let width = 0;
-      for (let row = used.top; row <= used.bottom; row++) {
-        const cell = sheet.find(row, c);
-        if (!cell || sheet.findMerge(row, c)) continue;
-        const style = wb.styles.get(sheet.effectiveStyleId(row, c));
-        ctx.font = `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${style.font.sizePoints * (4 / 3)}px ${style.font.family}, system-ui, sans-serif`;
-        width = Math.max(width, ctx.measureText(this.session.display(cell.value, style)).width);
+    // One pass over the stored cells (not every row of every column), with the font and the
+    // measured width cached: a column of repeated values measures each distinct text once.
+    const fonts = new Map<number, string>();
+    const measured = new Map<string, number>();
+    const widths = new Map<number, number>();
+    for (const [row, column, cell] of sheet.enumerateCells()) {
+      if (column < r.left || column > r.right || row < r.top || row > r.bottom) continue;
+      if (cell.value.kind === 'empty' || sheet.findMerge(row, column)) continue;
+      const styleId = sheet.effectiveStyleId(row, column);
+      const style = wb.styles.get(styleId);
+      let font = fonts.get(styleId);
+      if (font === undefined) {
+        font = `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${style.font.sizePoints * (4 / 3)}px ${style.font.family}, system-ui, sans-serif`;
+        fonts.set(styleId, font);
       }
-      if (width > 0) cmds.push(EditCommands.setColumnWidth(this.sheetName, c, Math.ceil(width + 12)));
+      const text = this.session.display(cell.value, style);
+      const key = `${font}\u0000${text}`;
+      let width = measured.get(key);
+      if (width === undefined) {
+        ctx.font = font;
+        width = ctx.measureText(text).width;
+        measured.set(key, width);
+      }
+      if (width > (widths.get(column) ?? 0)) widths.set(column, width);
     }
+    const cmds = [...widths]
+      .sort((a, b) => a[0] - b[0])
+      .map(([c, width]) => EditCommands.setColumnWidth(this.sheetName, c, Math.ceil(width + 12)));
     this.run(each('Autofit Columns', cmds));
   }
 

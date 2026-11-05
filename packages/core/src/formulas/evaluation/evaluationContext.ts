@@ -18,6 +18,13 @@ export interface EvaluationContext {
   getCell(sheet: string | null, row: number, column: number): CellValue;
   /** Resolve a defined name to its range; null for an unknown name. */
   resolveName(name: string): CellRange | null;
+  /**
+   * The last row and column of a sheet that can hold a value (null when it has none), so a range
+   * like A:A reads only up to it. `undefined` (or leaving it out) means unknown: read every cell.
+   */
+  cellExtent?(
+    sheet: string | null,
+  ): { readonly lastRow: number; readonly lastColumn: number } | null | undefined;
 }
 
 /** The outcome of evaluating a formula plus whether it is volatile (TODAY/NOW). */

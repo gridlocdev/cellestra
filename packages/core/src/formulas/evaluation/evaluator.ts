@@ -150,7 +150,8 @@ export class Evaluator implements FunctionEvaluator {
 
   enumerateValues(expr: Expr): Iterable<CellValue> {
     const range = expr.kind === 'reference' ? null : this.tryEvaluateRange(expr);
-    return range ? range.values() : [this.evaluate(expr)];
+    // Every caller skips empty cells, so the empty margin past the sheet's data is left out.
+    return range ? range.usedValues() : [this.evaluate(expr)];
   }
 
   tryEvaluateRange(expr: Expr): RangeValues | null {

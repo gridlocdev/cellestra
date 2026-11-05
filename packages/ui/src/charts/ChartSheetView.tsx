@@ -306,6 +306,7 @@ export function ChartSheetView(props: ChartSheetViewProps) {
                   ordinal={i + 1}
                   family={family}
                   bubble={draft.type === 'bubble'}
+                  chartType={draft.type}
                   text={(value, set) => text(value, (c, v) => set(c.series[i]!, v))}
                   onTypeChange={(t) =>
                     update((c) => {
@@ -365,6 +366,21 @@ function categoryCopy(family: ChartFamily): { label: string; tip: string } {
   }
 }
 
+/**
+ * The types one series of a column/bar/line/area chart can be drawn as: the chart's bar
+ * orientation, a line or an area. Pie, scatter and the rest can't share category axes, so they
+ * aren't offered (one already set, e.g. by a file, stays listed so the choice shows).
+ */
+export function drawAsOptions(
+  chartType: ChartType,
+  current: ChartType | null,
+): (readonly [ChartType, string])[] {
+  const bar: ChartType = chartType === 'bar' ? 'bar' : 'column';
+  const allowed = new Set<ChartType>([bar, 'line', 'area']);
+  if (current) allowed.add(current);
+  return CHART_TYPE_LABELS.filter(([t]) => allowed.has(t));
+}
+
 type TextBinder = (value: string, set: (s: ChartSeries, v: string) => void) => TextInputProps;
 
 function SeriesRow(props: {
@@ -372,6 +388,7 @@ function SeriesRow(props: {
   ordinal: number;
   family: ChartFamily;
   bubble: boolean;
+  chartType: ChartType;
   text: TextBinder;
   onTypeChange: (type: ChartType | null) => void;
   onRemove: () => void;
@@ -454,7 +471,7 @@ function SeriesRow(props: {
             }}
           >
             <option value="">Same as chart</option>
-            {CHART_TYPE_LABELS.map(([t, label]) => (
+            {drawAsOptions(props.chartType, series.type ?? null).map(([t, label]) => (
               <option key={t} value={t}>
                 {label}
               </option>

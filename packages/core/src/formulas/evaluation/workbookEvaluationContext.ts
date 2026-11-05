@@ -36,6 +36,12 @@ export class WorkbookEvaluationContext implements EvaluationContext {
     return worksheet.getValue(row, column);
   }
 
+  cellExtent(
+    sheet: string | null,
+  ): { readonly lastRow: number; readonly lastColumn: number } | null | undefined {
+    return this.#workbook.findSheet(sheet ?? this.currentSheet)?.cellExtent();
+  }
+
   resolveName(name: string): CellRange | null {
     return this.#workbook.findNamedRange(name, this.currentSheet)?.target ?? null;
   }

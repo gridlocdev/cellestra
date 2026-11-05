@@ -102,10 +102,14 @@ function sumOrCountIf(args: readonly Expr[], ev: FunctionEvaluator, sum: boolean
     if (!sumRange) return CellValue.error(CellError.value('The sum range must be a range.'));
   }
 
+  // Past the data of both ranges every criteria cell and every sum cell is empty: read only up to
+  // it, then count the empty remainder in one step if the criteria match an empty cell.
+  const rows = Math.min(range.rowCount, Math.max(range.reach.rows, sumRange?.reach.rows ?? 0));
+  const columns = Math.min(range.columnCount, Math.max(range.reach.columns, sumRange?.reach.columns ?? 0));
   let total = 0;
   let count = 0;
-  for (let r = 0; r < range.rowCount; r++) {
-    for (let c = 0; c < range.columnCount; c++) {
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < columns; c++) {
       const cell = range.get(r, c);
       if (cell.kind === 'error') return cell;
       if (!matcher.matches(cell)) continue;
@@ -120,6 +124,7 @@ function sumOrCountIf(args: readonly Expr[], ev: FunctionEvaluator, sum: boolean
       if (target.kind === 'number') total += target.value;
     }
   }
+  if (matcher.matches(CellValue.empty)) count += range.rowCount * range.columnCount - rows * columns;
   return CellValue.number(sum ? total : count);
 }
 

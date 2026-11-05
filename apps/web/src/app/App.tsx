@@ -286,6 +286,7 @@ function FormulaBarConnected({ app }: { readonly app: AppController }) {
   });
   return (
     <FormulaBar
+      disabled={s.activeSheet.value.isChartSheet}
       address={address.value}
       content={content.value}
       onCommit={(text) => {
@@ -302,9 +303,20 @@ function FormulaBarConnected({ app }: { readonly app: AppController }) {
 function Footer({ app }: { readonly app: AppController }) {
   const s = app.session;
   const [menu, setMenu] = useState<{ index: number; x: number; y: number } | null>(null);
-  const summary = useComputed(() => {
+  const summary = useSignal('');
+  useSignalEffect(() => {
     void s.version.value;
-    return selectionSummary(app);
+    const scope = summaryScope(app);
+    if (!scope) {
+      summary.value = '';
+      return;
+    }
+    if (Math.min(scope.area, scope.sheet.cellCount) <= SUMMARY_SYNC_CELLS) {
+      summary.value = selectionSummary(app, scope);
+      return;
+    }
+    const timer = setTimeout(() => (summary.value = selectionSummary(app, scope)), 120);
+    return () => clearTimeout(timer);
   });
   const inputMessage = useComputed(() => {
     void s.version.value;
@@ -404,33 +416,53 @@ function SheetMenu(props: {
   );
 }
 
-/** Sum / average / count of the selection's numbers, like the old status bar. */
-function selectionSummary(app: AppController): string {
+/** The selection's ranges cut to the sheet's last stored cell, and how many cells they cover. */
+function summaryScope(app: AppController) {
   const st = app.selection.state.value;
   const sheet = app.session.activeSheet.value;
   const r = app.selection.range.value;
-  if (r.top === r.bottom && r.left === r.right && st.ranges.length === 1) return '';
-  const used = sheet.getUsedRange();
-  if (!used) return '';
+  const extent = sheet.cellExtent();
+  if ((r.top === r.bottom && r.left === r.right && st.ranges.length === 1) || !extent) return null;
+  const ranges = st.ranges.map((range) => ({
+    top: range.top,
+    left: range.left,
+    bottom: Math.min(range.bottom, extent.lastRow),
+    right: Math.min(range.right, extent.lastColumn),
+  }));
+  const area = ranges.reduce(
+    (n, g) => n + Math.max(0, g.bottom - g.top + 1) * Math.max(0, g.right - g.left + 1),
+    0,
+  );
+  return { sheet, ranges, area };
+}
+
+/** Sum / average / count of the selection's numbers, like the old status bar. */
+function selectionSummary(app: AppController, scope: NonNullable<ReturnType<typeof summaryScope>>): string {
+  const { sheet, ranges, area } = scope;
   let count = 0;
   let numbers = 0;
   let sum = 0;
-  for (const range of st.ranges) {
-    const top = Math.max(range.top, used.top);
-    const bottom = Math.min(range.bottom, used.bottom);
-    const left = Math.max(range.left, used.left);
-    const right = Math.min(range.right, used.right);
-    for (let row = top; row <= bottom; row++) {
+  const add = (v: CellValue) => {
+    if (v.kind === 'empty') return;
+    count++;
+    if (v.kind === 'number') {
+      numbers++;
+      sum += v.value;
+    }
+  };
+  if (area > sheet.cellCount) {
+    // A big selection over sparse data: visit the stored cells, not every position.
+    for (const [row, column, cell] of sheet.enumerateCells()) {
       // Like Calc: rows a filter (or the user) hid don't count.
       if (sheet.findRow(row)?.hidden) continue;
-      for (let c = left; c <= right; c++) {
-        const v = sheet.getValue(row, c);
-        if (v.kind === 'empty') continue;
-        count++;
-        if (v.kind === 'number') {
-          numbers++;
-          sum += v.value;
-        }
+      for (const g of ranges)
+        if (row >= g.top && row <= g.bottom && column >= g.left && column <= g.right) add(cell.value);
+    }
+  } else {
+    for (const g of ranges) {
+      for (let row = g.top; row <= g.bottom; row++) {
+        if (sheet.findRow(row)?.hidden) continue;
+        for (let c = g.left; c <= g.right; c++) add(sheet.getValue(row, c));
       }
     }
   }
@@ -438,6 +470,9 @@ function selectionSummary(app: AppController): string {
   const fmt = (n: number) => n.toLocaleString(app.session.locale, { maximumFractionDigits: 10 });
   return numbers > 0 ? `Sum ${fmt(sum)}   Average ${fmt(sum / numbers)}   Count ${count}` : `Count ${count}`;
 }
+
+/** Above this many cells the summary waits for the selection to settle instead of following each move. */
+const SUMMARY_SYNC_CELLS = 20_000;
 
 function Overlays({ app, catalog }: { readonly app: AppController; readonly catalog: CommandCatalog }) {
   const s = app.session;

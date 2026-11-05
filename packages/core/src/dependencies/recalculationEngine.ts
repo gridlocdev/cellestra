@@ -241,6 +241,21 @@ export class RecalculationEngine {
     if (model?.isFormula) model.value = value;
   }
 
+  /** The nodes grouped by sheet, then column, for finding the formulas inside a large range. */
+  #nodesBySheetAndColumn(nodes: Set<string>): Map<string, Map<number, [string, number][]>> {
+    const out = new Map<string, Map<number, [string, number][]>>();
+    for (const node of nodes) {
+      const ref = this.#refOf(node);
+      if (!ref) continue;
+      let columns = out.get(ref.sheet.toLowerCase());
+      if (!columns) out.set(ref.sheet.toLowerCase(), (columns = new Map()));
+      let list = columns.get(ref.column);
+      if (!list) columns.set(ref.column, (list = []));
+      list.push([node, ref.row]);
+    }
+    return out;
+  }
+
   /** Kahn's algorithm over the node set; nodes left in a cycle come back as `circular`. */
   #topologicalSort(nodes: Set<string>): { ordered: string[]; circular: string[] } {
     const inDegree = new Map<string, number>();
@@ -249,18 +264,49 @@ export class RecalculationEngine {
       for (const p of this.#graph.precedentKeys(node)) if (nodes.has(p)) degree++;
       inDegree.set(node, degree);
     }
+    // A range too large for the graph keeps only its corners there; add the edges from the
+    // formulas inside it, so a SUM over a whole column runs after the formulas in that column.
+    const rangeDependents = new Map<string, string[]>();
+    let bySheet: Map<string, Map<number, [key: string, row: number][]>> | null = null;
+    for (const [lk, ranges] of this.#largeRangePrecedents) {
+      if (!nodes.has(lk)) continue;
+      bySheet ??= this.#nodesBySheetAndColumn(nodes);
+      const direct = new Set(this.#graph.precedentKeys(lk));
+      const seen = new Set<string>();
+      for (const r of ranges) {
+        const columns = bySheet.get(r.sheet.toLowerCase());
+        if (!columns) continue;
+        const visit = (column: number): void => {
+          for (const [node, row] of columns.get(column) ?? []) {
+            if (row < r.top || row > r.bottom || direct.has(node) || seen.has(node)) continue;
+            seen.add(node);
+            let list = rangeDependents.get(node);
+            if (!list) rangeDependents.set(node, (list = []));
+            list.push(lk);
+            inDegree.set(lk, inDegree.get(lk)! + 1);
+          }
+        };
+        if (r.right - r.left + 1 > columns.size) {
+          for (const column of columns.keys()) if (column >= r.left && column <= r.right) visit(column);
+        } else {
+          for (let column = r.left; column <= r.right; column++) visit(column);
+        }
+      }
+    }
     const ready: string[] = [];
     for (const [node, degree] of inDegree) if (degree === 0) ready.push(node);
     const ordered: string[] = [];
+    const release = (dk: string): void => {
+      const degree = inDegree.get(dk);
+      if (degree === undefined) return;
+      inDegree.set(dk, degree - 1);
+      if (degree - 1 === 0) ready.push(dk);
+    };
     for (let i = 0; i < ready.length; i++) {
       const node = ready[i]!;
       ordered.push(node);
-      for (const [dk] of this.#graph.dependentEntries(node)) {
-        const degree = inDegree.get(dk);
-        if (degree === undefined) continue;
-        inDegree.set(dk, degree - 1);
-        if (degree - 1 === 0) ready.push(dk);
-      }
+      for (const [dk] of this.#graph.dependentEntries(node)) release(dk);
+      for (const dk of rangeDependents.get(node) ?? []) release(dk);
     }
     const circular: string[] = [];
     if (ordered.length !== nodes.size) {

@@ -13,12 +13,13 @@ import {
   SERIES_PALETTE,
   stackAreas,
   stackBars,
+  stackLines,
   valueExtent,
   valuePos,
   wedgePath,
 } from '../src/charts/chartMath.ts';
 import { barRects, buildChartScene, type Shape } from '../src/charts/chartScene.ts';
-import { chartFamily } from '../src/charts/ChartSheetView.tsx';
+import { chartFamily, drawAsOptions } from '../src/charts/ChartSheetView.tsx';
 
 const S = (values: number[], type: ChartType = 'column', name = 's'): ResolvedSeries => ({
   name,
@@ -274,5 +275,64 @@ describe('niceTicks at the edges of the double range', () => {
   it('handles a span below the precision of its magnitude', () => {
     const t = niceTicks(1e20, 1e20 + 1);
     expect(t.values.every(Number.isFinite)).toBe(true);
+  });
+});
+
+describe('lines on stacked charts', () => {
+  it('stack on the lines before them, and as shares in 100% stacking', () => {
+    const lines = [S([1, 2], 'line'), S([3, 2], 'line')];
+    expect(stackLines(lines, 2, false, false)).toEqual([
+      [1, 2],
+      [3, 2],
+    ]);
+    expect(stackLines(lines, 2, true, false)).toEqual([
+      [1, 2],
+      [4, 4],
+    ]);
+    expect(stackLines(lines, 2, true, true)).toEqual([
+      [0.25, 0.5],
+      [1, 1],
+    ]);
+  });
+
+  it('stay inside a 100% stacked chart', () => {
+    const c = chart([S([10, 20], 'column'), S([30, 40], 'line')], { stacking: 'percent' });
+    const circles = buildChartScene(c, 400, 300).shapes.filter(
+      (sh): sh is Extract<Shape, { kind: 'circle' }> => sh.kind === 'circle',
+    );
+    expect(circles.length).toBe(2);
+    const rects = buildChartScene(c, 400, 300).shapes.filter(
+      (sh): sh is Extract<Shape, { kind: 'rect' }> =>
+        sh.kind === 'rect' && sh.fill === null && sh.stroke === 'axis',
+    );
+    const plot = rects[0]!;
+    for (const p of circles) {
+      expect(p.cy).toBeGreaterThanOrEqual(plot.y - 0.01);
+      expect(p.cy).toBeLessThanOrEqual(plot.y + plot.height + 0.01);
+    }
+  });
+
+  it('widen the axis for a stacked line total', () => {
+    const c = chart([S([5], 'line'), S([5], 'line')], { stacking: 'stacked' });
+    expect(valueExtent(c, 1, true, false).max).toBe(10);
+  });
+});
+
+describe('Draw as', () => {
+  it('offers only types that share the category axes', () => {
+    expect(drawAsOptions('column', null).map(([t]) => t)).toEqual(['column', 'line', 'area']);
+    expect(drawAsOptions('bar', null).map(([t]) => t)).toEqual(['bar', 'line', 'area']);
+    expect(drawAsOptions('line', 'pie').map(([t]) => t)).toEqual(['column', 'line', 'area', 'pie']);
+  });
+
+  it('draws a series set to an incompatible type as the chart type', () => {
+    const filled = (c: ResolvedChart) =>
+      buildChartScene(c, 400, 300).shapes.filter(
+        (sh) => sh.kind === 'rect' && typeof sh.fill === 'object' && sh.fill !== null,
+      ).length;
+    const mixed = chart([S([1, 2], 'column'), S([3, 4], 'pie')], { type: 'column' });
+    const plain = chart([S([1, 2], 'column'), S([3, 4], 'column')], { type: 'column' });
+    expect(filled(mixed)).toBe(filled(plain));
+    expect(filled(mixed)).toBeGreaterThanOrEqual(4);
   });
 });

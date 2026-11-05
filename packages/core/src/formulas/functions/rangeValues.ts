@@ -11,6 +11,7 @@ export class RangeValues {
   readonly range: CellRange;
   readonly #context: EvaluationContext;
   readonly #sheet: string;
+  #reach: { rows: number; columns: number } | undefined;
 
   constructor(range: CellRange, context: EvaluationContext) {
     this.range = range;
@@ -26,6 +27,37 @@ export class RangeValues {
     return this.range.columnCount;
   }
 
+  /**
+   * How many rows and columns, counted from the range's top-left, can hold a value on its sheet;
+   * past them every cell is empty. Not clamped to the range's own size (SUMIF reshapes its sum
+   * range); Infinity when the context can't tell.
+   */
+  get reach(): { readonly rows: number; readonly columns: number } {
+    if (!this.#reach) {
+      const extent = this.#context.cellExtent?.(this.#sheet);
+      this.#reach =
+        extent === undefined
+          ? { rows: Infinity, columns: Infinity }
+          : extent === null
+            ? { rows: 0, columns: 0 }
+            : {
+                rows: Math.max(0, extent.lastRow - this.range.top + 1),
+                columns: Math.max(0, extent.lastColumn - this.range.left + 1),
+              };
+    }
+    return this.#reach;
+  }
+
+  /** Rows of this range that can hold a value; the rest are empty. */
+  get usedRowCount(): number {
+    return Math.min(this.rowCount, this.reach.rows);
+  }
+
+  /** Columns of this range that can hold a value; the rest are empty. */
+  get usedColumnCount(): number {
+    return Math.min(this.columnCount, this.reach.columns);
+  }
+
   get(rowWithin: number, columnWithin: number): CellValue {
     if (rowWithin < 0 || rowWithin >= this.rowCount || columnWithin < 0 || columnWithin >= this.columnCount) {
       return CellValue.error(CellError.reference('Index outside the range.'));
@@ -36,5 +68,15 @@ export class RangeValues {
   /** Every value in the range, row-major. */
   *values(): Generator<CellValue> {
     for (let r = 0; r < this.rowCount; r++) for (let c = 0; c < this.columnCount; c++) yield this.get(r, c);
+  }
+
+  /**
+   * The values in row-major order, leaving out the empty cells past the sheet's last used row and
+   * column. A whole-column range like A:A reads only as far as the data goes.
+   */
+  *usedValues(): Generator<CellValue> {
+    const rows = this.usedRowCount;
+    const columns = this.usedColumnCount;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < columns; c++) yield this.get(r, c);
   }
 }
