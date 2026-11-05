@@ -1,7 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from 'electron';
 import type { MenuItemConstructorOptions } from 'electron';
-import { watch, type FSWatcher } from 'node:fs';
-import { open, readFile, rename, stat, unlink } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
@@ -12,6 +11,7 @@ import {
   type NativeMenuItem,
   type SavedFile,
 } from './bridge.ts';
+import { isAppUrl, isSpreadsheetPath, PathGrants, spreadsheetArgs, watchFile, writeAtomic } from './files.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.join(here, 'web');
@@ -19,6 +19,8 @@ const FILTERS = [
   { name: 'Spreadsheets', extensions: ['ods', 'csv', 'tsv'] },
   { name: 'OpenDocument Spreadsheet', extensions: ['ods'] },
 ];
+/** How long the renderer has to acknowledge a close request before we offer to force it. */
+const CLOSE_ACK_MS = 3000;
 
 // The web client loads from app://cellestra/ — a standard, secure scheme so fetch, modules and
 // CSP behave like https, without file:// quirks.
@@ -26,25 +28,37 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
-/** Per-window state the main process must know: allow-close flag, file watcher. */
+/** Per-window state the main process must know: allow-close flag, file watcher, renderer health. */
 interface WindowState {
   allowClose: boolean;
-  watcher: FSWatcher | null;
-  watchedPath: string | null;
-  /** Debounce for watcher events; cleared with the watcher so it never fires into a closed window. */
-  watchTimer: NodeJS.Timeout | null;
+  stopWatch: (() => void) | null;
+  /** Running while a close request waits for the renderer's ack. */
+  closeTimer: NodeJS.Timeout | null;
+  /** The renderer crashed or was killed: nothing is left to ask about unsaved changes. */
+  rendererGone: boolean;
+  unresponsive: boolean;
 }
 const windows = new Map<number, WindowState>();
+/** Files the renderer may touch: picked in a dialog, opened by the OS, or opened before. */
+const grants = new PathGrants(path.join(app.getPath('userData'), 'granted-files.json'));
+/** mtime we last read or wrote per path, so the watcher can ignore our own saves. */
+const knownMtime = new Map<string, number>();
+/** Set by Cmd+Q / app.quit() so the last window closing ends the app on macOS too. */
+let quitting = false;
+
+function grantAll(paths: readonly string[]): string[] {
+  for (const p of paths) grants.grant(p);
+  return [...paths];
+}
+
 /** Files asked for before a window was ready (macOS open-file at launch, argv). */
-const pendingOpen: string[] = process.argv
-  .slice(app.isPackaged ? 1 : 2)
-  .filter((a) => /\.(ods|csv|tsv)$/i.test(a));
+const pendingOpen: string[] = grantAll(
+  spreadsheetArgs(process.argv.slice(app.isPackaged ? 1 : 2), process.cwd()),
+);
 
 function stopWatching(state: WindowState): void {
-  state.watcher?.close();
-  state.watcher = null;
-  if (state.watchTimer) clearTimeout(state.watchTimer);
-  state.watchTimer = null;
+  state.stopWatch?.();
+  state.stopWatch = null;
 }
 
 function createWindow(): BrowserWindow {
@@ -65,18 +79,44 @@ function createWindow(): BrowserWindow {
       spellcheck: false,
     },
   });
-  const state: WindowState = { allowClose: false, watcher: null, watchedPath: null, watchTimer: null };
+  const state: WindowState = {
+    allowClose: false,
+    stopWatch: null,
+    closeTimer: null,
+    rendererGone: false,
+    unresponsive: false,
+  };
   windows.set(win.id, state);
 
   win.once('ready-to-show', () => win.show());
   win.on('close', (e) => {
-    if (state.allowClose) return;
+    // A dead renderer cannot answer; its last recovery snapshot is all there is to keep.
+    if (state.allowClose || state.rendererGone) return;
     e.preventDefault();
+    if (state.unresponsive) return void offerForceClose(win, state);
+    if (state.closeTimer) return; // already asked; waiting for the renderer
     win.webContents.send(Channels.closeRequested);
+    state.closeTimer = setTimeout(() => {
+      state.closeTimer = null;
+      void offerForceClose(win, state);
+    }, CLOSE_ACK_MS);
   });
   win.on('closed', () => {
     stopWatching(state);
+    if (state.closeTimer) clearTimeout(state.closeTimer);
     windows.delete(win.id);
+  });
+  win.on('unresponsive', () => (state.unresponsive = true));
+  win.on('responsive', () => (state.unresponsive = false));
+  win.webContents.on('render-process-gone', () => {
+    state.rendererGone = true;
+    stopWatching(state);
+    // A close or quit was waiting on this renderer: finish it.
+    if (state.closeTimer || quitting) {
+      if (state.closeTimer) clearTimeout(state.closeTimer);
+      state.closeTimer = null;
+      win.destroy();
+    }
   });
   // Links (cell hyperlinks) open in the user's browser, never inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -84,7 +124,7 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith('app://')) e.preventDefault();
+    if (!isAppUrl(url)) e.preventDefault();
   });
   win.webContents.on('did-finish-load', () => {
     for (const p of pendingOpen.splice(0)) win.webContents.send(Channels.openFile, p);
@@ -94,17 +134,68 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
+/** The renderer is hung or never answered the close request: let the user force it. */
+async function offerForceClose(win: BrowserWindow, state: WindowState): Promise<void> {
+  if (win.isDestroyed()) return;
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning',
+    buttons: ['Close Anyway', 'Wait'],
+    defaultId: 1,
+    cancelId: 1,
+    message: 'Cellestra is not responding.',
+    detail: 'Closing now loses changes made since the last recovery snapshot.',
+  });
+  if (win.isDestroyed()) return;
+  if (response === 0) {
+    state.allowClose = true;
+    win.destroy();
+  } else quitting = false;
+}
+
 function fromEvent(e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): BrowserWindow | null {
   return BrowserWindow.fromWebContents(e.sender);
 }
 
+/** Only our own page may use the bridge. */
+function trusted(e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
+  return isAppUrl(e.senderFrame?.url);
+}
+
+function forbidden(): never {
+  throw new Error('Forbidden');
+}
+
 async function readNative(p: string): Promise<NativeFile> {
   const [bytes, s] = await Promise.all([readFile(p), stat(p)]);
+  grants.grant(p);
+  knownMtime.set(p, s.mtimeMs);
   app.addRecentDocument(p);
   return { path: p, name: path.basename(p), bytes: new Uint8Array(bytes), modified: s.mtimeMs };
 }
 
-/** Atomic save: temp file beside the target, fsync, rename. Refuses if the file changed since opened. */
+/**
+ * The renderer asks for a path we never handed it (an old recent, or a compromised page): open it
+ * only if it exists and the user agrees.
+ */
+async function allowRead(win: BrowserWindow | null, p: unknown): Promise<string> {
+  if (grants.has(p)) return p;
+  if (!isSpreadsheetPath(p) || !path.isAbsolute(p)) forbidden();
+  await stat(p); // ENOENT reaches the renderer as "not found"
+  const opts = {
+    type: 'question' as const,
+    buttons: ['Open', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    message: `Open “${path.basename(p)}”?`,
+    detail: p,
+  };
+  const { response } = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+  if (response !== 0) throw new Error('Opening the file was cancelled');
+  grants.grant(p);
+  return p;
+}
+
+/** Atomic save that keeps mode and hard links. Refuses if the file changed since opened. */
 async function writeNative(
   p: string,
   bytes: Uint8Array,
@@ -116,21 +207,10 @@ async function writeNative(
     if (s && Math.abs(s.mtimeMs - expectedModified) > 1)
       throw new Error(`${CONFLICT}: the file changed on disk`);
   }
-  const tmp = path.join(path.dirname(p), `.${path.basename(p)}.${process.pid}.${Date.now()}.tmp`);
-  try {
-    const h = await open(tmp, 'wx', 0o644);
-    try {
-      await h.writeFile(bytes);
-      await h.sync();
-    } finally {
-      await h.close();
-    }
-    await rename(tmp, p);
-  } catch (e) {
-    await unlink(tmp).catch(() => {});
-    throw e;
-  }
+  await writeAtomic(p, bytes);
   const s = await stat(p);
+  grants.grant(p);
+  knownMtime.set(p, s.mtimeMs);
   app.addRecentDocument(p);
   return { path: p, name: path.basename(p), modified: s.mtimeMs };
 }
@@ -160,6 +240,7 @@ function toTemplate(items: readonly NativeMenuItem[], win: BrowserWindow): MenuI
 
 function registerIpc(): void {
   ipcMain.handle(Channels.openDialog, async (e) => {
+    if (!trusted(e)) forbidden();
     const win = fromEvent(e);
     const result = win
       ? await dialog.showOpenDialog(win, { properties: ['openFile'], filters: FILTERS })
@@ -167,79 +248,109 @@ function registerIpc(): void {
     const p = result.filePaths[0];
     return result.canceled || !p ? null : readNative(p);
   });
-  ipcMain.handle(Channels.readFile, (_e, p: string) => readNative(p));
+  ipcMain.handle(Channels.readFile, async (e, p: unknown) => {
+    if (!trusted(e)) forbidden();
+    return readNative(await allowRead(fromEvent(e), p));
+  });
   ipcMain.handle(
     Channels.saveFile,
-    (_e, p: string, bytes: Uint8Array, expected: number | null, force: boolean) =>
-      writeNative(p, bytes, expected, force),
+    (e, p: unknown, bytes: Uint8Array, expected: number | null, force: boolean) => {
+      if (!trusted(e) || !grants.has(p)) forbidden();
+      return writeNative(p, bytes, expected, force);
+    },
   );
   ipcMain.handle(Channels.saveDialog, async (e, suggestedName: string, bytes: Uint8Array) => {
+    if (!trusted(e)) forbidden();
     const win = fromEvent(e);
-    const opts = { defaultPath: suggestedName, filters: FILTERS };
+    const opts = { defaultPath: String(suggestedName), filters: FILTERS };
     const result = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
-    return result.canceled || !result.filePath ? null : writeNative(result.filePath, bytes, null, true);
+    if (result.canceled || !result.filePath) return null;
+    if (!isSpreadsheetPath(result.filePath)) throw new Error('Save as .ods, .csv, or .tsv');
+    return writeNative(result.filePath, bytes, null, true);
   });
   ipcMain.on(Channels.setDocumentState, (e, s: DocumentState) => {
     const win = fromEvent(e);
-    if (!win) return;
+    if (!win || !trusted(e)) return;
     win.setTitle(s.title);
     win.setDocumentEdited(s.dirty);
-    if (process.platform === 'darwin') win.setRepresentedFilename(s.path ?? '');
+    if (process.platform === 'darwin') win.setRepresentedFilename(grants.has(s.path) ? s.path : '');
   });
   ipcMain.on(Channels.setMenu, (e, items: readonly NativeMenuItem[]) => {
     const win = fromEvent(e);
-    if (!win) return;
+    if (!win || !trusted(e)) return;
     const template = toTemplate(items, win);
     if (process.platform === 'darwin') template.unshift({ role: 'appMenu' });
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
   });
+  ipcMain.on(Channels.closeAck, (e) => {
+    const win = fromEvent(e);
+    const state = win && windows.get(win.id);
+    if (!state || !trusted(e)) return;
+    if (state.closeTimer) clearTimeout(state.closeTimer);
+    state.closeTimer = null;
+  });
   ipcMain.on(Channels.confirmClose, (e) => {
     const win = fromEvent(e);
     const state = win && windows.get(win.id);
-    if (!win || !state) return;
+    if (!win || !state || !trusted(e)) return;
     state.allowClose = true;
     win.close();
   });
-  ipcMain.on(Channels.watch, (e, p: string | null) => {
+  ipcMain.on(Channels.cancelClose, (e) => {
+    if (trusted(e)) quitting = false;
+  });
+  ipcMain.on(Channels.watch, (e, p: unknown) => {
     const win = fromEvent(e);
     const state = win && windows.get(win.id);
-    if (!win || !state) return;
+    if (!win || !state || !trusted(e)) return;
     stopWatching(state);
-    state.watchedPath = p;
-    if (!p) return;
-    try {
-      state.watcher = watch(p, () => {
-        // Atomic saves arrive as several events; debounce, and let the renderer compare mtimes.
-        if (state.watchTimer) clearTimeout(state.watchTimer);
-        state.watchTimer = setTimeout(() => {
-          state.watchTimer = null;
+    if (!grants.has(p)) return;
+    // Watch the folder, so the watch survives atomic replaces (ours and other apps').
+    state.stopWatch = watchFile(p, () => {
+      void stat(p)
+        .then((s) => {
+          const known = knownMtime.get(p);
+          if (known !== undefined && Math.abs(s.mtimeMs - known) <= 1) return; // our own save
           if (!win.isDestroyed()) win.webContents.send(Channels.externalChange, p);
-        }, 300);
-      });
-    } catch {
-      state.watcher = null;
-    }
+        })
+        .catch(() => {}); // gone for now (mid-replace or deleted): a later event will tell
+    });
   });
+}
+
+/** Open files in the first window, or remember them until one has loaded. */
+function openInWindow(paths: readonly string[]): void {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (win && !win.webContents.isLoading()) {
+    for (const p of paths) win.webContents.send(Channels.openFile, p);
+    return;
+  }
+  pendingOpen.push(...paths);
+  if (!win && app.isReady()) createWindow();
 }
 
 app.on('open-file', (e, p) => {
   e.preventDefault();
-  const win = BrowserWindow.getAllWindows()[0];
-  if (win && !win.webContents.isLoading()) win.webContents.send(Channels.openFile, p);
-  else pendingOpen.push(p);
+  openInWindow(grantAll([path.resolve(p)]));
 });
 
 const single = app.requestSingleInstanceLock();
 if (!single) app.quit();
-app.on('second-instance', (_e, argv) => {
+app.on('second-instance', (_e, argv, workingDirectory) => {
+  const files = grantAll(spreadsheetArgs(argv.slice(1), workingDirectory));
   const win = BrowserWindow.getAllWindows()[0];
-  if (!win) return;
-  if (win.isMinimized()) win.restore();
-  win.focus();
-  for (const a of argv.filter((x) => /\.(ods|csv|tsv)$/i.test(x))) win.webContents.send(Channels.openFile, a);
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+  }
+  if (files.length > 0 || !win) openInWindow(files);
 });
 
-void app.whenReady().then(() => {
+app.on('before-quit', () => {
+  quitting = true;
+});
+
+void app.whenReady().then(async () => {
   protocol.handle('app', (req) => {
     const { pathname } = new URL(req.url);
     const file = path.normalize(path.join(webRoot, decodeURIComponent(pathname)));
@@ -247,6 +358,7 @@ void app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   registerIpc();
+  await grants.load();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -254,5 +366,6 @@ void app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  // macOS keeps the app running when its last window closes, except after Cmd+Q.
+  if (process.platform !== 'darwin' || quitting) app.quit();
 });

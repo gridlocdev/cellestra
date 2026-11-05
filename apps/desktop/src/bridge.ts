@@ -44,6 +44,10 @@ export const Channels = {
   setDocumentState: 'cellestra:document-state',
   setMenu: 'cellestra:set-menu',
   confirmClose: 'cellestra:confirm-close',
+  /** The renderer kept the window open (the user cancelled the unsaved-changes prompt). */
+  cancelClose: 'cellestra:cancel-close',
+  /** Sent by the preload as soon as a close request arrives: proves the renderer is alive. */
+  closeAck: 'cellestra:close-ack',
   watch: 'cellestra:watch',
   // main → renderer
   command: 'cellestra:command',

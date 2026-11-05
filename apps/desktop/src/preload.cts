@@ -27,9 +27,15 @@ contextBridge.exposeInMainWorld('cellestraNative', {
   setDocumentState: (state: DocumentState): void => ipcRenderer.send('cellestra:document-state', state),
   setMenu: (menu: readonly NativeMenuItem[]): void => ipcRenderer.send('cellestra:set-menu', menu),
   confirmClose: (): void => ipcRenderer.send('cellestra:confirm-close'),
+  cancelClose: (): void => ipcRenderer.send('cellestra:cancel-close'),
   watch: (path: string | null): void => ipcRenderer.send('cellestra:watch', path),
   onCommand: (cb: (id: string) => void) => on('cellestra:command', cb),
   onOpenFile: (cb: (path: string) => void) => on('cellestra:open-file', cb),
-  onCloseRequested: (cb: () => void) => on('cellestra:close-requested', cb),
+  onCloseRequested: (cb: () => void) =>
+    on('cellestra:close-requested', () => {
+      // Tell the main process the page is alive before it starts asking about unsaved changes.
+      ipcRenderer.send('cellestra:close-ack');
+      cb();
+    }),
   onExternalChange: (cb: (path: string) => void) => on('cellestra:external-change', cb),
 });
