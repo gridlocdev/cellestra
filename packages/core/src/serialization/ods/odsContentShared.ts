@@ -9,8 +9,11 @@ import type { CellRange } from '../../model/cellRange.ts';
 export const PX_PER_INCH = 96.0;
 export const CM_PER_INCH = 2.54;
 
-/** Per sheet name: packed cell key (`cellKey(row, column)`) → the validation rule's name. */
-export type ValidationNames = ReadonlyMap<string, ReadonlyMap<number, string>>;
+/** Per sheet name: each validation rule's target and the name it is written under. */
+export type ValidationNames = ReadonlyMap<
+  string,
+  ReadonlyArray<{ readonly range: CellRange; readonly name: string }>
+>;
 
 /** `$Sheet1.$A$1` or `$Sheet1.$A$1:$Sheet1.$B$2`. */
 export function odfRangeAddress(range: CellRange, fallbackSheet: string): string {
@@ -23,7 +26,17 @@ export function odfRangeAddress(range: CellRange, fallbackSheet: string): string
 
 export function odfCellAddress(address: CellAddress, fallbackSheet: string): string {
   const sheet = address.sheet ?? fallbackSheet;
-  return `$${sheet}.$${address.columnLabel}$${address.rowLabel}`;
+  return `$${odfSheetName(sheet)}.$${address.columnLabel}$${address.rowLabel}`;
+}
+
+/**
+ * A sheet name as an ODF address writes it: bare when it is a plain identifier, otherwise in single
+ * quotes with any quote doubled (`'My Sheet'`, `'It''s'`). An unquoted `$My Sheet.$A$1` is not an
+ * address at all to LibreOffice, so named ranges, validations and filters on it were lost.
+ */
+export function odfSheetName(sheet: string): string {
+  const plain = /^[\p{L}_][\p{L}\p{N}_]*$/u.test(sheet) && !/^[A-Za-z]{1,3}\d+$/.test(sheet);
+  return plain ? sheet : `'${sheet.replaceAll("'", "''")}'`;
 }
 
 export function pxToCm(px: number): number {

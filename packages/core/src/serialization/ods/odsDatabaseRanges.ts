@@ -13,7 +13,17 @@ import { XmlElement } from '../../xml/index.ts';
 import { odfRangeAddress } from './odsContentShared.ts';
 import { CellestraNs, OdsXmlNames as N, Table } from './odsXmlNames.ts';
 
-const ANONYMOUS_DATABASE_RANGE_NAME = '__Anonymous_Sheet__';
+/**
+ * LibreOffice names a sheet's anonymous AutoFilter range `__Anonymous_Sheet_DB__<sheet index>`, one
+ * per sheet; a single shared name made every sheet after the first collide with the first on open.
+ * Older Cellestra files wrote the bare `__Anonymous_Sheet__`, still read as the same thing.
+ */
+const ANONYMOUS_DATABASE_RANGE_PREFIX = '__Anonymous_Sheet_DB__';
+const LEGACY_ANONYMOUS_DATABASE_RANGE_NAME = '__Anonymous_Sheet__';
+
+function isAnonymousDatabaseRange(name: string): boolean {
+  return name.startsWith(ANONYMOUS_DATABASE_RANGE_PREFIX) || name === LEGACY_ANONYMOUS_DATABASE_RANGE_NAME;
+}
 
 const CONDITION_OPERATORS: ReadonlyArray<readonly [prefix: string, operator: string]> = [
   ['>=', '>='],
@@ -33,7 +43,7 @@ const CONDITION_OPERATORS: ReadonlyArray<readonly [prefix: string, operator: str
  */
 export function addDatabaseRanges(spreadsheet: XmlElement, workbook: Workbook): void {
   const ranges: XmlElement[] = [];
-  for (const sheet of workbook.worksheets) {
+  for (const [sheetIndex, sheet] of workbook.worksheets.entries()) {
     for (const t of sheet.tables) {
       const element = writeDatabaseRange(
         sheet.name,
@@ -54,7 +64,7 @@ export function addDatabaseRanges(spreadsheet: XmlElement, workbook: Workbook): 
       ranges.push(
         writeDatabaseRange(
           sheet.name,
-          null,
+          `${ANONYMOUS_DATABASE_RANGE_PREFIX}${sheetIndex}`,
           sheet.activeFilter,
           hasHeader,
           sheet.activeFilterSpec,
@@ -70,7 +80,7 @@ export function addDatabaseRanges(spreadsheet: XmlElement, workbook: Workbook): 
 
 function writeDatabaseRange(
   sheetName: string,
-  name: string | null,
+  name: string,
   range: CellRange,
   hasHeader: boolean,
   filter: FilterSpec | null,
@@ -80,8 +90,7 @@ function writeDatabaseRange(
     .setAttr(Table(N.targetRangeAddress), odfRangeAddress(range.withSheet(sheetName), sheetName))
     .setAttr(Table(N.displayFilterButtons), 'true')
     .setAttr(Table(N.containsHeader), hasHeader ? 'true' : 'false')
-    // table:name is required by ODF; anonymous sheet AutoFilters get a stable sentinel.
-    .setAttr(Table('name'), name ?? ANONYMOUS_DATABASE_RANGE_NAME);
+    .setAttr(Table('name'), name);
 
   if (sort && sort.levels.length > 0) element.add(writeSort(sort, range.left));
   if (filter && filter.columns.size > 0) element.add(writeFilter(filter, range.left));
@@ -120,17 +129,26 @@ function writeFilter(filter: FilterSpec, rangeLeft: number): XmlElement {
 
     if (columnFilter.condition) {
       const [op, value] = splitCondition(columnFilter.condition);
-      and.add(condition(field, op, value));
+      and.add(condition(field, op, value, isNumericCondition(op, value)));
     }
   }
   return new XmlElement(Table(N.filter), and);
 }
 
-function condition(field: number, op: string, value: string): XmlElement {
-  return new XmlElement(Table(N.filterCondition))
+function condition(field: number, op: string, value: string, numeric = false): XmlElement {
+  const element = new XmlElement(Table(N.filterCondition))
     .setAttr(Table(N.fieldNumber), field)
     .setAttr(Table(N.operator), op)
     .setAttr(Table('value'), value);
+  // Without a data type a condition compares as text, so `>5` matched "6" but not 10 ("10" < "5").
+  if (numeric) element.setAttr(Table('data-type'), 'number');
+  return element;
+}
+
+const NUMERIC_OPERATORS: ReadonlySet<string> = new Set(['<', '>', '<=', '>=', '=', '!=']);
+
+function isNumericCondition(op: string, value: string): boolean {
+  return NUMERIC_OPERATORS.has(op) && /^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*$/.test(value);
 }
 
 /** Split a SUMIF-style criteria string (`>5`, `<=10`, `<>x`, plain `text`) into an ODF operator + value. */
@@ -176,7 +194,7 @@ function readDatabaseRange(element: XmlElement, workbook: Workbook): void {
   const filter = readFilter(element, localRange.left, hasHeader);
 
   const name = element.attr(Table('name'));
-  if (name !== null && name !== ANONYMOUS_DATABASE_RANGE_NAME) {
+  if (name !== null && !isAnonymousDatabaseRange(name)) {
     const hasHeaderColumn = element.attr(CellestraNs(N.headerColumn)) === 'true';
     const hasBandedRows = element.attr(CellestraNs(N.bandedRows)) === 'true';
 

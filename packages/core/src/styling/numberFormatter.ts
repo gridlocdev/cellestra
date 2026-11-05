@@ -5,7 +5,7 @@ import type { CellValue } from '../values/cellValue.ts';
 
 // ---- tokens -----------------------------------------------------------------
 
-type Token =
+export type FormatToken =
   | { readonly t: 'literal'; readonly text: string }
   | { readonly t: 'digit'; readonly ch: '0' | '#' | '?' }
   | { readonly t: 'point' }
@@ -18,21 +18,21 @@ type Token =
   | { readonly t: 'ampm'; readonly long: boolean; readonly lower: boolean }
   | { readonly t: 'elapsed'; readonly unit: 'h' | 'm' | 's'; readonly length: number };
 
-type DateField = 'y' | 'M' | 'd' | 'h' | 'm' | 's' | 'f';
+export type DateField = 'y' | 'M' | 'd' | 'h' | 'm' | 's' | 'f';
 
-interface Condition {
+export interface Condition {
   readonly op: '<' | '<=' | '>' | '>=' | '=' | '<>';
   readonly value: number;
 }
 
-interface Section {
-  readonly tokens: readonly Token[];
+export interface Section {
+  readonly tokens: readonly FormatToken[];
   readonly condition: Condition | null;
   readonly isDate: boolean;
 }
 
 /** Split a code on `;` outside quotes, brackets and escapes. */
-function splitSections(code: string): string[] {
+export function splitSections(code: string): string[] {
   const sections: string[] = [];
   let current = '';
   for (let i = 0; i < code.length; i++) {
@@ -66,7 +66,7 @@ const runLength = (s: string, i: number, c: string): number => {
 };
 
 /** Parse a bracket's content: a colour/locale/condition/elapsed token. */
-function bracket(inside: string, tokens: Token[]): Condition | null {
+function bracket(inside: string, tokens: FormatToken[]): Condition | null {
   const elapsed = /^(h+|m+|s+)$/i.exec(inside);
   if (elapsed) {
     const unit = inside[0]!.toLowerCase() as 'h' | 'm' | 's';
@@ -85,8 +85,9 @@ function bracket(inside: string, tokens: Token[]): Condition | null {
   return null;
 }
 
-function tokenize(code: string): Section {
-  const tokens: Token[] = [];
+/** Tokenize one section of a format code (the `.ods` writer maps date and time tokens to ODF). */
+export function tokenize(code: string): Section {
+  const tokens: FormatToken[] = [];
   let condition: Condition | null = null;
   const lower = code.toLowerCase();
   for (let i = 0; i < code.length; i++) {
@@ -161,10 +162,10 @@ function tokenize(code: string): Section {
  * `m`/`mm` is minutes when the nearest date token before it is an hour, or the nearest after it is
  * seconds (separators and literals in between are skipped); otherwise it is the month.
  */
-function resolveMinutes(tokens: Token[]): void {
-  const isTime = (tk: Token | undefined, field: 'h' | 's'): boolean =>
+function resolveMinutes(tokens: FormatToken[]): void {
+  const isTime = (tk: FormatToken | undefined, field: 'h' | 's'): boolean =>
     !!tk && ((tk.t === 'date' && tk.field === field) || (tk.t === 'elapsed' && tk.unit === field));
-  const nearest = (from: number, step: number): Token | undefined => {
+  const nearest = (from: number, step: number): FormatToken | undefined => {
     for (let j = from; j >= 0 && j < tokens.length; j += step) {
       const tk = tokens[j]!;
       if (tk.t === 'date' || tk.t === 'elapsed' || tk.t === 'ampm') return tk;
@@ -215,13 +216,13 @@ function pickSection(sections: readonly Section[], n: number): { section: Sectio
 
 // ---- numbers ----------------------------------------------------------------
 
-const placeholder = (tokens: readonly Token[], i: number): string => (tokens[i] as { ch: string }).ch;
+const placeholder = (tokens: readonly FormatToken[], i: number): string => (tokens[i] as { ch: string }).ch;
 
 /** Fill digit placeholders right to left from `digits`; the leftmost one takes any overflow. */
 function assignRightToLeft(
   digits: string,
   idxs: readonly number[],
-  tokens: readonly Token[],
+  tokens: readonly FormatToken[],
   out: Map<number, string>,
 ): void {
   const n = idxs.length;
@@ -240,7 +241,7 @@ const groupDigits = (digits: string, sep: string): string => digits.replace(/\B(
 
 function formatNumberSection(
   abs: number,
-  tokens: readonly Token[],
+  tokens: readonly FormatToken[],
   info: LocaleInfo,
 ): { text: string; nonZero: boolean } {
   const pointAt = tokens.findIndex((tk) => tk.t === 'point');
@@ -384,7 +385,7 @@ function formatNumberSection(
 
 const pad = (n: number, width: number): string => String(n).padStart(width, '0');
 
-function formatDateSection(serial: number, tokens: readonly Token[], info: LocaleInfo): string | null {
+function formatDateSection(serial: number, tokens: readonly FormatToken[], info: LocaleInfo): string | null {
   const hasTime = tokens.some(
     (tk) => tk.t === 'elapsed' || tk.t === 'ampm' || (tk.t === 'date' && 'hmsf'.includes(tk.field)),
   );

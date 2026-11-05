@@ -1,6 +1,6 @@
 import { Defaults } from '../../defaults.ts';
 import { Workbook } from '../../model/workbook.ts';
-import { parseXml } from '../../xml/index.ts';
+import { parseXml, tryParseXml } from '../../xml/index.ts';
 import { readContentXml } from './odsContentRead.ts';
 import { OdsPackage } from './odsPackage.ts';
 import { OdsSupportXml } from './odsSupportXml.ts';
@@ -32,7 +32,11 @@ export const OdsReader = {
     const contentXml = pkg.getText(N.contentPart);
     if (contentXml !== null) {
       const document = parseXml(contentXml, { preserveWhitespace: true });
-      readContentXml(document, workbook, pkg.foreignSpreadsheetChildren, pkg);
+      // styles.xml holds the common cell styles and, in LibreOffice files, many data styles.
+      const stylesXml = pkg.getText(N.stylesPart);
+      // Whitespace is kept: a data style's `<number:text> </number:text>` is the space in "d mmmm".
+      const styles = stylesXml === null ? null : tryParseXml(stylesXml, { preserveWhitespace: true });
+      readContentXml(document, workbook, pkg.foreignSpreadsheetChildren, pkg, styles);
     }
 
     // A valid spreadsheet always has at least one sheet.

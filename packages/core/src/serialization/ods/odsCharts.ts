@@ -4,7 +4,7 @@ import type { Worksheet } from '../../model/worksheet.ts';
 import { tryParseXml, XmlElement } from '../../xml/index.ts';
 import { formatUpTo3 } from './odsContentShared.ts';
 import type { OdsPackage } from './odsPackage.ts';
-import { Draw, Svg, Table, Xlink } from './odsXmlNames.ts';
+import { Draw, Office, Svg, Table, Xlink } from './odsXmlNames.ts';
 
 /**
  * The spreadsheet side of chart-sheet serialization: embeds each chart sheet's chart as an ODF
@@ -80,11 +80,13 @@ export const OdsCharts = {
   },
 
   /**
-   * If `table` embeds a chart object, parse it from `pkg` and attach it to `sheet` as a chart
-   * sheet. Does nothing when there is no embedded chart or it does not parse.
+   * If `table` is a chart sheet — it embeds a chart object and holds no data of its own — parse the
+   * chart from `pkg`, attach it to `sheet`, and return the object's href. Returns null otherwise:
+   * a chart object in a sheet with data is an embedded chart, preserved as a shape, and must not
+   * turn the sheet into a chart sheet (which would drop its cells on the next save).
    */
-  readChart(table: XmlElement, pkg: OdsPackage | null, sheet: Worksheet): void {
-    if (!pkg) return;
+  readChartSheet(table: XmlElement, pkg: OdsPackage | null, sheet: Worksheet): string | null {
+    if (!pkg) return null;
 
     let reference: string | null = null;
     for (const object of table.descendants(Draw('object'))) {
@@ -94,21 +96,35 @@ export const OdsCharts = {
         break;
       }
     }
-    if (reference === null) return;
+    if (reference === null) return null;
 
-    // "./Object 1" or "Object 1/" → "Object 1".
-    const dir = reference.replace(/^\.+/, '').replace(/^\/+|\/+$/g, '');
+    for (const cell of table.descendants(Table('table-cell'))) {
+      if (cell.attr(Office('value-type')) !== null || cell.attr(Table('formula')) !== null) return null;
+    }
+
+    const dir = objectDirectory(reference);
     const xml = pkg.getText(`${dir}/content.xml`);
-    if (xml === null) return;
+    if (xml === null) return null;
 
     const doc = tryParseXml(xml, { preserveWhitespace: false });
     const chart = ChartDocument.parse(doc?.root ?? null);
-    if (!chart) return;
+    if (!chart) return null;
 
     chart.objectName = dir;
     sheet.chart = chart;
+    return reference;
+  },
+
+  /** True when `element` holds a `draw:object` pointing at `href`. */
+  containsObject(element: XmlElement, href: string): boolean {
+    return element.descendants(Draw('object')).some((o) => o.attr(Xlink('href')) === href);
   },
 } as const;
+
+/** "./Object 1" or "Object 1/" → "Object 1". */
+function objectDirectory(reference: string): string {
+  return reference.replace(/^\.+/, '').replace(/^\/+|\/+$/g, '');
+}
 
 function cm(value: number): string {
   return formatUpTo3(value) + 'cm';

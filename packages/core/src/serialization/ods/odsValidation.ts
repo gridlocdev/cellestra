@@ -8,12 +8,11 @@ import {
 import { OpenFormulaTranslator } from '../../formulas/openFormulaTranslator.ts';
 import { CellAddress } from '../../model/cellAddress.ts';
 import { CellRange } from '../../model/cellRange.ts';
-import { cellKey } from '../../model/sheetDimensions.ts';
 import type { Workbook } from '../../model/workbook.ts';
 import { roundTripNumber } from '../../values/cellValue.ts';
 import { XmlElement } from '../../xml/index.ts';
-import { parseInvariantFloat } from './mapping/odsCellStyles.ts';
 import { odfCellAddress, odfRangeAddress, type ValidationNames } from './odsContentShared.ts';
+import { OdsPreserved } from './odsPreserved.ts';
 import { OdsXmlNames as N, Table, Text } from './odsXmlNames.ts';
 
 // ---- table:content-validation (data validation, PRD §8.13) -----------------
@@ -26,20 +25,20 @@ import { OdsXmlNames as N, Table, Text } from './odsXmlNames.ts';
  * `message-type`. Writes no block when nothing is validated (PRD §8.13).
  */
 export function addContentValidations(spreadsheet: XmlElement, workbook: Workbook): ValidationNames {
-  const perSheet = new Map<string, Map<number, string>>();
+  const perSheet = new Map<string, Array<{ range: CellRange; name: string }>>();
   const container = new XmlElement(Table(N.contentValidations));
   let next = 0;
 
   for (const sheet of workbook.worksheets) {
     if (sheet.validations.length === 0) continue;
-    const cellMap = new Map<number, string>();
+    const targets: Array<{ range: CellRange; name: string }> = [];
     for (const validation of sheet.validations) {
       const name = `val${next++}`;
       container.add(writeContentValidation(name, validation, sheet.name));
-      // Last rule wins on overlap (rules should not overlap).
-      for (const [row, column] of validation.target.positions()) cellMap.set(cellKey(row, column), name);
+      // Later rules win on overlap (rules should not overlap): the writer looks targets up last-first.
+      targets.push({ range: validation.target, name });
     }
-    perSheet.set(sheet.name, cellMap);
+    perSheet.set(sheet.name, targets);
   }
 
   if (container.hasElements) spreadsheet.add(container);
@@ -47,9 +46,16 @@ export function addContentValidations(spreadsheet: XmlElement, workbook: Workboo
 }
 
 function writeContentValidation(name: string, validation: DataValidation, sheetName: string): XmlElement {
-  const element = new XmlElement(Table(N.contentValidation))
-    .setAttr(Table('name'), name)
-    .setAttr(Table(N.condition), buildCondition(validation, sheetName))
+  // A rule read from a file whose condition the model cannot express goes back exactly as it came,
+  // under its new name — its own base cell included, since relative references in the condition
+  // are relative to it.
+  const preserved = OdsPreserved.validation(validation);
+  if (preserved) return preserved.element.clone().setAttr(Table('name'), name);
+
+  const element = new XmlElement(Table(N.contentValidation)).setAttr(Table('name'), name);
+  // "Any value" is the absence of a condition.
+  if (validation.kind !== 'any') element.setAttr(Table(N.condition), buildCondition(validation, sheetName));
+  element
     .setAttr(Table(N.allowEmptyCell), 'true')
     .setAttr(Table(N.baseCellAddress), odfCellAddress(validation.target.topLeft, sheetName));
 
@@ -94,24 +100,24 @@ function buildCondition(validation: DataValidation, sheetName: string): string {
 
   const kindPredicate =
     validation.kind === 'wholeNumber'
-      ? 'of:cell-content-is-whole-number() and '
+      ? 'cell-content-is-whole-number() and '
       : validation.kind === 'decimal'
-        ? 'of:cell-content-is-decimal-number() and '
+        ? 'cell-content-is-decimal-number() and '
         : validation.kind === 'date'
-          ? 'of:cell-content-is-date() and '
+          ? 'cell-content-is-date() and '
           : ''; // TextLength carries its kind in the content() call below
 
-  const content = validation.kind === 'textLength' ? 'of:cell-content-text-length()' : 'of:cell-content()';
+  const content = validation.kind === 'textLength' ? 'cell-content-text-length()' : 'cell-content()';
   const op1 = roundTripNumber(validation.operand1);
   const op2 = roundTripNumber(validation.operand2);
 
   let comparison: string;
   switch (validation.operator) {
     case 'between':
-      comparison = `of:cell-content-is-between(${op1},${op2})`;
+      comparison = `cell-content-is-between(${op1},${op2})`;
       break;
     case 'notBetween':
-      comparison = `of:cell-content-is-not-between(${op1},${op2})`;
+      comparison = `cell-content-is-not-between(${op1},${op2})`;
       break;
     case 'equal':
       comparison = `${content}=${op1}`;
@@ -137,13 +143,14 @@ function buildCondition(validation: DataValidation, sheetName: string): string {
 
   // Text-length between uses the text-length variant of the between predicate.
   if (validation.kind === 'textLength') {
-    if (validation.operator === 'between')
-      comparison = `of:cell-content-text-length-is-between(${op1},${op2})`;
+    if (validation.operator === 'between') comparison = `cell-content-text-length-is-between(${op1},${op2})`;
     else if (validation.operator === 'notBetween')
-      comparison = `of:cell-content-text-length-is-not-between(${op1},${op2})`;
+      comparison = `cell-content-text-length-is-not-between(${op1},${op2})`;
   }
 
-  return kindPredicate + comparison;
+  // The namespace prefix opens the whole condition, once: LibreOffice reads
+  // "of:cell-content-is-whole-number() and of:cell-content-is-between(1,9)" as no condition at all.
+  return 'of:' + kindPredicate + comparison;
 }
 
 // ---- table:content-validation (read side) ----------------------------------
@@ -159,13 +166,23 @@ export interface ValidationRule {
   readonly inputMessage: string | null;
   readonly errorMessage: string | null;
   readonly response: ValidationResponse;
+  /** The original element, when the condition is one the model cannot express. */
+  readonly preserved: XmlElement | null;
 }
 
-/** Per (sheet, rule name): the cells that referenced the rule. Keyed `sheet\u0000name`. */
-export type ValidationCells = Map<
-  string,
-  { sheet: string; name: string; positions: Array<[number, number]> }
->;
+/** A rectangle of cells, inclusive. */
+interface Rect {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+/**
+ * Per (sheet, rule name): the rectangles of cells that named the rule, in reading order (row
+ * runs top to bottom, cells left to right). Keyed `sheet\u0000name`.
+ */
+export type ValidationCells = Map<string, { sheet: string; name: string; rects: Rect[] }>;
 
 export function readContentValidationRules(spreadsheet: XmlElement): Map<string, ValidationRule> {
   const rules = new Map<string, ValidationRule>();
@@ -175,15 +192,18 @@ export function readContentValidationRules(spreadsheet: XmlElement): Map<string,
   for (const element of container.elements(Table(N.contentValidation))) {
     const name = element.attr(Table('name'));
     if (name === null) continue;
-    const condition = element.attr(Table(N.condition)) ?? '';
+    const condition = element.attr(Table(N.condition));
     const errorElement = element.element(Table(N.errorMessage));
     const helpElement = element.element(Table(N.helpMessage));
-    const parsed = parseCondition(condition);
+    const parsed = condition === null ? ANY : parseCondition(condition);
     rules.set(name, {
-      ...parsed,
+      ...(parsed ?? ANY),
       inputMessage: paragraphText(helpElement),
       errorMessage: paragraphText(errorElement),
       response: responseOf(errorElement?.attr(Table(N.messageType)) ?? null),
+      // Anything unrecognised is kept whole, rather than guessed at: a guess (the old "decimal
+      // between 0 and 0") rejects every entry the original rule allowed.
+      preserved: parsed === null ? element.clone() : null,
     });
   }
   return rules;
@@ -203,84 +223,89 @@ type ParsedCondition = Pick<
   'kind' | 'operator' | 'operand1' | 'operand2' | 'listValues' | 'listSource'
 >;
 
-function parseCondition(raw: string): ParsedCondition {
+const ANY: ParsedCondition = {
+  kind: 'any',
+  operator: 'between',
+  operand1: 0,
+  operand2: 0,
+  listValues: null,
+  listSource: null,
+};
+
+const NUMBER = String.raw`[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?`;
+const PREDICATE = /^(?:of:)?cell-content-is-(whole-number|decimal-number|date)\(\)\s+and\s+(.+)$/s;
+const RELATIONAL = new RegExp(
+  String.raw`^(?:of:)?cell-content(-text-length)?\(\)\s*(>=|<=|!=|<>|>|<|=)\s*(${NUMBER})$`,
+);
+const BETWEEN = new RegExp(
+  String.raw`^(?:of:)?cell-content(-text-length)?-is-(not-)?between\(\s*(${NUMBER})\s*,\s*(${NUMBER})\s*\)$`,
+);
+
+const RELATIONAL_OPERATORS: Record<string, ValidationOperator> = {
+  '>=': 'greaterOrEqual',
+  '<=': 'lessOrEqual',
+  '!=': 'notEqual',
+  '<>': 'notEqual',
+  '>': 'greaterThan',
+  '<': 'lessThan',
+  '=': 'equal',
+};
+
+/**
+ * Parse the conditions the model can hold exactly; null for anything else (a formula condition,
+ * a time rule, operands that are cell references or expressions, a list from a named range).
+ */
+function parseCondition(raw: string): ParsedCondition | null {
   const condition = raw.trim();
-  const inList = 'of:cell-content-is-in-list(';
-  if (condition.startsWith(inList) && condition.endsWith(')')) {
-    const inner = condition.slice(inList.length, -1);
-    if (inner.startsWith('[') && inner.endsWith(']')) {
+  const inList = /^(?:of:)?cell-content-is-in-list\((.*)\)$/s.exec(condition);
+  if (inList) {
+    const inner = inList[1]!.trim();
+    if (inner.startsWith('[') && inner.endsWith(']') && !inner.slice(1, -1).includes('[')) {
       const internalRef = OpenFormulaTranslator.fromOpenFormula('of:=' + inner);
       const source = CellRange.tryParse(internalRef);
-      return {
-        kind: 'list',
-        operator: 'between',
-        operand1: 0,
-        operand2: 0,
-        listValues: null,
-        listSource: source,
-      };
+      return source ? { ...ANY, kind: 'list', listSource: source } : null;
     }
+    const values = parseQuotedList(inner);
+    return values ? { ...ANY, kind: 'list', listValues: values } : null;
+  }
+
+  // A number/date/text-length constraint: an optional kind predicate, then one comparison.
+  let kind: ValidationKind | null = null;
+  let comparison = condition;
+  const predicate = PREDICATE.exec(condition);
+  if (predicate) {
+    kind = predicate[1] === 'whole-number' ? 'wholeNumber' : predicate[1] === 'date' ? 'date' : 'decimal';
+    comparison = predicate[2]!.trim();
+  }
+
+  const between = BETWEEN.exec(comparison);
+  const relational = between ? null : RELATIONAL.exec(comparison);
+  const match = between ?? relational;
+  if (!match) return null;
+  const textLength = match[1] !== undefined;
+  // A kind predicate on a text-length comparison is a combination the model has no word for.
+  if (textLength && kind !== null) return null;
+  const resolvedKind: ValidationKind = textLength ? 'textLength' : (kind ?? 'decimal');
+
+  if (between) {
     return {
-      kind: 'list',
-      operator: 'between',
-      operand1: 0,
-      operand2: 0,
-      listValues: parseQuotedList(inner),
-      listSource: null,
+      ...ANY,
+      kind: resolvedKind,
+      operator: between[2] ? 'notBetween' : 'between',
+      operand1: Number(between[3]),
+      operand2: Number(between[4]),
     };
   }
-
-  // Otherwise a number/date/text-length constraint. The leading predicate (if any) gives the kind;
-  // the comparison gives the operator and operands.
-  let kind: ValidationKind = 'decimal';
-  if (condition.includes('cell-content-is-whole-number')) kind = 'wholeNumber';
-  else if (condition.includes('cell-content-is-date')) kind = 'date';
-  else if (condition.includes('cell-content-text-length')) kind = 'textLength';
-
-  // The comparison clause is whatever follows the last " and " (or the whole string).
-  const andIndex = condition.lastIndexOf(' and ');
-  const comparison = andIndex >= 0 ? condition.slice(andIndex + 5) : condition;
-  const [operator, operand1, operand2] = parseComparison(comparison);
-  return { kind, operator, operand1, operand2, listValues: null, listSource: null };
+  return {
+    ...ANY,
+    kind: resolvedKind,
+    operator: RELATIONAL_OPERATORS[relational![2]!]!,
+    operand1: Number(relational![3]),
+  };
 }
 
-function parseComparison(raw: string): [ValidationOperator, number, number] {
-  const comparison = raw.trim();
-  for (const [token, op] of [
-    ['is-not-between(', 'notBetween'],
-    ['is-between(', 'between'],
-  ] as const) {
-    const start = comparison.indexOf(token);
-    if (start >= 0) {
-      const open = start + token.length;
-      const close = comparison.indexOf(')', open);
-      if (close > open) {
-        const parts = comparison.slice(open, close).split(',');
-        const a = parts.length > 0 ? parseInvariant(parts[0]!) : 0;
-        const b = parts.length > 1 ? parseInvariant(parts[1]!) : 0;
-        return [op, a, b];
-      }
-    }
-  }
-
-  // Relational: cell-content()OP value (or cell-content-text-length()OP value).
-  const parens = comparison.indexOf('()');
-  const tail = parens >= 0 ? comparison.slice(parens + 2).trim() : comparison;
-  for (const [prefix, op] of [
-    ['>=', 'greaterOrEqual'],
-    ['<=', 'lessOrEqual'],
-    ['!=', 'notEqual'],
-    ['<>', 'notEqual'],
-    ['>', 'greaterThan'],
-    ['<', 'lessThan'],
-    ['=', 'equal'],
-  ] as const) {
-    if (tail.startsWith(prefix)) return [op, parseInvariant(tail.slice(prefix.length)), 0];
-  }
-  return ['between', 0, 0];
-}
-
-function parseQuotedList(inner: string): string[] {
+/** `"a";"b";3` → its values; null when an item is neither a quoted string nor a number. */
+function parseQuotedList(inner: string): string[] | null {
   const values: string[] = [];
   let i = 0;
   while (i < inner.length) {
@@ -291,6 +316,7 @@ function parseQuotedList(inner: string): string[] {
     if (inner[i] === '"') {
       i++;
       let sb = '';
+      let closed = false;
       while (i < inner.length) {
         if (inner[i] === '"') {
           if (i + 1 < inner.length && inner[i + 1] === '"') {
@@ -299,39 +325,66 @@ function parseQuotedList(inner: string): string[] {
             continue;
           }
           i++;
+          closed = true;
           break;
         }
         sb += inner[i++];
       }
+      if (!closed) return null;
       values.push(sb);
     } else {
       const start = i;
       while (i < inner.length && inner[i] !== ';') i++;
-      values.push(inner.slice(start, i).trim());
+      const item = inner.slice(start, i).trim();
+      if (!new RegExp(`^${NUMBER}$`).test(item)) return null;
+      values.push(item);
     }
   }
   return values;
 }
 
-/** `double.TryParse(…, NumberStyles.Any, Invariant)` or 0: thousands commas tolerated. */
-function parseInvariant(text: string): number {
-  return parseInvariantFloat(text.trim().replaceAll(',', '')) ?? 0;
-}
-
-export function recordValidationCell(
+/** Record that the cells in rows top..bottom, columns left..right name rule `name`. */
+export function recordValidationRect(
   cells: ValidationCells,
   sheet: string,
   name: string,
-  row: number,
-  column: number,
+  top: number,
+  bottom: number,
+  left: number,
+  right: number,
 ): void {
   const key = `${sheet}\u0000${name}`;
   let entry = cells.get(key);
   if (!entry) {
-    entry = { sheet, name, positions: [] };
+    entry = { sheet, name, rects: [] };
     cells.set(key, entry);
   }
-  entry.positions.push([row, column]);
+  // Neighbouring cells of one row run arrive one after another: widen the last rectangle.
+  const last = entry.rects.at(-1);
+  if (last && last.top === top && last.bottom === bottom && last.right + 1 === left) last.right = right;
+  else entry.rects.push({ top, bottom, left, right });
+}
+
+/**
+ * Stack the row-run rectangles into the fewest exact rectangles: a run directly below one with the
+ * same columns extends it. The result covers exactly the cells that named the rule, never the
+ * blank cells between them.
+ */
+function coalesce(rects: readonly Rect[]): Rect[] {
+  const out: Rect[] = [];
+  const open = new Map<string, Rect>();
+  for (const r of rects) {
+    const key = `${r.left}:${r.right}`;
+    const above = open.get(key);
+    if (above && above.bottom + 1 === r.top) {
+      above.bottom = r.bottom;
+      continue;
+    }
+    const copy = { ...r };
+    out.push(copy);
+    open.set(key, copy);
+  }
+  return out;
 }
 
 export function assembleValidations(
@@ -339,27 +392,16 @@ export function assembleValidations(
   rules: ReadonlyMap<string, ValidationRule>,
   cells: ValidationCells,
 ): void {
-  for (const { sheet: sheetName, name, positions } of cells.values()) {
+  for (const { sheet: sheetName, name, rects } of cells.values()) {
     const rule = rules.get(name);
-    if (!rule || positions.length === 0) continue;
+    if (!rule || rects.length === 0) continue;
     const sheet = workbook.findSheet(sheetName);
     if (!sheet) continue;
 
-    // The bounding rectangle of all cells that referenced the rule is its target range.
-    let top = Infinity;
-    let bottom = -Infinity;
-    let left = Infinity;
-    let right = -Infinity;
-    for (const [r, c] of positions) {
-      top = Math.min(top, r);
-      bottom = Math.max(bottom, r);
-      left = Math.min(left, c);
-      right = Math.max(right, c);
-    }
-    const target = new CellRange(new CellAddress(left, top), new CellAddress(right, bottom));
-
-    sheet.addValidation(
-      dataValidation(rule.kind, target, {
+    // The model holds one rectangle per rule, so a rule over several becomes one rule each.
+    for (const r of coalesce(rects)) {
+      const target = new CellRange(new CellAddress(r.left, r.top), new CellAddress(r.right, r.bottom));
+      const validation = dataValidation(rule.kind, target, {
         operator: rule.operator,
         operand1: rule.operand1,
         operand2: rule.operand2,
@@ -368,7 +410,9 @@ export function assembleValidations(
         inputMessage: rule.inputMessage,
         errorMessage: rule.errorMessage,
         response: rule.response,
-      }),
-    );
+      });
+      if (rule.preserved) OdsPreserved.setValidation(validation, { element: rule.preserved });
+      sheet.addValidation(validation);
+    }
   }
 }

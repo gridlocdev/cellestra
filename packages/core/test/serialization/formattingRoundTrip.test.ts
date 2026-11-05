@@ -64,11 +64,11 @@ describe('FormattingRoundTrip', () => {
     expect(NumberFormats.kind(format)).toBe(kind);
   });
 
-  it('a multi-section code keeps its first section and is not read as a date', () => {
-    // Known limitation: one section per format, so negative/zero/text sections are dropped. What it
-    // must not do is read the "D" of "[RED]" as a date field.
+  it('a multi-section code keeps every section and is not read as a date', () => {
+    // Sections are written as style:map'd sub-styles and read back through the map. What it must
+    // not do is read the "D" of "[RED]" as a date field.
     expect(NumberFormats.kind(NumberFormats.of('0.0;[RED]-0.0'))).toBe('number');
-    expect(surviveFormat('0.0;[RED]-0.0').code).toBe('0.0');
+    expect(surviveFormat('0.0;[RED]-0.0').code).toBe('0.0;[RED]-0.0');
   });
 
   it.each<[string, NumberFormatKind]>([

@@ -16,9 +16,20 @@ export class StyleRegistry {
   private readonly rowStyleNames = new Map<number, string>();
   private next = 0;
 
-  constructor(styles: StylePool, autoStyles: XmlElement) {
+  /** Names already used by preserved automatic styles, which generated names must not take. */
+  private readonly reserved: ReadonlySet<string>;
+
+  constructor(styles: StylePool, autoStyles: XmlElement, reserved: ReadonlySet<string> = new Set()) {
     this.styles = styles;
     this.autoStyles = autoStyles;
+    this.reserved = reserved;
+  }
+
+  private nextName(prefix: string): string {
+    for (;;) {
+      const name = `${prefix}${this.next++}`;
+      if (!this.reserved.has(name)) return name;
+    }
   }
 
   cellStyle(styleId: number): string {
@@ -30,21 +41,24 @@ export class StyleRegistry {
       ? null
       : this.dataStyle(style.numberFormat);
 
-    const name = `ce${this.next++}`;
+    const name = this.nextName('ce');
     this.autoStyles.add(OdsCellStyles.build(name, style, dataStyleName));
     this.cellStyleNames.set(styleId, name);
     return name;
   }
 
-  private dataStyle(format: NumberFormat): string {
+  private dataStyle(format: NumberFormat): string | null {
     const existing = this.dataStyleNames.get(format.code);
     if (existing !== undefined) return existing;
 
-    const name = `N${this.next++}`;
-    const element = OdsDataStyles.build(name, format);
-    if (!element) return name; // General; should not happen since caller checks
+    const name = this.nextName('N');
+    // A sectioned code is several elements: the per-section styles first, then the one named `name`.
+    const elements = OdsDataStyles.build(name, format);
+    // A code no data style can express: the cell writes no data-style-name rather than one that
+    // names nothing.
+    if (elements.length === 0) return null;
 
-    this.autoStyles.add(element);
+    for (const element of elements) this.autoStyles.add(element);
     this.dataStyleNames.set(format.code, name);
     return name;
   }
@@ -53,7 +67,7 @@ export class StyleRegistry {
     const existing = this.columnStyleNames.get(width);
     if (existing !== undefined) return existing;
 
-    const name = `co${this.next++}`;
+    const name = this.nextName('co');
     this.autoStyles.add(
       new XmlElement(Style('style'))
         .setAttr(Style('name'), name)
@@ -73,7 +87,7 @@ export class StyleRegistry {
     const existing = this.rowStyleNames.get(height);
     if (existing !== undefined) return existing;
 
-    const name = `ro${this.next++}`;
+    const name = this.nextName('ro');
     this.autoStyles.add(
       new XmlElement(Style('style'))
         .setAttr(Style('name'), name)

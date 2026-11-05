@@ -1,11 +1,9 @@
 import { Defaults } from '../../../defaults.ts';
 import {
-  Alignments,
   BorderEdges,
   Borders,
+  CellStyles,
   Fills,
-  Fonts,
-  NumberFormats,
   type Alignment,
   type Border,
   type BorderEdge,
@@ -67,27 +65,37 @@ export const OdsCellStyles = {
     return element;
   },
 
-  parse(styleElement: XmlElement, resolveDataStyle: (name: string) => NumberFormat): CellStyle {
-    let font: Font = Fonts.default;
-    let fill: Fill = Fills.none;
-    let alignment: Alignment = Alignments.default;
-    let border: Border = Borders.none;
+  /**
+   * Read one `style:style`'s properties over `base` (the parent style's result, for a
+   * `style:parent-style-name` chain): only what this element states changes. `fontFace` resolves a
+   * `style:font-name` through the document's `office:font-face-decls`.
+   */
+  parse(
+    styleElement: XmlElement,
+    resolveDataStyle: (name: string) => NumberFormat,
+    base: CellStyle = CellStyles.default,
+    fontFace: (name: string) => string | null = () => null,
+  ): CellStyle {
+    let font: Font = base.font;
+    let fill: Fill = base.fill;
+    let alignment: Alignment = base.alignment;
+    let border: Border = base.border;
 
     const textProps = styleElement.element(Style('text-properties'));
     if (textProps) {
+      const weight = textProps.attr(Fo('font-weight'));
+      if (weight !== null) font = { ...font, bold: weight === 'bold' || Number(weight) >= 600 };
+      const fontStyle = textProps.attr(Fo('font-style'));
+      if (fontStyle !== null) font = { ...font, italic: fontStyle === 'italic' || fontStyle === 'oblique' };
       const underline = textProps.attr(Style('text-underline-style'));
+      if (underline !== null) font = { ...font, underline: underline !== 'none' };
       const strike = textProps.attr(Style('text-line-through-style'));
-      font = {
-        ...font,
-        bold: textProps.attr(Fo('font-weight')) === 'bold',
-        italic: textProps.attr(Fo('font-style')) === 'italic',
-        underline: underline !== null && underline !== 'none',
-        strikethrough: strike !== null && strike !== 'none',
-      };
+      if (strike !== null) font = { ...font, strikethrough: strike !== 'none' };
       const color = Argb.tryFromHex(textProps.attr(Fo('color')));
       if (color !== null) font = { ...font, color };
-      const family = textProps.attr(Fo('font-family'));
-      if (family) font = { ...font, family };
+      const fontName = textProps.attr(Style('font-name'));
+      const family = textProps.attr(Fo('font-family')) ?? (fontName === null ? null : fontFace(fontName));
+      if (family) font = { ...font, family: unquoteFamily(family) };
       const size = parsePt(textProps.attr(Fo('font-size')));
       if (size !== null) font = { ...font, sizePoints: size };
     }
@@ -95,14 +103,19 @@ export const OdsCellStyles = {
     const cellProps = styleElement.element(Style('table-cell-properties'));
     if (cellProps) {
       const background = cellProps.attr(Fo('background-color'));
-      const bg = Argb.tryFromHex(background);
-      if (bg !== null && background !== 'transparent') fill = Fills.solid(bg);
+      if (background === 'transparent') fill = Fills.none;
+      else {
+        const bg = Argb.tryFromHex(background);
+        if (bg !== null) fill = Fills.solid(bg);
+      }
 
-      const vertical: VerticalAlignment =
-        VERTICAL_FROM_ODF[cellProps.attr(Style('vertical-align')) ?? ''] ?? 'bottom';
-      const wrap = cellProps.attr(Fo('wrap-option')) === 'wrap';
-      alignment = { ...alignment, vertical, wrapText: wrap };
-      border = parseBorders(cellProps);
+      const verticalAttr = cellProps.attr(Style('vertical-align'));
+      if (verticalAttr !== null) {
+        alignment = { ...alignment, vertical: VERTICAL_FROM_ODF[verticalAttr] ?? 'bottom' };
+      }
+      const wrap = cellProps.attr(Fo('wrap-option'));
+      if (wrap !== null) alignment = { ...alignment, wrapText: wrap === 'wrap' };
+      border = parseBorders(cellProps, border);
     }
 
     const align = styleElement.element(Style('paragraph-properties'))?.attr(Fo('text-align')) ?? null;
@@ -111,7 +124,7 @@ export const OdsCellStyles = {
     }
 
     const dataStyleName = styleElement.attr(Style('data-style-name'));
-    const numberFormat = dataStyleName === null ? NumberFormats.general : resolveDataStyle(dataStyleName);
+    const numberFormat = dataStyleName === null ? base.numberFormat : resolveDataStyle(dataStyleName);
 
     return { font, fill, border, alignment, numberFormat };
   },
@@ -158,15 +171,24 @@ function borderToOdf(edge: BorderEdge): string {
   return `${width} ${style} ${Argb.toHex(edge.color)}`;
 }
 
-function parseBorders(cellProps: XmlElement): Border {
+function parseBorders(cellProps: XmlElement, base: Border): Border {
   const all = cellProps.attr(Fo('border'));
-  const edge = (side: string): BorderEdge => parseEdge(cellProps.attr(Fo(side)) ?? all);
-  return {
-    left: edge('border-left'),
-    right: edge('border-right'),
-    top: edge('border-top'),
-    bottom: edge('border-bottom'),
+  const edge = (side: string, inherited: BorderEdge): BorderEdge => {
+    const value = cellProps.attr(Fo(side)) ?? all;
+    return value === null ? inherited : parseEdge(value);
   };
+  return {
+    left: edge('border-left', base.left),
+    right: edge('border-right', base.right),
+    top: edge('border-top', base.top),
+    bottom: edge('border-bottom', base.bottom),
+  };
+}
+
+/** `svg:font-family` may quote a family with spaces: `'Liberation Sans'`. */
+export function unquoteFamily(family: string): string {
+  const t = family.trim();
+  return t.length >= 2 && (t[0] === "'" || t[0] === '"') && t.at(-1) === t[0] ? t.slice(1, -1) : t;
 }
 
 function parseEdge(value: string | null): BorderEdge {
