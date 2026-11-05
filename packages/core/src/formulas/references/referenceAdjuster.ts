@@ -100,13 +100,15 @@ function axisRewrite(
     // Work on the normalized span; the whole range is #REF! only when every line of it is deleted.
     const min = rowAxis ? range.top : range.left;
     const max = rowAxis ? range.bottom : range.right;
+    const lastLine = (rowAxis ? SheetDimensions.maxRows : SheetDimensions.maxColumns) - 1;
+    // A whole column (A:A) or whole row (1:1) still spans the whole sheet after any insert/delete.
+    if (min === 0 && max === lastLine) return range;
     const surviving = survivingExtremes(edit, min, max);
     if (!surviving) return null;
     // An insert can push a corner past the edge: the lower corner pushed off → #REF!; only the
     // upper corner spilling over → clamp it to the last line (the range shrinks).
     const newMin = axisMap(edit, surviving[0]);
     if (newMin === null) return null;
-    const lastLine = (rowAxis ? SheetDimensions.maxRows : SheetDimensions.maxColumns) - 1;
     const newMax = axisMap(edit, surviving[1]) ?? lastLine;
     // Re-attach each corner's $ flags: the corner at the span's min gets newMin.
     const corner = (c: CellAddress): CellAddress =>
@@ -262,6 +264,27 @@ export const ReferenceAdjuster = {
       return r;
     };
     return rewrite(expr, mapAddress, mapRange);
+  },
+
+  /**
+   * A worksheet renamed: every reference that names `oldName` explicitly now names `newName`.
+   * Unqualified references resolve against their own sheet and need no change.
+   */
+  forRenameSheet(expr: Expr, oldName: string, newName: string): Expr {
+    const renamed = (a: CellAddress): CellAddress =>
+      a.sheet !== null && sameSheet(a.sheet, oldName) ? a.withSheet(newName) : a;
+    return rewrite(expr, renamed, (r) =>
+      r.sheet !== null && sameSheet(r.sheet, oldName) ? new CellRange(renamed(r.start), renamed(r.end)) : r,
+    );
+  },
+
+  /**
+   * Give every unqualified reference an explicit `sheet`, so the formula still means the same cells
+   * after it moves to another sheet (a cut pasted across sheets).
+   */
+  qualify(expr: Expr, sheet: string): Expr {
+    const own = (a: CellAddress): CellAddress => (a.sheet === null ? a.withSheet(sheet) : a);
+    return rewrite(expr, own, (r) => (r.sheet === null ? new CellRange(own(r.start), own(r.end)) : r));
   },
 
   /** A worksheet deleted: any reference whose effective sheet is the deleted one becomes #REF!. */

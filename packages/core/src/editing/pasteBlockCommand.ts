@@ -11,6 +11,8 @@ import { EditResult, requireSheet, type EditCommand } from './editCommand.ts';
 import { rewriteFormula } from './formulaRewrite.ts';
 import { PastePlanner, type PastePlan } from './pastePlanner.ts';
 
+const sameSheet = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+
 /** What a paste carries: everything, the computed values, only formats, or formulas without formats. */
 export type PasteMode = 'all' | 'values' | 'formats' | 'formulas';
 
@@ -175,6 +177,11 @@ export class PasteBlockCommand implements EditCommand {
     let formula = source.formula;
     if (formula !== null && !this.block.isCut) {
       formula = rewriteFormula(formula, (expr) => ReferenceAdjuster.forCopy(expr, columnDelta, rowDelta));
+    } else if (formula !== null && !sameSheet(this.block.sourceSheet, this.destSheet)) {
+      // A cut moved to another sheet: pin its unqualified references to the source sheet first, so
+      // they keep meaning the source's cells; the move fix-up then re-homes the ones inside the block.
+      const sourceSheet = this.block.sourceSheet;
+      formula = rewriteFormula(formula, (expr) => ReferenceAdjuster.qualify(expr, sourceSheet));
     }
     const keepDestStyle = this.mode !== 'all';
     const styleId = keepDestStyle ? (dest.find(row, column)?.styleId ?? StylePool.defaultId) : source.styleId;

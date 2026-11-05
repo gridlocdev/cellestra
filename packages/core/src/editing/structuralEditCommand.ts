@@ -10,6 +10,14 @@ import type { WorksheetState } from '../model/worksheet.ts';
 import { captureFormulas, restoreFormulas } from './deleteSheetCommand.ts';
 import { EditResult, requireSheet, type ChangedCell, type EditCommand } from './editCommand.ts';
 import { rewriteFormula } from './formulaRewrite.ts';
+import {
+  captureReferences,
+  restoreReferences,
+  transformReferences,
+  transformTableKeys,
+  type ReferenceSnapshot,
+  type ReferenceTransform,
+} from './workbookReferences.ts';
 
 export type StructuralAxis = 'row' | 'column';
 export type StructuralOperation = 'insert' | 'delete';
@@ -17,7 +25,8 @@ export type StructuralOperation = 'insert' | 'delete';
 /**
  * Insert or delete whole rows/columns: cells, layout, merges, and tables shift; inserted lines
  * inherit the formatting of the line before them (PRD §8.14); every formula in the workbook is
- * adjusted (deleted references become `#REF!`). Undo restores the captured sheet state.
+ * adjusted (deleted references become `#REF!`), and so are named ranges, data validations, the
+ * AutoFilter and sort keys, and chart ranges. Undo restores the captured state.
  */
 export class StructuralEditCommand implements EditCommand {
   readonly label: string;
@@ -28,6 +37,7 @@ export class StructuralEditCommand implements EditCommand {
   private readonly count: number;
   private editedBefore: WorksheetState | null = null;
   private otherFormulasBefore: [ChangedCell, string][] | null = null;
+  private referencesBefore: ReferenceSnapshot | null = null;
 
   constructor(
     sheetName: string,
@@ -48,15 +58,18 @@ export class StructuralEditCommand implements EditCommand {
     const sheet = requireSheet(workbook, this.sheetName);
     this.editedBefore = sheet.capture();
     this.otherFormulasBefore = captureFormulas(workbook, sheet);
+    this.referencesBefore = captureReferences(workbook);
     sheet.restore(this.buildShiftedState(this.editedBefore));
     this.adjustFormulas(workbook);
+    transformReferences(workbook, this.transform);
     return EditResult.structuralChange;
   }
 
   undo(workbook: Workbook): EditResult {
-    if (!this.editedBefore || !this.otherFormulasBefore) return EditResult.none;
+    if (!this.editedBefore || !this.otherFormulasBefore || !this.referencesBefore) return EditResult.none;
     requireSheet(workbook, this.sheetName).restore(this.editedBefore);
     restoreFormulas(workbook, this.otherFormulasBefore);
+    restoreReferences(workbook, this.referencesBefore);
     return EditResult.structuralChange;
   }
 
@@ -89,12 +102,15 @@ export class StructuralEditCommand implements EditCommand {
     };
   }
 
-  /** Tables overlapping the edit resize along its axis; one wholly inside a deleted span goes. */
+  /**
+   * Tables overlapping the edit resize along its axis; one wholly inside a deleted span goes. Their
+   * filter and sort keys (absolute columns) follow their columns.
+   */
   private shiftTables(source: readonly Table[], rows: boolean): Table[] {
     const out: Table[] = [];
     for (const t of source) {
       const range = this.shiftRange(t.range, rows);
-      if (range) out.push({ ...t, range });
+      if (range) out.push(transformTableKeys({ ...t, range }, this.sheetName, this.transform));
     }
     return out;
   }
@@ -171,22 +187,25 @@ export class StructuralEditCommand implements EditCommand {
 
   // ---- Formulas -------------------------------------------------------------
 
-  private adjustFormulas(workbook: Workbook): void {
+  /** This edit's reference fix-up, as seen from a formula (or rule) on `home`. */
+  private readonly transform: ReferenceTransform = (expr, home) => {
     const { at, count, sheetName } = this;
+    if (this.axis === 'row') {
+      return this.operation === 'insert'
+        ? ReferenceAdjuster.forInsertRows(expr, home, sheetName, at, count)
+        : ReferenceAdjuster.forDeleteRows(expr, home, sheetName, at, count);
+    }
+    return this.operation === 'insert'
+      ? ReferenceAdjuster.forInsertColumns(expr, home, sheetName, at, count)
+      : ReferenceAdjuster.forDeleteColumns(expr, home, sheetName, at, count);
+  };
+
+  private adjustFormulas(workbook: Workbook): void {
     for (const sheet of workbook.worksheets) {
       const home = sheet.name;
       for (const [, , cell] of sheet.enumerateCells()) {
         if (cell.formula === null) continue;
-        cell.formula = rewriteFormula(cell.formula, (expr) => {
-          if (this.axis === 'row') {
-            return this.operation === 'insert'
-              ? ReferenceAdjuster.forInsertRows(expr, home, sheetName, at, count)
-              : ReferenceAdjuster.forDeleteRows(expr, home, sheetName, at, count);
-          }
-          return this.operation === 'insert'
-            ? ReferenceAdjuster.forInsertColumns(expr, home, sheetName, at, count)
-            : ReferenceAdjuster.forDeleteColumns(expr, home, sheetName, at, count);
-        });
+        cell.formula = rewriteFormula(cell.formula, (expr) => this.transform(expr, home));
       }
     }
   }

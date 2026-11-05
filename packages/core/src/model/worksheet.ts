@@ -307,6 +307,11 @@ export class Worksheet {
     this.validationList.push(v);
   }
 
+  /** Swap in a whole new list of rules (reference fix-ups and their undo). */
+  replaceValidations(validations: Iterable<DataValidation>): void {
+    this.validationList = [...validations];
+  }
+
   removeValidation(v: DataValidation): boolean {
     const before = this.validationList.length;
     this.validationList = this.validationList.filter((x) => x !== v);

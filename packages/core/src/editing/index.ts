@@ -15,5 +15,7 @@ export * from './hiddenLines.ts';
 export * from './inputParser.ts';
 export * from './pasteBlockCommand.ts';
 export * from './pastePlanner.ts';
+export * from './renameSheetCommand.ts';
 export * from './structuralEditCommand.ts';
 export * from './swapCellsCommand.ts';
+export * from './workbookReferences.ts';

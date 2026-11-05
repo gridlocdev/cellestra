@@ -7,6 +7,8 @@ import {
   OdsReader,
   OdsWriter,
   RecalculationEngine,
+  RenameSheetCommand,
+  SheetName,
   Workbook,
   readCsv,
   writeCsv,
@@ -251,7 +253,7 @@ export class WorkbookSession {
     if (entry.selection) this.restoreSelection(entry.selection);
   }
 
-  // ── Sheets (not undoable, PRD §8.5: they clear the history) ─────────────
+  // ── Sheets (PRD §8.5: these clear the history; only rename is undoable) ──
 
   setActiveSheet(index: number): void {
     const wb = this.#workbook.peek();
@@ -292,18 +294,20 @@ export class WorkbookSession {
     this.setActiveSheet(wb.indexOf(sheet));
   }
 
-  /** Rename; returns an error message for invalid or duplicate names. */
+  /**
+   * Rename, rewriting every reference to the sheet; unlike the other sheet changes this is undoable.
+   * Returns an error message for invalid or duplicate names.
+   */
   renameSheet(index: number, name: string): string | null {
     const wb = this.#workbook.peek();
     const sheet = wb.worksheets[index];
     if (!sheet) return null;
     if (sheet.name === name) return null;
-    try {
-      wb.renameSheet(sheet, name);
-    } catch (e) {
-      return e instanceof Error ? e.message : String(e);
-    }
-    this.#structural();
+    const invalid = SheetName.validationError(name);
+    if (invalid) return invalid;
+    const existing = wb.findSheet(name);
+    if (existing && existing !== sheet) return `A worksheet named '${name}' already exists.`;
+    this.execute(new RenameSheetCommand(sheet.name, name));
     return null;
   }
 

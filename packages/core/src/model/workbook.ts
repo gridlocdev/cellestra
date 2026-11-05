@@ -149,6 +149,11 @@ export class Workbook {
     this.names.push(nr);
   }
 
+  /** Swap in a whole new list of names (reference fix-ups and their undo); not re-validated. */
+  replaceNamedRanges(names: Iterable<NamedRange>): void {
+    this.names = [...names];
+  }
+
   removeNamedRange(name: string, scope: string | null = null): boolean {
     const i = this.names.findIndex((n) => same(n.name, name) && same(n.scope, scope));
     if (i < 0) return false;
