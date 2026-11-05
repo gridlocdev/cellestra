@@ -9,6 +9,8 @@ export interface GridPalette {
   readonly freezeDivider: string;
   readonly tableHeaderBand: string;
   readonly tableRowBand: string;
+  /** A designated header column's first cell: a step quieter than the header row. */
+  readonly tableHeaderColumnBand: string;
   readonly selectionFill: string;
   readonly activeOutline: string;
   readonly hyperlink: string;
@@ -25,6 +27,7 @@ export const lightPalette: GridPalette = {
   freezeDivider: '#9a9a9a',
   tableHeaderBand: '#c6c6c6',
   tableRowBand: 'rgba(198,198,198,0.25)',
+  tableHeaderColumnBand: '#dcdcdc',
   selectionFill: 'rgba(42,125,225,0.13)',
   activeOutline: '#2a7de1',
   hyperlink: '#0b5fcc',
@@ -41,6 +44,7 @@ export const darkPalette: GridPalette = {
   freezeDivider: '#5a5a5a',
   tableHeaderBand: '#3a3a3c',
   tableRowBand: 'rgba(58,58,60,0.4)',
+  tableHeaderColumnBand: '#2f2f31',
   selectionFill: 'rgba(42,125,225,0.2)',
   activeOutline: '#4a90e2',
   hyperlink: '#6bb0ff',

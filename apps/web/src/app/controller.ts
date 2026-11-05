@@ -7,8 +7,16 @@ import {
   ClipboardBlock,
   CompositeEditCommand,
   DataEditCommands,
+  ActionCommand,
   DataRegion,
+  DataScope,
   EdgeNavigator,
+  EditResult,
+  FilterEngine,
+  InputParser,
+  ValidationPreflight,
+  Validator,
+  CellValue,
   EditCommands,
   FillCommand,
   FormatBlock,
@@ -18,7 +26,13 @@ import {
   StructuralEditCommand,
   parseCsv,
   type CellStyle,
+  type DataValidation,
   type EditCommand,
+  type FilterSpec,
+  type Hyperlink,
+  type NamedRange,
+  type SortSpec,
+  type Table,
   type Worksheet,
 } from '@cellestra/core';
 import {
@@ -45,6 +59,8 @@ import {
   type OpenedDocument,
   type RecentEntry,
 } from '@cellestra/ui';
+
+import type { ChartDefinition } from '@cellestra/charts';
 
 export type Theme = 'system' | 'light' | 'dark';
 
@@ -74,7 +90,33 @@ export type DialogState =
   | { readonly kind: 'recovery'; readonly name: string; readonly resolve: (restore: boolean) => void }
   | { readonly kind: 'shortcuts' }
   | { readonly kind: 'about' }
-  | { readonly kind: 'settings' };
+  | { readonly kind: 'settings' }
+  | { readonly kind: 'formatCells' }
+  | {
+      readonly kind: 'filter';
+      readonly target: DataTarget;
+      readonly column: number;
+      readonly anchor: { x: number; y: number; w: number; h: number };
+    }
+  | {
+      readonly kind: 'validationList';
+      readonly rule: DataValidation;
+      readonly row: number;
+      readonly column: number;
+      readonly anchor: { x: number; y: number; w: number; h: number };
+    }
+  | { readonly kind: 'sortFilter'; readonly target: DataTarget; readonly sortOnly: boolean }
+  | { readonly kind: 'validation'; readonly range: CellRange; readonly existing: DataValidation | null }
+  | { readonly kind: 'hyperlink'; readonly row: number; readonly column: number }
+  | { readonly kind: 'namedRanges' }
+  | { readonly kind: 'functions' };
+
+/** What the data commands act on: a table, else the current region (or selection). */
+export interface DataTarget {
+  readonly range: CellRange;
+  readonly hasHeader: boolean;
+  readonly table: Table | null;
+}
 
 const RECOVERY_INTERVAL_MS = 30_000;
 const THEME_KEY = 'cellestra.theme';
@@ -489,6 +531,25 @@ export class AppController {
     return this.session.workbook.peek().styles.get(this.sheet.effectiveStyleId(row, column));
   }
 
+  /** The distinct styles in the selection (capped), for dialogs that show "(varies)". */
+  selectionStyles(): CellStyle[] {
+    const wb = this.session.workbook.peek();
+    const sheet = this.sheet;
+    const ids = new Set<number>();
+    let seen = 0;
+    for (const r of this.ranges) {
+      const used = sheet.getUsedRange();
+      const bottom = Math.min(r.bottom, Math.max(r.top, used?.bottom ?? r.top));
+      const right = Math.min(r.right, Math.max(r.left, used?.right ?? r.left));
+      for (let row = r.top; row <= bottom; row++)
+        for (let c = r.left; c <= right; c++) {
+          ids.add(sheet.effectiveStyleId(row, c));
+          if (++seen > 20_000) return [...ids].map((i) => wb.styles.get(i));
+        }
+    }
+    return [...ids].map((i) => wb.styles.get(i));
+  }
+
   /** The selection, or — for a single cell — the data region around it (sort, dedupe). */
   get regionOrSelection(): CellRange {
     const r = this.range;
@@ -507,9 +568,59 @@ export class AppController {
 
   // ── Cell edits ───────────────────────────────────────────────────────────
 
-  commit(row: number, column: number, text: string): void {
+  commit(row: number, column: number, text: string): boolean {
     const s = this.session;
-    this.run(EditCommands.setInput(this.sheetName, row, column, text, s.locale, s.workbook.peek()));
+    const sheet = this.sheet;
+    const rule = sheet.findValidation(row, column);
+    if (rule) {
+      const parsed = InputParser.parse(text, s.locale);
+      if (parsed.formula === null && !Validator.isValid(rule, parsed.value, s.locale, this.resolver)) {
+        if (rule.response === 'stop') {
+          this.error(rule.errorMessage || 'That value is not allowed for this cell.');
+          return false;
+        }
+        this.info(rule.errorMessage || 'That value does not match the cell’s validation rule.');
+      }
+    }
+    const wb = s.workbook.peek();
+    const set = EditCommands.setInput(this.sheetName, row, column, text, s.locale, wb);
+    let expand: EditCommand | null = null;
+    if (text !== '' && !sheet.findTable(row, column)) {
+      for (const t of sheet.tables) {
+        expand = DataEditCommands.expandTableForEdit(wb, this.sheetName, t, row, column);
+        if (expand) break;
+      }
+    }
+    this.run(expand ? new CompositeEditCommand(set.label, [set, expand]) : set);
+    return true;
+  }
+
+  /** Reads a list rule's source range on the active sheet. */
+  readonly resolver = (r: CellRange): Iterable<CellValue> => {
+    const sheet = this.sheet;
+    const out: CellValue[] = [];
+    for (const [row, column] of r.positions()) out.push(sheet.getValue(row, column));
+    return out;
+  };
+
+  /** Stop-rule check for paste/fill; true when the writes may go ahead. */
+  #preflight(
+    writes: Iterable<{ row: number; column: number; value: CellValue; isFormula: boolean }>,
+  ): boolean {
+    if (this.sheet.validations.length === 0) return true;
+    const bad = ValidationPreflight.findStopViolations(
+      this.sheet,
+      writes,
+      this.session.locale,
+      this.resolver,
+    );
+    if (bad.length === 0) return true;
+    const [r, c] = bad[0]!;
+    const rule = this.sheet.findValidation(r, c);
+    this.error(
+      `${rule?.errorMessage || 'That value is not allowed for this cell.'} (${new CellAddress(c, r).toString()}${bad.length > 1 ? ` and ${bad.length - 1} more` : ''})`,
+    );
+    return false;
   }
 
   clearContents(): void {
@@ -593,7 +704,9 @@ export class AppController {
       direction === 'down'
         ? CellRange.fromBounds(r.top, r.left, r.top, r.right)
         : CellRange.fromBounds(r.top, r.left, r.bottom, r.left);
-    this.run(new FillCommand(this.sheetName, source, r));
+    const fill = new FillCommand(this.sheetName, source, r);
+    if (!this.#preflight(fill.projectWrites(this.session.workbook.peek()))) return;
+    this.run(fill);
   }
 
   // ── Rows and columns ─────────────────────────────────────────────────────
@@ -804,6 +917,284 @@ export class AppController {
     this.info(plan.summary);
   }
 
+  dataTarget(): DataTarget {
+    const { row, column } = this.selection.active.peek();
+    const t = this.sheet.findTable(row, column);
+    if (t) return { range: t.range, hasHeader: t.hasHeader, table: t };
+    const range = this.regionOrSelection;
+    return { range, hasHeader: looksLikeHeader(this.sheet, range), table: null };
+  }
+
+  /** The AutoFilter or table at the cursor, if any (for enabling Clear Filter and friends). */
+  get filterTarget(): DataTarget | null {
+    const { row, column } = this.selection.active.peek();
+    const sheet = this.sheet;
+    const t = sheet.findTable(row, column);
+    if (t) return { range: t.range, hasHeader: t.hasHeader, table: t };
+    const auto = sheet.activeFilter;
+    if (auto && auto.contains(row, column)) return { range: auto, hasHeader: true, table: null };
+    return null;
+  }
+
+  sortFilterCommit(target: DataTarget, sort: SortSpec | null, filter: FilterSpec | null): void {
+    const sheet = this.sheetName;
+    const locale = this.session.locale;
+    if (target.table) {
+      const steps: EditCommand[] = [];
+      const auto = this.sheet.activeFilter;
+      if (auto && auto.equals(target.table.range))
+        steps.push(DataEditCommands.applySortAndFilter(sheet, auto, null, null, locale));
+      steps.push(DataEditCommands.applyTableSortAndFilter(sheet, target.table, sort, filter, locale));
+      this.run(each('Sort & Filter', steps));
+    } else this.run(DataEditCommands.applySortAndFilter(sheet, target.range, sort, filter, locale));
+  }
+
+  /** Filter dropdown: replace one column's checklist (null = show all) and optionally sort by it. */
+  applyColumnFilter(
+    target: DataTarget,
+    column: number,
+    allowed: ReadonlySet<string> | null,
+    sortAscending?: boolean,
+  ): void {
+    const current = DataScope.effectiveFilter(this.sheet, target.range);
+    const columns = new Map(current?.columns ?? []);
+    const existing = columns.get(column);
+    if (allowed) columns.set(column, { ...existing, allowedValues: allowed });
+    else if (existing?.condition) columns.set(column, { condition: existing.condition });
+    else columns.delete(column);
+    const filter: FilterSpec | null = columns.size > 0 ? { columns, hasHeader: target.hasHeader } : null;
+    const sort: SortSpec | null =
+      sortAscending === undefined
+        ? DataScope.effectiveSort(this.sheet, target.range)
+        : { levels: [{ column, ascending: sortAscending }], hasHeader: target.hasHeader };
+    // Without a filter or sort a plain AutoFilter would vanish; keep its chevrons.
+    this.sortFilterCommit(target, sort, filter);
+    if (!target.table && !filter && !sort) this.#setAutoFilter(target.range);
+  }
+
+  /** The distinct values for a filter dropdown, honouring the other columns' filters. */
+  filterValues(target: DataTarget, column: number): { key: string; label: string }[] {
+    const spec = DataScope.effectiveFilter(this.sheet, target.range);
+    const wb = this.session.workbook.peek();
+    const values = FilterEngine.distinctValues(
+      this.sheet,
+      target.range,
+      column,
+      target.hasHeader,
+      spec,
+      this.session.locale,
+    );
+    const style = wb.styles.get(this.sheet.effectiveStyleId(target.range.top + 1, column));
+    return values
+      .map((v) => ({
+        key: CellValue.toInvariantString(v),
+        label: v.kind === 'empty' ? '(blank)' : this.session.display(v, style),
+      }))
+      .sort((a, b) =>
+        a.key === '' ? 1 : b.key === '' ? -1 : a.label.localeCompare(b.label, this.session.locale),
+      );
+  }
+
+  toggleFilter(): void {
+    const sheet = this.sheet;
+    if (sheet.activeFilter) {
+      const range = sheet.activeFilter;
+      this.run(
+        each('Remove AutoFilter', [
+          DataEditCommands.applySortAndFilter(this.sheetName, range, null, null, this.session.locale),
+          this.#autoFilterState(null),
+        ]),
+      );
+      return;
+    }
+    const target = this.dataTarget();
+    if (target.table) return this.info('Tables have their own filter buttons.');
+    if (target.range.rowCount < 2) return this.info('Select a range with a header row to filter.');
+    this.#setAutoFilter(target.range);
+  }
+
+  clearFilter(): void {
+    const target = this.filterTarget;
+    if (!target) return;
+    if (target.table) return this.sortFilterCommit(target, target.table.sort ?? null, null);
+    this.sortFilterCommit(target, this.sheet.activeSort, null);
+    this.#setAutoFilter(target.range);
+  }
+
+  #setAutoFilter(range: CellRange): void {
+    if (this.sheet.activeFilter?.equals(range)) return;
+    this.run(this.#autoFilterState(range));
+  }
+
+  /** Undoable switch of the sheet's AutoFilter range (keeps spec/sort only when the range stays). */
+  #autoFilterState(range: CellRange | null): EditCommand {
+    const name = this.sheetName;
+    let before: [CellRange | null, FilterSpec | null, SortSpec | null] = [null, null, null];
+    const ws = (wb: { findSheet(n: string): Worksheet | undefined }) => wb.findSheet(name)!;
+    return new ActionCommand(
+      range ? 'AutoFilter' : 'Remove AutoFilter',
+      (wb) => {
+        const s = ws(wb);
+        before = [s.activeFilter, s.activeFilterSpec, s.activeSort];
+        const same = range && s.activeFilter?.equals(range);
+        s.activeFilter = range;
+        if (!same) {
+          s.activeFilterSpec = null;
+          s.activeSort = null;
+        }
+        return EditResult.none;
+      },
+      (wb) => {
+        const s = ws(wb);
+        [s.activeFilter, s.activeFilterSpec, s.activeSort] = before;
+        return EditResult.none;
+      },
+    );
+  }
+
+  createTable(): void {
+    const sheet = this.sheet;
+    const r = this.regionOrSelection;
+    if (sheet.tables.some((t) => t.range.intersects(r)))
+      return this.info('That range overlaps an existing table.');
+    let n = 1;
+    while (sheet.tables.some((t) => t.name.toLowerCase() === `table${n}`)) n++;
+    const t: Table = { name: `Table${n}`, range: r, hasHeader: r.rowCount > 1 || looksLikeHeader(sheet, r) };
+    this.run(DataEditCommands.createStyledTable(this.session.workbook.peek(), this.sheetName, t));
+    this.selection.select(r.top, r.left);
+  }
+
+  get activeTable(): Table | null {
+    const { row, column } = this.selection.active.peek();
+    return this.sheet.findTable(row, column) ?? null;
+  }
+
+  toggleHeaderColumn(): void {
+    const t = this.activeTable;
+    if (!t) return this.info('Put the cursor in a table first.');
+    this.run(
+      DataEditCommands.setTableHeaderColumn(
+        this.session.workbook.peek(),
+        this.sheetName,
+        t,
+        !t.hasHeaderColumn,
+      ),
+    );
+  }
+
+  toggleBandedRows(): void {
+    const t = this.activeTable;
+    if (!t) return this.info('Put the cursor in a table first.');
+    this.run(DataEditCommands.setTableBandedRows(this.sheetName, t, !t.hasBandedRows));
+  }
+
+  removeTable(): void {
+    const t = this.activeTable;
+    if (!t) return;
+    this.run(DataEditCommands.removeTable(this.sheetName, t));
+  }
+
+  // ── Validation, links, names ─────────────────────────────────────────────
+
+  /** Replace the rules over the range with `rule` (null removes them). */
+  setValidation(range: CellRange, rule: DataValidation | null): void {
+    const name = this.sheetName;
+    const old = this.sheet.validations.filter((v) => v.target.intersects(range));
+    const remove = new ActionCommand(
+      'Data Validation',
+      (wb) => {
+        for (const v of old) wb.findSheet(name)!.removeValidation(v);
+        return EditResult.none;
+      },
+      (wb) => {
+        for (const v of old) wb.findSheet(name)!.addValidation(v);
+        return EditResult.none;
+      },
+    );
+    const steps: EditCommand[] = old.length > 0 ? [remove] : [];
+    if (rule) steps.push(DataEditCommands.setValidation(name, rule));
+    this.run(each('Data Validation', steps));
+  }
+
+  /** Items for a list rule's dropdown. */
+  listItems(rule: DataValidation): string[] {
+    if (rule.listValues && rule.listValues.length > 0) return [...rule.listValues];
+    if (!rule.listSource) return [];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const v of this.resolver(rule.listSource)) {
+      if (v.kind === 'empty') continue;
+      const t = v.kind === 'text' ? v.value : CellValue.toInvariantString(v);
+      if (seen.has(t.toUpperCase())) continue;
+      seen.add(t.toUpperCase());
+      out.push(t);
+    }
+    return out;
+  }
+
+  setHyperlink(row: number, column: number, link: Hyperlink | null, text: string): void {
+    const s = this.session;
+    const wb = s.workbook.peek();
+    const steps: EditCommand[] = [];
+    const current = this.sheet.getValue(row, column);
+    const shown = current.kind === 'empty' ? '' : s.editText(row, column);
+    if (text !== shown && (text !== '' || link === null))
+      steps.push(EditCommands.setInput(this.sheetName, row, column, text, s.locale, wb));
+    else if (link && current.kind === 'empty')
+      steps.push(EditCommands.setInput(this.sheetName, row, column, link.target, s.locale, wb));
+    steps.push(EditCommands.setHyperlink(wb, this.sheetName, row, column, link));
+    this.run(each('Set Hyperlink', steps));
+  }
+
+  /** ⌘-click: open the cell's link in a new tab/window. */
+  openLink(row: number, column: number): boolean {
+    const link = this.sheet.find(row, column)?.hyperlink;
+    if (!link) return false;
+    if (!/^(https?|mailto|file):/i.test(link.target)) {
+      // An in-document reference like `#Sheet2.A1` or `Sheet2!A1`.
+      if (this.goTo(link.target.replace(/^#/, '').replace(/\.(?=[A-Z]+\d)/i, '!'))) return true;
+      this.error(`Can’t open “${link.target}”.`);
+      return true;
+    }
+    // Electron's window-open handler sends web links to the system browser.
+    window.open(link.target, '_blank', 'noopener');
+    return true;
+  }
+
+  /** Named ranges change the workbook directly (not undoable), then everything recalculates. */
+  addNamedRange(nr: NamedRange): string | null {
+    const wb = this.session.workbook.peek();
+    if (!/^[A-Za-z_\\][A-Za-z0-9_.]*$/.test(nr.name) || CellAddress.tryParse(nr.name))
+      return 'Names start with a letter or underscore and can’t look like a cell reference.';
+    if (wb.findNamedRange(nr.name, nr.scope ?? null)) return `“${nr.name}” already exists.`;
+    wb.addNamedRange(nr);
+    this.session.recalculateAll();
+    this.session.touch();
+    return null;
+  }
+
+  removeNamedRange(nr: NamedRange): void {
+    this.session.workbook.peek().removeNamedRange(nr.name, nr.scope ?? null);
+    this.session.recalculateAll();
+    this.session.touch();
+  }
+
+  /** Clear every cell (values, formulas, formatting) on the active sheet; layout stays. */
+  resetSheetData(): void {
+    const used = this.sheet.getUsedRange();
+    if (!used) return this.info('The sheet is already empty.');
+    this.run(EditCommands.clearAll(this.sheetName, used));
+  }
+
+  insertChartSheet(chart: ChartDefinition | null): void {
+    if (!chart) return this.info('Select a range with numbers to chart.');
+    const wb = this.session.workbook.peek();
+    const sheet = wb.addChartSheet(chart);
+    this.session.recalculateAll();
+    this.session.touch(true);
+    this.session.setActiveSheet(wb.worksheets.indexOf(sheet));
+  }
+
   // ── Clipboard ────────────────────────────────────────────────────────────
 
   /** Copy to our block plus the system clipboard as TSV of displayed values. */
@@ -822,7 +1213,9 @@ export class AppController {
     const sheet = this.sheetName;
     if (own && (text === null || normalize(text) === normalize(own.text))) {
       const cut = own.block.isCut;
-      this.run(new PasteBlockCommand(sheet, this.range, own.block, mode));
+      const paste = new PasteBlockCommand(sheet, this.range, own.block, mode);
+      if (!this.#preflight(paste.projectWrites())) return;
+      this.run(paste);
       if (cut) this.#clipboard = null;
       return;
     }
@@ -833,6 +1226,13 @@ export class AppController {
     const locale = this.session.locale;
     const { row, column } = this.selection.active.peek();
     const wb = this.session.workbook.peek();
+    const incoming = rows.flatMap((cells, r) =>
+      cells.map((v, c) => {
+        const parsed = InputParser.parse(v, locale);
+        return { row: row + r, column: column + c, value: parsed.value, isFormula: parsed.formula !== null };
+      }),
+    );
+    if (!this.#preflight(incoming)) return;
     const cmds = rows.flatMap((cells, r) =>
       cells.map((v, c) => EditCommands.setInput(sheet, row + r, column + c, v, locale, wb)),
     );

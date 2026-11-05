@@ -9,6 +9,7 @@ import {
   StylePool,
   type Worksheet,
 } from '@cellestra/core';
+import { drawChrome, type ChromeButton } from './chrome.ts';
 import type { GridPalette } from './palette.ts';
 import { HEADER_HEIGHT, HEADER_WIDTH, type Band, type Rect, type Viewport } from './viewport.ts';
 
@@ -35,6 +36,8 @@ export interface RenderInput {
   /** Hide the content of the cell under the inline editor. */
   readonly editing?: { row: number; column: number } | null;
   readonly showFormulas?: boolean;
+  /** Filter chevrons and the validation-list arrow, from `chromeButtons`. */
+  readonly chrome?: readonly ChromeButton[];
 }
 
 export interface DisplayText {
@@ -70,6 +73,7 @@ export function renderGrid(input: RenderInput): void {
       h: paneY - HEADER_HEIGHT,
     });
 
+  if (input.chrome?.length) drawChrome(ctx, input.chrome, palette);
   drawHeaders(input);
 
   if (v.frozenRows > 0 || v.frozenColumns > 0) {
@@ -115,10 +119,25 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
   for (const t of sheet.tables) {
     const r = t.range;
     if (r.bottom < top || r.top > bottom || r.right < left || r.left > right) continue;
-    if (t.hasHeader && r.top >= top && r.top <= bottom) {
-      const rect = v.rangeRect(r.top, r.left, r.top, r.right);
-      ctx.fillStyle = palette.tableHeaderBand;
-      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    for (const rb of rows) {
+      const row = rb.index;
+      if (row < r.top || row > r.bottom) continue;
+      const isHeader = t.hasHeader && row === r.top;
+      const dataIndex = row - r.top - (t.hasHeader ? 1 : 0);
+      const rect = v.rangeRect(row, r.left, row, r.right);
+      if (isHeader) {
+        ctx.fillStyle = palette.tableHeaderBand;
+        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+      } else if (t.hasBandedRows && dataIndex % 2 === 1) {
+        // Banding is opt-in: a translucent tint of the header band on alternate data rows.
+        ctx.fillStyle = palette.tableRowBand;
+        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+      }
+      if (t.hasHeaderColumn && !isHeader) {
+        const c = v.rangeRect(row, r.left, row, r.left);
+        ctx.fillStyle = palette.tableHeaderColumnBand;
+        ctx.fillRect(c.x, c.y, c.w, c.h);
+      }
     }
   }
 
@@ -131,6 +150,16 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
   for (const cb of cols)
     line(ctx, crisp(cb.start + cb.size), clip.y, crisp(cb.start + cb.size), clip.y + clip.h);
   ctx.stroke();
+
+  // Table outline, in the header band's colour so frame and header read as one piece.
+  ctx.strokeStyle = palette.tableHeaderBand;
+  ctx.lineWidth = 1.2;
+  for (const t of sheet.tables) {
+    const r = t.range;
+    if (r.bottom < top || r.top > bottom || r.right < left || r.left > right) continue;
+    const rect = v.rangeRect(r.top, r.left, r.bottom, r.right);
+    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+  }
 
   // 3. Merged areas: one rect each, painted over the gridlines inside them.
   for (const m of merges) {

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { effect, type ReadonlySignal } from '@preact/signals';
 import type { CellStyle, CellValue, StylePool, Worksheet } from '@cellestra/core';
 import { Axis } from './axis.ts';
+import { chromeButtons, hitChrome, type ChromeButton } from './chrome.ts';
 import { renderGrid, CELL_PAD_X, CELL_PAD_Y, type DisplayText } from './render.ts';
 import { Viewport, HEADER_HEIGHT, HEADER_WIDTH } from './viewport.ts';
 import type { GridPalette } from './palette.ts';
@@ -16,7 +17,8 @@ export interface GridHost {
   display(value: CellValue, style: CellStyle): DisplayText;
   /** What the inline editor starts with (`=SUM(A1:A3)` for formulas, the raw input otherwise). */
   editText(row: number, column: number): string;
-  commit(row: number, column: number, text: string): void;
+  /** Return false to reject the entry (validation): the editor stays open. */
+  commit(row: number, column: number, text: string): boolean | void;
   clearSelection(): void;
   /** Edge navigation (⌘-arrow): the cell to jump to. */
   edge(row: number, column: number, rowStep: number, columnStep: number): { row: number; column: number };
@@ -25,6 +27,10 @@ export interface GridHost {
   /** Column/row resize from the header borders. */
   resizeColumn(column: number, width: number): void;
   resizeRow(row: number, height: number): void;
+  /** A filter chevron or validation arrow was clicked; `anchor` is its rect in client px. */
+  chrome?(button: ChromeButton, anchor: { x: number; y: number; w: number; h: number }): void;
+  /** ⌘/Ctrl-click on a cell with a hyperlink. Return true when it opened something. */
+  openLink?(row: number, column: number): boolean;
 }
 
 export interface GridProps {
@@ -79,6 +85,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     axesVersion: -1,
     axes: null as ReturnType<typeof axesFor> | null,
     drag: null as null | Drag,
+    chrome: [] as ChromeButton[],
   });
 
   // --- layout -----------------------------------------------------------------------------------
@@ -122,7 +129,10 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const v = viewport();
     state.current.viewport = v;
     const sel = selection.state.value;
+    const chrome = chromeButtons(host.sheet.value, v, sel);
+    state.current.chrome = chrome;
     renderGrid({
+      chrome,
       ctx,
       viewport: v,
       sheet: host.sheet.value,
@@ -209,8 +219,11 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const at = editingRef.current;
     if (!at) return;
     const text = editorRef.current!.value;
+    if (commit && host.commit(at.row, at.column, text) === false) {
+      editorRef.current!.select();
+      return;
+    }
     setEditing(null);
-    if (commit) host.commit(at.row, at.column, text);
     rootRef.current?.focus();
     if (move[0] || move[1]) moveActive(move[0], move[1], false, true);
   };
@@ -386,8 +399,20 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       state.current.drag = resize;
       return;
     }
+    const button = hitChrome(state.current.chrome, x, y);
+    if (button && host.chrome) {
+      const r = canvasRef.current!.getBoundingClientRect();
+      host.chrome(button, {
+        x: r.left + button.rect.x,
+        y: r.top + button.rect.y,
+        w: button.rect.w,
+        h: button.rect.h,
+      });
+      return;
+    }
     const hit = v.hitTest(x, y);
     const add = e.metaKey || e.ctrlKey;
+    if (add && hit.zone === 'cell' && host.openLink?.(hit.row, hit.column)) return;
     switch (hit.zone) {
       case 'corner':
         selection.selectRange(rangeOf(0, 0, MAX_ROW, MAX_COLUMN));

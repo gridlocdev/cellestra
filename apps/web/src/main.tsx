@@ -93,8 +93,16 @@ const BREAKS = new Set([
   'format.borderAll',
   'format.columnWidth',
   'format.cleanUpSheet',
+  'format.cells',
+  'data.customSort',
+  'data.toggleFilter',
+  'data.createTable',
+  'data.validation',
+  'insert.function',
+  'insert.date',
   'formula.recalc',
   'sheet.next',
+  'sheet.resetData',
 ]);
 
 function nativeMenu(catalog: CommandCatalog): NativeMenuItem[] {

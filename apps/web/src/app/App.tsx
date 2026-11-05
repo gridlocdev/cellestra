@@ -4,6 +4,7 @@ import { SheetDimensions, type CellValue } from '@cellestra/core';
 import {
   CommandMenu,
   Dialog,
+  FormatCellsDialog,
   FormulaBar,
   Grid,
   Icon,
@@ -15,6 +16,16 @@ import {
   type RecentEntry,
 } from '@cellestra/ui';
 import type { AppController, Theme } from './controller.ts';
+import {
+  FilterPopup,
+  FunctionPicker,
+  HyperlinkDialog,
+  NamedRangesDialog,
+  SortFilterDialog,
+  ValidationDialog,
+  ValidationListPopup,
+} from './DataDialogs.tsx';
+import { ChartPane } from './ChartPane.tsx';
 
 const TOOLBAR: readonly (string | '|')[] = [
   'file.new',
@@ -73,6 +84,21 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       },
       resizeColumn: (column, width) => app.resizeColumn(column, width),
       resizeRow: (row, height) => app.resizeRow(row, height),
+      chrome: (button, anchor) => {
+        if (button.kind === 'filter') {
+          const target = app.sheet.tables.find((t) => t.range.equals(button.range)) ?? null;
+          app.dialog.value = {
+            kind: 'filter',
+            target: { range: button.range, hasHeader: button.hasHeader, table: target },
+            column: button.column,
+            anchor,
+          };
+        } else {
+          const { row, column } = app.selection.active.peek();
+          app.dialog.value = { kind: 'validationList', rule: button.rule, row, column, anchor };
+        }
+      },
+      openLink: (row, column) => app.openLink(row, column),
     }),
     [app, catalog, s],
   );
@@ -165,14 +191,18 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       <Toolbar app={app} catalog={catalog} />
       <FormulaBarConnected app={app} />
       <div class="cs-main" onPointerUp={() => app.selectionDone()}>
-        <Grid
-          host={host}
-          selection={app.selection}
-          zoom={app.zoom}
-          palette={app.palette}
-          showFormulas={app.showFormulas}
-          controller={app.grid}
-        />
+        {s.activeSheet.value.isChartSheet ? (
+          <ChartPane app={app} />
+        ) : (
+          <Grid
+            host={host}
+            selection={app.selection}
+            zoom={app.zoom}
+            palette={app.palette}
+            showFormulas={app.showFormulas}
+            controller={app.grid}
+          />
+        )}
       </div>
       <Footer app={app} />
       <Overlays app={app} catalog={catalog} />
@@ -260,7 +290,7 @@ function FormulaBarConnected({ app }: { readonly app: AppController }) {
       content={content.value}
       onCommit={(text) => {
         const { row, column } = app.selection.active.peek();
-        app.commit(row, column, text);
+        if (!app.commit(row, column, text)) return;
         app.selection.select(Math.min(row + 1, 1_048_575), column);
       }}
       onGoTo={(ref) => app.goTo(ref)}
@@ -276,6 +306,11 @@ function Footer({ app }: { readonly app: AppController }) {
     void s.version.value;
     return selectionSummary(app);
   });
+  const inputMessage = useComputed(() => {
+    void s.version.value;
+    const { row, column } = app.selection.active.value;
+    return s.activeSheet.value.findValidation(row, column)?.inputMessage ?? '';
+  });
   return (
     <div class="cs-footer">
       <SheetTabs
@@ -288,6 +323,11 @@ function Footer({ app }: { readonly app: AppController }) {
         onMenu={(index, x, y) => setMenu({ index, x, y })}
       />
       <span style={{ flex: 1 }} />
+      {inputMessage.value && (
+        <span class="cs-status cs-input-message" title={inputMessage.value}>
+          {inputMessage.value}
+        </span>
+      )}
       {s.hasCircularReference.value && (
         <span class="cs-status" style={{ color: 'var(--cs-danger)' }}>
           Circular reference
@@ -380,7 +420,9 @@ function selectionSummary(app: AppController): string {
     const bottom = Math.min(range.bottom, used.bottom);
     const left = Math.max(range.left, used.left);
     const right = Math.min(range.right, used.right);
-    for (let row = top; row <= bottom; row++)
+    for (let row = top; row <= bottom; row++) {
+      // Like Calc: rows a filter (or the user) hid don't count.
+      if (sheet.findRow(row)?.hidden) continue;
       for (let c = left; c <= right; c++) {
         const v = sheet.getValue(row, c);
         if (v.kind === 'empty') continue;
@@ -390,6 +432,7 @@ function selectionSummary(app: AppController): string {
           sum += v.value;
         }
       }
+    }
   }
   if (count === 0) return '';
   const fmt = (n: number) => n.toLocaleString(app.session.locale, { maximumFractionDigits: 10 });
@@ -562,6 +605,29 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
           </p>
         </Dialog>
       )}
+      {d?.kind === 'formatCells' && (
+        <FormatCellsDialog
+          current={app.activeStyle}
+          styles={app.selectionStyles()}
+          locale={s.locale}
+          onApply={(transform) => app.style('Format Cells', transform)}
+          onClose={() => {
+            app.dialog.value = null;
+            refocus();
+          }}
+        />
+      )}
+      {d?.kind === 'filter' && (
+        <FilterPopup app={app} target={d.target} column={d.column} anchor={d.anchor} />
+      )}
+      {d?.kind === 'validationList' && (
+        <ValidationListPopup app={app} rule={d.rule} row={d.row} column={d.column} anchor={d.anchor} />
+      )}
+      {d?.kind === 'sortFilter' && <SortFilterDialog app={app} target={d.target} sortOnly={d.sortOnly} />}
+      {d?.kind === 'validation' && <ValidationDialog app={app} range={d.range} existing={d.existing} />}
+      {d?.kind === 'hyperlink' && <HyperlinkDialog app={app} row={d.row} column={d.column} />}
+      {d?.kind === 'namedRanges' && <NamedRangesDialog app={app} />}
+      {d?.kind === 'functions' && <FunctionPicker app={app} />}
       {d?.kind === 'settings' && (
         <SettingsDialog
           app={app}

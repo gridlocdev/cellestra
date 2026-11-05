@@ -1,4 +1,7 @@
 /* Cellestra UI — theme tokens + component styles. Light by default; [data-theme=dark] or the OS. */
+@import './components/formatCells.css';
+@import './components/data.css';
+@import './charts/charts.css';
 :root {
   --cs-bg: #ffffff;
   --cs-chrome: #f6f6f6;

@@ -1,5 +1,6 @@
 import {
   Borders,
+  ChartEditCommands,
   BorderEdges,
   CellRange,
   NumberFormats,
@@ -51,6 +52,11 @@ export function buildCommands(app: AppController): CommandCatalog {
     (st: CellStyle): CellStyle => ({ ...st, border: { ...st.border, ...e } });
   const sub = (t: number, l: number, b: number, r: number) => CellRange.fromBounds(t, l, b, r);
   const hasDoc = () => s.document.value !== null;
+  /** Re-read on every edit or cursor move, for enabled/active checks. */
+  const live =
+    <T>(f: () => T) =>
+    () => (s.version.value, app.selection.state.value, f());
+  const inTable = live(() => app.activeTable !== null);
 
   const specs: CommandSpec[] = [
     // File
@@ -435,6 +441,51 @@ export function buildCommands(app: AppController): CommandCatalog {
       run: () => s.addSheet(),
     },
     {
+      id: 'insert.function',
+      title: 'Insert Function…',
+      description: 'Pick a function and start a formula with it',
+      group: 'Insert',
+      shortcut: 'ctrl+alt+f',
+      icon: 'sigma',
+      run: () => (app.dialog.value = { kind: 'functions' }),
+    },
+    {
+      id: 'insert.hyperlink',
+      title: 'Hyperlink…',
+      description: 'Add, change, or remove the link on the active cell',
+      group: 'Insert',
+      shortcut: 'mod+alt+k',
+      icon: 'link',
+      run: () => {
+        const { row, column } = app.selection.active.value;
+        app.dialog.value = { kind: 'hyperlink', row, column };
+      },
+    },
+    {
+      id: 'insert.namedRange',
+      title: 'Named Ranges…',
+      description: 'Name a range so formulas can refer to it',
+      group: 'Insert',
+      icon: 'tag',
+      run: () => (app.dialog.value = { kind: 'namedRanges' }),
+    },
+    {
+      id: 'insert.chartSheet',
+      title: 'Chart Sheet',
+      description: 'Chart the selected data on a new sheet',
+      group: 'Insert',
+      icon: 'chart-column',
+      run: () => {
+        try {
+          app.insertChartSheet(
+            ChartEditCommands.chartFromRange(s.workbook.value, app.sheetName, app.regionOrSelection),
+          );
+        } catch (e) {
+          app.error(e);
+        }
+      },
+    },
+    {
       id: 'insert.date',
       title: 'Insert Today’s Date',
       description: 'Type today’s date into the cell',
@@ -776,6 +827,15 @@ export function buildCommands(app: AppController): CommandCatalog {
       group: 'Format',
       run: () => app.cleanUp('workbook'),
     },
+    {
+      id: 'format.cells',
+      title: 'Format Cells…',
+      description: 'Number format, font, fill, alignment, and borders',
+      group: 'Format',
+      shortcut: 'mod+1',
+      icon: 'settings-2',
+      run: () => (app.dialog.value = { kind: 'formatCells' }),
+    },
 
     // Data
     {
@@ -793,6 +853,98 @@ export function buildCommands(app: AppController): CommandCatalog {
       group: 'Data',
       icon: 'sort-desc',
       run: () => app.sort(false),
+    },
+    {
+      id: 'data.customSort',
+      title: 'Custom Sort…',
+      description: 'Sort by several columns',
+      group: 'Data',
+      icon: 'sort',
+      run: () => (app.dialog.value = { kind: 'sortFilter', target: app.dataTarget(), sortOnly: true }),
+    },
+    {
+      id: 'data.sortAndFilter',
+      title: 'Sort & Filter…',
+      description: 'Sort levels and per-column filter conditions in one step',
+      group: 'Data',
+      shortcut: 'mod+shift+f',
+      icon: 'filter',
+      run: () => (app.dialog.value = { kind: 'sortFilter', target: app.dataTarget(), sortOnly: false }),
+    },
+    {
+      id: 'data.toggleFilter',
+      title: 'AutoFilter',
+      description: 'Add or remove filter buttons on the header row',
+      group: 'Data',
+      icon: 'filter',
+      run: () => app.toggleFilter(),
+      active: live(() => app.sheet.activeFilter !== null),
+    },
+    {
+      id: 'data.clearFilter',
+      title: 'Clear Filter',
+      description: 'Show every row again',
+      group: 'Data',
+      icon: 'filter-x',
+      run: () => app.clearFilter(),
+      enabled: live(() => {
+        const t = app.filterTarget;
+        return t !== null && (t.table ? !!t.table.filter : !!app.sheet.activeFilterSpec);
+      }),
+    },
+    {
+      id: 'data.createTable',
+      title: 'Create Table',
+      description: 'Make the region a table with a header row',
+      group: 'Data',
+      shortcut: 'mod+t',
+      icon: 'table',
+      run: () => app.createTable(),
+      enabled: live(() => app.activeTable === null),
+    },
+    {
+      id: 'data.headerColumn',
+      title: 'Table Header Column',
+      description: 'Treat the table’s first column as row labels',
+      group: 'Data',
+      icon: 'panel-left',
+      run: () => app.toggleHeaderColumn(),
+      enabled: inTable,
+      active: live(() => !!app.activeTable?.hasHeaderColumn),
+    },
+    {
+      id: 'data.bandedRows',
+      title: 'Table Banded Rows',
+      description: 'Stripe alternate table rows',
+      group: 'Data',
+      icon: 'layers',
+      run: () => app.toggleBandedRows(),
+      enabled: inTable,
+      active: live(() => !!app.activeTable?.hasBandedRows),
+    },
+    {
+      id: 'data.removeTable',
+      title: 'Remove Table',
+      description: 'Turn the table back into a plain range (cells stay)',
+      group: 'Data',
+      icon: 'square-x',
+      run: () => app.removeTable(),
+      enabled: inTable,
+    },
+    {
+      id: 'data.validation',
+      title: 'Data Validation…',
+      description: 'Limit what can be typed into the selection',
+      group: 'Data',
+      icon: 'square-check',
+      run: () => {
+        const { row, column } = app.selection.active.value;
+        app.dialog.value = {
+          kind: 'validation',
+          range: app.range,
+          existing: app.sheet.findValidation(row, column) ?? null,
+        };
+      },
     },
     {
       id: 'data.removeDuplicates',
@@ -874,6 +1026,15 @@ export function buildCommands(app: AppController): CommandCatalog {
       run: () =>
         s.setActiveSheet((s.activeIndex.value - 1 + s.sheetNames.value.length) % s.sheetNames.value.length),
       global: true,
+    },
+
+    {
+      id: 'sheet.resetData',
+      title: 'Reset Sheet Data',
+      description: 'Clear every cell and its formatting on this sheet',
+      group: 'Sheet',
+      icon: 'eraser',
+      run: () => app.resetSheetData(),
     },
 
     // Help

@@ -9,5 +9,9 @@
     "types": ["vite/client"]
   },
   "include": ["src", "vite.config.ts"],
-  "references": [{ "path": "../../packages/core" }, { "path": "../../packages/ui" }]
+  "references": [
+    { "path": "../../packages/charts" },
+    { "path": "../../packages/core" },
+    { "path": "../../packages/ui" }
+  ]
 }
