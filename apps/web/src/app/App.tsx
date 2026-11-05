@@ -1,0 +1,759 @@
+import { useComputed, useSignal, useSignalEffect } from '@preact/signals';
+import { useEffect, useMemo, useState } from 'preact/hooks';
+import { SheetDimensions, type CellValue } from '@cellestra/core';
+import {
+  CommandMenu,
+  Dialog,
+  FormulaBar,
+  Grid,
+  Icon,
+  NasBrowser,
+  QuickPick,
+  SheetTabs,
+  type CommandCatalog,
+  type GridHost,
+  type RecentEntry,
+} from '@cellestra/ui';
+import type { AppController, Theme } from './controller.ts';
+
+const TOOLBAR: readonly (string | '|')[] = [
+  'file.new',
+  'file.open',
+  'file.save',
+  '|',
+  'edit.undo',
+  'edit.redo',
+  '|',
+  'format.bold',
+  'format.italic',
+  'format.underline',
+  '|',
+  'format.alignLeft',
+  'format.alignCenter',
+  'format.alignRight',
+  'format.wrap',
+  'format.merge',
+  '|',
+  'format.asCurrency',
+  'format.asPercent',
+  'format.decreaseDecimal',
+  'format.increaseDecimal',
+  '|',
+  'format.borderAll',
+  'edit.formatPainter',
+  'edit.autoSum',
+  'data.sortAsc',
+  'data.sortDesc',
+  '|',
+  'view.freezePanes',
+];
+
+export function App({ app, catalog }: { readonly app: AppController; readonly catalog: CommandCatalog }) {
+  const s = app.session;
+  const dragging = useSignal(false);
+
+  const host = useMemo<GridHost>(
+    () => ({
+      sheet: s.activeSheet,
+      get styles() {
+        return s.workbook.value.styles;
+      },
+      version: s.version,
+      display: (value: CellValue, style) => ({ text: s.display(value, style) }),
+      editText: (row, column) => s.editText(row, column),
+      commit: (row, column, text) => app.commit(row, column, text),
+      clearSelection: () => app.clearContents(),
+      edge: (row, column, dr, dc) => app.edge(row, column, dr, dc),
+      shortcut: (e, inText) => {
+        // Copy/cut/paste use the native clipboard events below (no permission prompt).
+        const command = catalog.forEvent(e, inText);
+        if (!command || ['edit.copy', 'edit.cut', 'edit.paste'].includes(command.id)) return false;
+        void catalog.run(command.id);
+        return true;
+      },
+      resizeColumn: (column, width) => app.resizeColumn(column, width),
+      resizeRow: (row, height) => app.resizeRow(row, height),
+    }),
+    [app, catalog, s],
+  );
+
+  // Shortcuts that fire anywhere (outside the grid too): ⌘K, ⌘S, ⌘O…
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || app.dialog.peek() || app.paletteOpen.peek()) return;
+      const target = e.target as HTMLElement | null;
+      const inText = !!target?.closest('input, textarea, select, [contenteditable]');
+      const inGrid = !!target?.closest('.cs-grid');
+      if (inGrid) return; // the grid routes its own keys through host.shortcut
+      const command = catalog.forEvent(e, inText);
+      if (!command || (inText && !command.global)) return;
+      if (['edit.copy', 'edit.cut', 'edit.paste'].includes(command.id)) return;
+      e.preventDefault();
+      void catalog.run(command.id);
+    };
+    const inField = (e: Event) =>
+      e.target instanceof Element && !!e.target.closest('input, textarea:not(.cs-grid-editor)');
+    const gridHasFocus = () =>
+      !!document.activeElement?.closest('.cs-grid') && !(app.grid.current?.isEditing() ?? false);
+    const onCopy = (e: ClipboardEvent) => {
+      if (inField(e) || !gridHasFocus()) return;
+      e.preventDefault();
+      app.copy(e.type === 'cut', e.clipboardData);
+    };
+    const onPaste = (e: ClipboardEvent) => {
+      if (inField(e) || !gridHasFocus()) return;
+      e.preventDefault();
+      app.paste(e.clipboardData?.getData('text/plain') ?? null);
+    };
+    addEventListener('keydown', onKey);
+    document.addEventListener('copy', onCopy);
+    document.addEventListener('cut', onCopy);
+    document.addEventListener('paste', onPaste);
+    return () => {
+      removeEventListener('keydown', onKey);
+      document.removeEventListener('copy', onCopy);
+      document.removeEventListener('cut', onCopy);
+      document.removeEventListener('paste', onPaste);
+    };
+  }, [app, catalog]);
+
+  // Window title.
+  useSignalEffect(() => {
+    document.title = `${s.modified.value ? '• ' : ''}${s.title.value} — Cellestra`;
+  });
+
+  // Drag a file anywhere to open it.
+  useEffect(() => {
+    let depth = 0;
+    const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false;
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth++;
+      dragging.value = true;
+    };
+    const leave = () => {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) dragging.value = false;
+    };
+    const over = (e: DragEvent) => {
+      if (hasFiles(e)) e.preventDefault();
+    };
+    const drop = (e: DragEvent) => {
+      depth = 0;
+      dragging.value = false;
+      const file = e.dataTransfer?.files[0];
+      if (!file) return;
+      e.preventDefault();
+      void app.openFile(file);
+    };
+    addEventListener('dragenter', enter);
+    addEventListener('dragleave', leave);
+    addEventListener('dragover', over);
+    addEventListener('drop', drop);
+    return () => {
+      removeEventListener('dragenter', enter);
+      removeEventListener('dragleave', leave);
+      removeEventListener('dragover', over);
+      removeEventListener('drop', drop);
+    };
+  }, [app, dragging]);
+
+  const isMacNative = app.native?.platform === 'darwin';
+
+  return (
+    <div class={`cs-app ${isMacNative ? 'cs-native-mac' : ''}`}>
+      <Toolbar app={app} catalog={catalog} />
+      <FormulaBarConnected app={app} />
+      <div class="cs-main" onPointerUp={() => app.selectionDone()}>
+        <Grid
+          host={host}
+          selection={app.selection}
+          zoom={app.zoom}
+          palette={app.palette}
+          showFormulas={app.showFormulas}
+          controller={app.grid}
+        />
+      </div>
+      <Footer app={app} />
+      <Overlays app={app} catalog={catalog} />
+      {dragging.value && <div class="cs-drop">Drop a spreadsheet to open it</div>}
+      {app.toast.value && (
+        <div
+          class="cs-toast"
+          role="status"
+          style={
+            app.toast.value.tone === 'error' ? { background: 'var(--cs-danger)', color: '#fff' } : undefined
+          }
+        >
+          {app.toast.value.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Toolbar({ app, catalog }: { readonly app: AppController; readonly catalog: CommandCatalog }) {
+  const s = app.session;
+  // Read the signals the enabled/active checks depend on, so the toolbar re-renders with them.
+  void s.version.value;
+  void app.selection.state.value;
+  void app.formatPainter.value;
+  void app.recents.value;
+  return (
+    <div class="cs-toolbar" role="toolbar" aria-label="Commands">
+      {TOOLBAR.map((id, i) => {
+        if (id === '|') return <span key={i} class="cs-sep" />;
+        const c = catalog.get(id);
+        if (!c) return null;
+        const label = c.shortcutText ? `${c.title} (${c.shortcutText})` : c.title;
+        return (
+          <button
+            key={id}
+            type="button"
+            class="cs-btn"
+            title={label}
+            aria-label={c.title}
+            aria-pressed={c.active ? c.active() : undefined}
+            disabled={!catalog.isEnabled(c)}
+            onPointerDown={(e) => e.preventDefault() /* keep focus (and the selection) in the grid */}
+            onClick={() => void catalog.run(id)}
+          >
+            <Icon name={c.icon ?? 'square'} />
+          </button>
+        );
+      })}
+      <span class="cs-title">
+        {s.modified.value ? '• ' : ''}
+        {s.title.value}
+      </span>
+      <button
+        type="button"
+        class="cs-btn"
+        title="Command Menu (⌘K)"
+        aria-label="Command Menu"
+        onClick={() => (app.paletteOpen.value = true)}
+      >
+        <Icon name="command" />
+      </button>
+    </div>
+  );
+}
+
+function FormulaBarConnected({ app }: { readonly app: AppController }) {
+  const s = app.session;
+  const address = useComputed(() => {
+    const st = app.selection.state.value;
+    const r = app.selection.range.value;
+    const a = SheetDimensions.columnToLetters(st.column) + (st.row + 1);
+    if (r.top === r.bottom && r.left === r.right) return a;
+    return `${SheetDimensions.columnToLetters(r.left)}${r.top + 1}:${SheetDimensions.columnToLetters(r.right)}${r.bottom + 1}`;
+  });
+  const content = useComputed(() => {
+    void s.version.value;
+    void s.activeSheet.value;
+    const { row, column } = app.selection.active.value;
+    return s.editText(row, column);
+  });
+  return (
+    <FormulaBar
+      address={address.value}
+      content={content.value}
+      onCommit={(text) => {
+        const { row, column } = app.selection.active.peek();
+        app.commit(row, column, text);
+        app.selection.select(Math.min(row + 1, 1_048_575), column);
+      }}
+      onGoTo={(ref) => app.goTo(ref)}
+      onDone={() => app.grid.current?.focus()}
+    />
+  );
+}
+
+function Footer({ app }: { readonly app: AppController }) {
+  const s = app.session;
+  const [menu, setMenu] = useState<{ index: number; x: number; y: number } | null>(null);
+  const summary = useComputed(() => {
+    void s.version.value;
+    return selectionSummary(app);
+  });
+  return (
+    <div class="cs-footer">
+      <SheetTabs
+        names={s.sheetNames.value}
+        active={s.activeIndex.value}
+        onSelect={(i) => s.setActiveSheet(i)}
+        onAdd={() => s.addSheet()}
+        onRename={(i, name) => s.renameSheet(i, name)}
+        onMove={(from, to) => s.moveSheet(from, to)}
+        onMenu={(index, x, y) => setMenu({ index, x, y })}
+      />
+      <span style={{ flex: 1 }} />
+      {s.hasCircularReference.value && (
+        <span class="cs-status" style={{ color: 'var(--cs-danger)' }}>
+          Circular reference
+        </span>
+      )}
+      <span class="cs-status">{summary.value}</span>
+      <span class="cs-status" title="Zoom">
+        {Math.round(app.zoom.value * 100)}%
+      </span>
+      {menu && (
+        <SheetMenu
+          x={menu.x}
+          y={menu.y}
+          canDelete={s.sheetNames.value.length > 1}
+          onClose={() => setMenu(null)}
+          onPick={(action) => {
+            setMenu(null);
+            if (action === 'rename') void app.renameSheet(menu.index);
+            else if (action === 'duplicate') s.duplicateSheet(menu.index);
+            else app.deleteSheet(menu.index);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SheetMenu(props: {
+  x: number;
+  y: number;
+  canDelete: boolean;
+  onClose: () => void;
+  onPick: (a: 'rename' | 'duplicate' | 'delete') => void;
+}) {
+  useEffect(() => {
+    const close = () => props.onClose();
+    const t = setTimeout(() => addEventListener('pointerdown', close, { once: true }));
+    return () => {
+      clearTimeout(t);
+      removeEventListener('pointerdown', close);
+    };
+  }, []);
+  const item = (a: 'rename' | 'duplicate' | 'delete', label: string, disabled = false) => (
+    <li
+      role="menuitem"
+      aria-disabled={disabled}
+      style={disabled ? { opacity: 0.45 } : undefined}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        if (!disabled) props.onPick(a);
+      }}
+    >
+      {label}
+    </li>
+  );
+  return (
+    <ul
+      class="cs-palette"
+      role="menu"
+      style={{
+        position: 'fixed',
+        left: `${props.x}px`,
+        top: `${props.y - 110}px`,
+        width: '180px',
+        margin: 0,
+        padding: '4px',
+        listStyle: 'none',
+      }}
+    >
+      {item('rename', 'Rename…')}
+      {item('duplicate', 'Duplicate')}
+      {item('delete', 'Delete', !props.canDelete)}
+    </ul>
+  );
+}
+
+/** Sum / average / count of the selection's numbers, like the old status bar. */
+function selectionSummary(app: AppController): string {
+  const st = app.selection.state.value;
+  const sheet = app.session.activeSheet.value;
+  const r = app.selection.range.value;
+  if (r.top === r.bottom && r.left === r.right && st.ranges.length === 1) return '';
+  const used = sheet.getUsedRange();
+  if (!used) return '';
+  let count = 0;
+  let numbers = 0;
+  let sum = 0;
+  for (const range of st.ranges) {
+    const top = Math.max(range.top, used.top);
+    const bottom = Math.min(range.bottom, used.bottom);
+    const left = Math.max(range.left, used.left);
+    const right = Math.min(range.right, used.right);
+    for (let row = top; row <= bottom; row++)
+      for (let c = left; c <= right; c++) {
+        const v = sheet.getValue(row, c);
+        if (v.kind === 'empty') continue;
+        count++;
+        if (v.kind === 'number') {
+          numbers++;
+          sum += v.value;
+        }
+      }
+  }
+  if (count === 0) return '';
+  const fmt = (n: number) => n.toLocaleString(app.session.locale, { maximumFractionDigits: 10 });
+  return numbers > 0 ? `Sum ${fmt(sum)}   Average ${fmt(sum / numbers)}   Count ${count}` : `Count ${count}`;
+}
+
+function Overlays({ app, catalog }: { readonly app: AppController; readonly catalog: CommandCatalog }) {
+  const s = app.session;
+  const d = app.dialog.value;
+  const refocus = () => queueMicrotask(() => app.grid.current?.focus());
+  return (
+    <>
+      {app.paletteOpen.value && (
+        <CommandMenu
+          catalog={catalog}
+          onClose={() => {
+            app.paletteOpen.value = false;
+            refocus();
+          }}
+        />
+      )}
+      {app.sheetPickerOpen.value && (
+        <QuickPick
+          items={s.sheetNames.value.map((name, index) => ({ name, index }))}
+          label={(i) => i.name}
+          placeholder="Go to sheet…"
+          onPick={(i) => s.setActiveSheet(i.index)}
+          onClose={() => {
+            app.sheetPickerOpen.value = false;
+            refocus();
+          }}
+        />
+      )}
+      {app.recentOpen.value && (
+        <QuickPick<RecentEntry>
+          items={app.recents.value}
+          label={(e) => `${e.ref.name} — ${storeLabel(e.ref.store)}`}
+          placeholder="Open recent…"
+          onPick={(e) => void app.openRecent(e)}
+          onClose={() => {
+            app.recentOpen.value = false;
+            refocus();
+          }}
+        />
+      )}
+      {d?.kind === 'confirm-discard' && (
+        <Dialog
+          title="Unsaved changes"
+          onClose={() => d.resolve('cancel')}
+          actions={
+            <>
+              <button type="button" class="cs-btn danger" onClick={() => d.resolve('discard')}>
+                Don’t Save
+              </button>
+              <button type="button" class="cs-btn" onClick={() => d.resolve('cancel')}>
+                Cancel
+              </button>
+              <button type="submit" class="cs-btn primary" autofocus>
+                Save
+              </button>
+            </>
+          }
+          onSubmit={() => d.resolve('save')}
+        >
+          <p>Do you want to save the changes to “{s.title.value}”?</p>
+        </Dialog>
+      )}
+      {d?.kind === 'conflict' && (
+        <Dialog
+          title={
+            d.reason === 'exists'
+              ? 'File exists'
+              : d.reason === 'locked'
+                ? 'File is open elsewhere'
+                : 'File changed'
+          }
+          onClose={() => d.resolve('cancel')}
+          actions={
+            <>
+              {d.reason !== 'exists' && (
+                <button type="button" class="cs-btn" onClick={() => d.resolve('reload')}>
+                  Discard Mine &amp; Reload
+                </button>
+              )}
+              {d.reason !== 'exists' && (
+                <button type="button" class="cs-btn" onClick={() => d.resolve('saveAs')}>
+                  Save a Copy…
+                </button>
+              )}
+              <button type="button" class="cs-btn" onClick={() => d.resolve('cancel')}>
+                Cancel
+              </button>
+              <button type="button" class="cs-btn danger" onClick={() => d.resolve('overwrite')}>
+                {d.reason === 'exists' ? 'Replace' : 'Overwrite'}
+              </button>
+            </>
+          }
+        >
+          <p>{d.message}</p>
+          {d.reason === 'changed' && (
+            <p>Someone else saved this file after you opened it. Overwriting replaces their changes.</p>
+          )}
+          {d.reason === 'locked' && (
+            <p>LibreOffice has the file open. Overwriting may lose the changes made there.</p>
+          )}
+        </Dialog>
+      )}
+      {d?.kind === 'nas' && (
+        <NasBrowser
+          store={app.nas}
+          mode={d.mode}
+          {...(d.suggestedName === undefined ? {} : { suggestedName: d.suggestedName })}
+          onDone={(r) => d.resolve(r)}
+        />
+      )}
+      {d?.kind === 'prompt' && (
+        <PromptDialog title={d.title} label={d.label} value={d.value} onDone={d.resolve} />
+      )}
+      {d?.kind === 'recovery' && (
+        <Dialog
+          title="Recover unsaved work?"
+          onClose={() => d.resolve(false)}
+          actions={
+            <>
+              <button type="button" class="cs-btn" onClick={() => d.resolve(false)}>
+                Discard
+              </button>
+              <button type="submit" class="cs-btn primary" autofocus>
+                Recover
+              </button>
+            </>
+          }
+          onSubmit={() => d.resolve(true)}
+        >
+          <p>Cellestra closed with unsaved changes to “{d.name}”. Recover them?</p>
+        </Dialog>
+      )}
+      {d?.kind === 'find' && <FindDialog app={app} />}
+      {d?.kind === 'shortcuts' && (
+        <ShortcutsDialog
+          catalog={catalog}
+          onClose={() => {
+            app.dialog.value = null;
+            refocus();
+          }}
+        />
+      )}
+      {d?.kind === 'about' && (
+        <Dialog
+          title="About Cellestra"
+          onClose={() => {
+            app.dialog.value = null;
+            refocus();
+          }}
+          actions={
+            <button type="submit" class="cs-btn primary">
+              OK
+            </button>
+          }
+          onSubmit={() => {
+            app.dialog.value = null;
+            refocus();
+          }}
+        >
+          <p>
+            <strong>Cellestra</strong> — a spreadsheet for OpenDocument (.ods) files.
+          </p>
+          <p>
+            Runs entirely on your device: in the browser, from your NAS, or as a desktop app. MIT licensed.
+          </p>
+        </Dialog>
+      )}
+      {d?.kind === 'settings' && (
+        <SettingsDialog
+          app={app}
+          onClose={() => {
+            app.dialog.value = null;
+            refocus();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function storeLabel(kind: string): string {
+  return kind === 'nas' ? 'NAS' : kind === 'native' ? 'This Mac' : 'This computer';
+}
+
+function PromptDialog(props: {
+  title: string;
+  label: string;
+  value: string;
+  onDone: (v: string | null) => void;
+}) {
+  const [value, setValue] = useState(props.value);
+  return (
+    <Dialog
+      title={props.title}
+      onClose={() => props.onDone(null)}
+      onSubmit={() => props.onDone(value)}
+      actions={
+        <>
+          <button type="button" class="cs-btn" onClick={() => props.onDone(null)}>
+            Cancel
+          </button>
+          <button type="submit" class="cs-btn primary">
+            OK
+          </button>
+        </>
+      }
+    >
+      <label style={{ display: 'grid', gap: '6px' }}>
+        {props.label}
+        <input
+          value={value}
+          autofocus
+          onInput={(e) => setValue(e.currentTarget.value)}
+          onFocus={(e) => e.currentTarget.select()}
+        />
+      </label>
+    </Dialog>
+  );
+}
+
+function FindDialog({ app }: { readonly app: AppController }) {
+  const [query, setQuery] = useState(app.findQuery.peek());
+  const [replacement, setReplacement] = useState('');
+  const [note, setNote] = useState('');
+  const close = () => {
+    app.findQuery.value = query;
+    app.dialog.value = null;
+    queueMicrotask(() => app.grid.current?.focus());
+  };
+  const next = (back = false) => {
+    app.findQuery.value = query;
+    setNote(app.findNext(query, back) ? '' : 'No matches.');
+  };
+  return (
+    <Dialog
+      title="Find and Replace"
+      onClose={close}
+      onSubmit={() => next()}
+      actions={
+        <>
+          <button
+            type="button"
+            class="cs-btn"
+            onClick={() => setNote(`Replaced ${app.replaceAll(query, replacement)} cell(s).`)}
+          >
+            Replace All
+          </button>
+          <button type="button" class="cs-btn" onClick={() => next(true)}>
+            Previous
+          </button>
+          <button type="submit" class="cs-btn primary">
+            Find Next
+          </button>
+        </>
+      }
+    >
+      <div style={{ display: 'grid', gap: '8px', minWidth: '320px' }}>
+        <label style={{ display: 'grid', gap: '4px' }}>
+          Find
+          <input value={query} autofocus onInput={(e) => setQuery(e.currentTarget.value)} />
+        </label>
+        <label style={{ display: 'grid', gap: '4px' }}>
+          Replace with
+          <input value={replacement} onInput={(e) => setReplacement(e.currentTarget.value)} />
+        </label>
+        <span class="cs-status" style={{ padding: 0 }}>
+          {note}
+        </span>
+      </div>
+    </Dialog>
+  );
+}
+
+function ShortcutsDialog({
+  catalog,
+  onClose,
+}: {
+  readonly catalog: CommandCatalog;
+  readonly onClose: () => void;
+}) {
+  const groups = new Map<string, { title: string; keys: string }[]>();
+  for (const c of catalog.all) {
+    if (!c.shortcutText || c.hidden) continue;
+    const list = groups.get(c.group) ?? [];
+    list.push({ title: c.title, keys: c.shortcutText });
+    groups.set(c.group, list);
+  }
+  return (
+    <Dialog
+      title="Keyboard Shortcuts"
+      onClose={onClose}
+      actions={
+        <button type="submit" class="cs-btn primary">
+          Done
+        </button>
+      }
+      onSubmit={onClose}
+    >
+      <div style={{ columns: '2', columnGap: '28px', minWidth: '560px' }}>
+        {[...groups].map(([group, items]) => (
+          <section key={group} style={{ breakInside: 'avoid', marginBottom: '12px' }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: '13px' }}>{group}</h3>
+            {items.map((i) => (
+              <div
+                key={i.title}
+                style={{ display: 'flex', gap: '12px', fontSize: '13px', lineHeight: '22px' }}
+              >
+                <span>{i.title}</span>
+                <span class="cs-kbd" style={{ marginLeft: 'auto', opacity: 0.7 }}>
+                  {i.keys}
+                </span>
+              </div>
+            ))}
+          </section>
+        ))}
+      </div>
+    </Dialog>
+  );
+}
+
+function SettingsDialog({ app, onClose }: { readonly app: AppController; readonly onClose: () => void }) {
+  const themes: Theme[] = ['system', 'light', 'dark'];
+  return (
+    <Dialog
+      title="Settings"
+      onClose={onClose}
+      actions={
+        <button type="submit" class="cs-btn primary">
+          Done
+        </button>
+      }
+      onSubmit={onClose}
+    >
+      <div style={{ display: 'grid', gap: '12px', minWidth: '320px' }}>
+        <label style={{ display: 'grid', gap: '4px' }}>
+          Appearance
+          <select
+            value={app.theme.value}
+            onChange={(e) => (app.theme.value = e.currentTarget.value as Theme)}
+          >
+            {themes.map((t) => (
+              <option key={t} value={t}>
+                {t === 'system' ? 'Match system' : t[0]!.toUpperCase() + t.slice(1)}
+              </option>
+            ))}
+          </select>
+        </label>
+        {app.nasAvailable.value && (
+          <label style={{ display: 'grid', gap: '4px' }}>
+            Server access token
+            <input
+              type="password"
+              value={app.nas.token ?? ''}
+              placeholder="Not set"
+              onChange={(e) => (app.nas.token = e.currentTarget.value || null)}
+            />
+          </label>
+        )}
+      </div>
+    </Dialog>
+  );
+}
