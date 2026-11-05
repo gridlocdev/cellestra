@@ -12,7 +12,13 @@ export class CellAddress {
   readonly rowAbsolute: boolean;
   readonly sheet: string | null;
 
-  constructor(column: number, row: number, columnAbsolute = false, rowAbsolute = false, sheet: string | null = null) {
+  constructor(
+    column: number,
+    row: number,
+    columnAbsolute = false,
+    rowAbsolute = false,
+    sheet: string | null = null,
+  ) {
     if (!SheetDimensions.isValidColumn(column)) throw new RangeError(`Column index out of range: ${column}`);
     if (!SheetDimensions.isValidRow(row)) throw new RangeError(`Row index out of range: ${row}`);
     this.column = column;

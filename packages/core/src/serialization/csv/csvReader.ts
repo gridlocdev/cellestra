@@ -1,0 +1,250 @@
+import { DateConversion } from '../../formulas/evaluation/dateConversion.ts';
+import { Workbook } from '../../model/workbook.ts';
+import type { Worksheet } from '../../model/worksheet.ts';
+import { CellStyles, NumberFormats } from '../../styling/cellStyle.ts';
+import { CellValue } from '../../values/cellValue.ts';
+import { CsvOptions } from './csvOptions.ts';
+
+/**
+ * Parse CSV text into rows of raw string fields per PRD §8.4: a leading BOM is stripped, CR, LF, and
+ * CRLF all end a record, and RFC 4180 quoting applies (doubled quotes inside quoted fields).
+ */
+export function parseCsv(text: string, options: CsvOptions = CsvOptions.default): string[][] {
+  const delimiter = options.delimiter;
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  let fieldStarted = false;
+
+  const endField = (): void => {
+    row.push(field);
+    field = '';
+    fieldStarted = false;
+  };
+  const endRow = (): void => {
+    endField();
+    rows.push(row);
+    row = [];
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += c;
+      }
+      continue;
+    }
+
+    if (c === '"' && (!fieldStarted || field.length === 0)) {
+      inQuotes = true;
+      fieldStarted = true;
+    } else if (c === '\r') {
+      if (text[i + 1] === '\n') i++;
+      endRow();
+    } else if (c === '\n') {
+      endRow();
+    } else if (c === delimiter) {
+      endField();
+    } else {
+      field += c;
+      fieldStarted = true;
+    }
+  }
+
+  // Flush the final field/row unless the text ended exactly on a newline.
+  if (field.length > 0 || row.length > 0 || fieldStarted) endRow();
+  return rows;
+}
+
+/** Parse CSV and infer typed cell values into a new single-sheet workbook. */
+export function readCsv(text: string, options: CsvOptions = CsvOptions.default): Workbook {
+  const workbook = Workbook.createNew();
+  fillFromCsv(workbook, workbook.activeSheet, text, options);
+  return workbook;
+}
+
+/**
+ * Fill an existing worksheet from CSV, inferring numbers and dates with the locale (the options',
+ * else the workbook's effective locale). Everything else stays text; empty fields stay blank.
+ */
+export function fillFromCsv(
+  workbook: Workbook,
+  sheet: Worksheet,
+  text: string,
+  options: CsvOptions = CsvOptions.default,
+): void {
+  const locale = options.locale ?? workbook.settings.effectiveLocale;
+  const rows = parseCsv(text, options);
+  const numbers = new LocaleNumberParser(locale);
+  const dates = new LocaleDateParser(locale);
+  let dateStyleId: number | null = null;
+
+  for (let r = 0; r < rows.length; r++) {
+    const cells = rows[r]!;
+    for (let c = 0; c < cells.length; c++) {
+      const raw = cells[c]!;
+      if (raw.length === 0) continue;
+
+      const number = numbers.parse(raw);
+      if (number !== null && Number.isFinite(number)) {
+        sheet.setValue(r, c, CellValue.number(number));
+        continue;
+      }
+
+      const date = dates.parse(raw);
+      if (date !== null) {
+        dateStyleId ??= workbook.styles.intern({
+          ...CellStyles.default,
+          numberFormat: NumberFormats.of('yyyy-mm-dd'),
+        });
+        sheet.setValue(r, c, CellValue.number(date));
+        sheet.getOrCreate(r, c).styleId = dateStyleId;
+        continue;
+      }
+
+      sheet.setValue(r, c, CellValue.text(raw));
+    }
+  }
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * `double.TryParse(raw, NumberStyles.Any, culture)`: surrounding whitespace, a leading or trailing
+ * sign, parentheses for a negative, the locale's group and decimal separators, and an exponent.
+ */
+class LocaleNumberParser {
+  private readonly pattern: RegExp;
+  private readonly group: string;
+  private readonly decimal: string;
+
+  constructor(locale: string) {
+    let group = ',';
+    let decimal = '.';
+    try {
+      for (const part of new Intl.NumberFormat(locale).formatToParts(1234567.5)) {
+        if (part.type === 'group') group = part.value;
+        else if (part.type === 'decimal') decimal = part.value;
+      }
+    } catch {
+      // An unknown locale falls back to the invariant separators.
+    }
+    // Narrow/non-breaking spaces used as group separators also match a plain space.
+    if (/\s/.test(group)) group = ' ';
+    this.group = group;
+    this.decimal = decimal;
+    const g = escapeRegex(group);
+    const d = escapeRegex(decimal);
+    this.pattern = new RegExp(`^(\\d[\\d${g}]*)?(?:${d}(\\d*))?(?:[eE]([+-]?\\d+))?$`);
+  }
+
+  parse(raw: string): number | null {
+    let t = raw.trim();
+    if (this.group === ' ') t = t.replace(/[\u00a0\u202f]/g, ' ');
+    let negative = false;
+
+    if (t.startsWith('(') && t.endsWith(')')) {
+      negative = true;
+      t = t.slice(1, -1).trim();
+    }
+    if (t.startsWith('-') || t.startsWith('+')) {
+      negative = negative !== (t[0] === '-');
+      t = t.slice(1).trim();
+    } else if (t.endsWith('-') || t.endsWith('+')) {
+      negative = negative !== t.endsWith('-');
+      t = t.slice(0, -1).trim();
+    }
+    if (t.length === 0) return null;
+
+    const m = this.pattern.exec(t);
+    if (!m) return null;
+    const integer = (m[1] ?? '').split(this.group).join('');
+    const fraction = m[2] ?? '';
+    if (integer.length === 0 && fraction.length === 0) return null;
+    const exponent = m[3] === undefined ? '' : 'e' + m[3];
+    const n = Number(`${integer || '0'}.${fraction || '0'}${exponent}`);
+    return negative ? -n : n;
+  }
+}
+
+type DateField = 'day' | 'month' | 'year';
+
+/**
+ * `DateTime.TryParse(raw, culture)` for the shapes CSV exports actually carry: ISO
+ * `yyyy-mm-dd[Thh:mm[:ss]]`, or the locale's numeric short date (its day/month/year order, any of
+ * `/ - .` as separators) with an optional `h:mm[:ss] [AM|PM]` time. Returns a day serial or null.
+ */
+class LocaleDateParser {
+  private readonly order: readonly DateField[];
+
+  constructor(locale: string) {
+    let order: DateField[] = ['month', 'day', 'year'];
+    try {
+      const parts = new Intl.DateTimeFormat(locale, { year: 'numeric', month: '2-digit', day: '2-digit' })
+        .formatToParts(new Date(Date.UTC(2006, 0, 2, 12)))
+        .map((p) => p.type)
+        .filter((t): t is DateField => t === 'day' || t === 'month' || t === 'year');
+      if (parts.length === 3) order = parts;
+    } catch {
+      // An unknown locale falls back to month/day/year (the invariant culture's order).
+    }
+    this.order = order;
+  }
+
+  parse(raw: string): number | null {
+    const t = raw.trim();
+    const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](.+))?$/.exec(t);
+    if (iso) return build(Number(iso[1]), Number(iso[2]), Number(iso[3]), iso[4]);
+
+    const local = /^(\d{1,4})[/.-](\d{1,2})[/.-](\d{1,4})\.?(?:\s+(.+))?$/.exec(t);
+    if (!local) return null;
+    const values: Record<DateField, number> = { day: 0, month: 0, year: 0 };
+    const yearDigits = [local[1]!, local[2]!, local[3]!];
+    this.order.forEach((field, i) => (values[field] = Number(yearDigits[i])));
+    let year = values.year;
+    const yearText = yearDigits[this.order.indexOf('year')]!;
+    if (yearText.length <= 2) year += year <= 49 ? 2000 : 1900;
+    else if (yearText.length === 3) return null;
+    return build(year, values.month, values.day, local[4]);
+  }
+}
+
+function build(year: number, month: number, day: number, timeText: string | undefined): number | null {
+  if (year < 1 || year > 9999 || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month))
+    return null;
+  let hour = 0;
+  let minute = 0;
+  let second = 0;
+  if (timeText !== undefined) {
+    const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?$/.exec(timeText.trim());
+    if (!m) return null;
+    hour = Number(m[1]);
+    minute = Number(m[2]);
+    second = m[3] === undefined ? 0 : Number(m[3]);
+    const meridiem = m[4]?.toLowerCase();
+    if (meridiem) {
+      if (hour < 1 || hour > 12) return null;
+      hour = (hour % 12) + (meridiem === 'pm' ? 12 : 0);
+    }
+    if (hour > 23 || minute > 59 || second > 59) return null;
+  }
+  return DateConversion.toSerial({ year, month, day, hour, minute, second, millisecond: 0 });
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 29 : 28;
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}

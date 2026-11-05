@@ -1,4 +1,4 @@
-import { CellError } from './cellError.ts';
+import type { CellError } from './cellError.ts';
 
 /**
  * A typed, immutable cell value: empty, number, text, boolean, or error.

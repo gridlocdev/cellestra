@@ -78,6 +78,10 @@ export function dataValidation(
   return { operator: 'between', operand1: 0, operand2: 0, response: 'stop', ...rest, kind, target };
 }
 
-export function table(name: string, range: CellRange, rest: Partial<Omit<Table, 'name' | 'range'>> = {}): Table {
+export function table(
+  name: string,
+  range: CellRange,
+  rest: Partial<Omit<Table, 'name' | 'range'>> = {},
+): Table {
   return { hasHeader: true, ...rest, name, range };
 }

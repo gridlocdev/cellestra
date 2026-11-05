@@ -22,8 +22,17 @@ export class CellRange {
   }
 
   /** Build from zero-based bounds (relative, unqualified). */
-  static fromBounds(top: number, left: number, bottom: number, right: number, sheet: string | null = null): CellRange {
-    return new CellRange(new CellAddress(left, top, false, false, sheet), new CellAddress(right, bottom, false, false, sheet));
+  static fromBounds(
+    top: number,
+    left: number,
+    bottom: number,
+    right: number,
+    sheet: string | null = null,
+  ): CellRange {
+    return new CellRange(
+      new CellAddress(left, top, false, false, sheet),
+      new CellAddress(right, bottom, false, false, sheet),
+    );
   }
 
   get rowCount(): number {
@@ -52,11 +61,21 @@ export class CellRange {
   }
 
   containsRange(other: CellRange): boolean {
-    return other.top >= this.top && other.bottom <= this.bottom && other.left >= this.left && other.right <= this.right;
+    return (
+      other.top >= this.top &&
+      other.bottom <= this.bottom &&
+      other.left >= this.left &&
+      other.right <= this.right
+    );
   }
 
   intersects(other: CellRange): boolean {
-    return this.left <= other.right && this.right >= other.left && this.top <= other.bottom && this.bottom >= other.top;
+    return (
+      this.left <= other.right &&
+      this.right >= other.left &&
+      this.top <= other.bottom &&
+      this.bottom >= other.top
+    );
   }
 
   /** Same bounds and sheet, ignoring `$` flags. */

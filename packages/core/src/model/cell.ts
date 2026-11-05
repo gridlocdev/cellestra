@@ -19,7 +19,9 @@ export class Cell {
 
   /** Carries nothing worth storing — used to prune sparse storage. */
   get isBlank(): boolean {
-    return this.formula === null && this.value.kind === 'empty' && this.styleId === 0 && this.hyperlink === null;
+    return (
+      this.formula === null && this.value.kind === 'empty' && this.styleId === 0 && this.hyperlink === null
+    );
   }
 
   clone(): Cell {

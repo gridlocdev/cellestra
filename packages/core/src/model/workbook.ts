@@ -110,7 +110,8 @@ export class Workbook {
     const i = this.sheets.indexOf(sheet);
     if (i < 0) return false;
     this.sheets.splice(i, 1);
-    if (this.settings.activeSheetIndex >= this.sheets.length) this.settings.activeSheetIndex = this.sheets.length - 1;
+    if (this.settings.activeSheetIndex >= this.sheets.length)
+      this.settings.activeSheetIndex = this.sheets.length - 1;
     return true;
   }
 

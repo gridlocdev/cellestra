@@ -238,7 +238,8 @@ export class Worksheet {
   }
 
   addTable(t: Table): void {
-    if (this.tableList.some((x) => x.range.intersects(t.range))) throw new Error('Tables may not overlap (PRD §8.10).');
+    if (this.tableList.some((x) => x.range.intersects(t.range)))
+      throw new Error('Tables may not overlap (PRD §8.10).');
     this.tableList.push(t);
   }
 

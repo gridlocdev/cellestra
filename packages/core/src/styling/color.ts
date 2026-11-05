@@ -13,7 +13,8 @@ export const Argb = {
   isTransparent: (c: ArgbColor): boolean => ((c >>> 24) & 0xff) === 0,
 
   fromRgb: (r: number, g: number, b: number): ArgbColor => ((0xff << 24) | (r << 16) | (g << 8) | b) >>> 0,
-  fromArgb: (a: number, r: number, g: number, b: number): ArgbColor => ((a << 24) | (r << 16) | (g << 8) | b) >>> 0,
+  fromArgb: (a: number, r: number, g: number, b: number): ArgbColor =>
+    ((a << 24) | (r << 16) | (g << 8) | b) >>> 0,
 
   /** `#RRGGBB` (alpha dropped), upper-case. */
   toHex(c: ArgbColor): string {

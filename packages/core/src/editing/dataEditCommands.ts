@@ -1,0 +1,490 @@
+import { DuplicateRemover, TextToColumns } from '../data/dataTools.ts';
+import { FilterEngine } from '../data/filterEngine.ts';
+import { SortEngine } from '../data/sortEngine.ts';
+import { TableAutoExpand } from '../data/tables.ts';
+import type { DataValidation, FilterSpec, SortSpec, Table } from '../data/types.ts';
+import { CellRange } from '../model/cellRange.ts';
+import { getHostLocale } from '../model/documentSettings.ts';
+import type { MergedRegion } from '../model/mergedRegion.ts';
+import { SheetDimensions } from '../model/sheetDimensions.ts';
+import type { Workbook } from '../model/workbook.ts';
+import type { Worksheet } from '../model/worksheet.ts';
+import type { CellStyle } from '../styling/cellStyle.ts';
+import { StylePool } from '../styling/stylePool.ts';
+import { CellValue } from '../values/cellValue.ts';
+import { CellSnapshotCommand } from './cellSnapshotCommand.ts';
+import { ActionCommand, EditResult, requireSheet, type EditCommand } from './editCommand.ts';
+import { clampedPositions, clampToUsed, EditCommands } from './editCommands.ts';
+
+type LineState = [index: number, styleId: number, hidden: boolean];
+
+/** Undoable data-menu edits: sort, filter, duplicates, text to columns, tables, validation. */
+export const DataEditCommands = {
+  // ---- Sort -------------------------------------------------------------
+
+  /** Sort the range (clamped to the used range) as one undo step. */
+  sort: (sheet: string, range: CellRange, spec: SortSpec, locale?: string): EditCommand =>
+    new CellSnapshotCommand(
+      'Sort',
+      sheet,
+      (ws) => clampedPositions(ws, range),
+      (ws) => SortEngine.sort(ws, clampToUsed(ws, range) ?? range, spec, locale),
+    ),
+
+  sortByColumn: (
+    sheet: string,
+    range: CellRange,
+    column: number,
+    ascending: boolean,
+    hasHeader = true,
+    locale?: string,
+  ): EditCommand =>
+    DataEditCommands.sort(sheet, range, { levels: [{ column, ascending }], hasHeader }, locale),
+
+  // ---- Remove duplicates ------------------------------------------------
+
+  /** The command, plus a getter for how many rows its last apply removed. */
+  removeDuplicates(
+    sheet: string,
+    range: CellRange,
+    keyColumns: readonly number[],
+    hasHeader: boolean,
+  ): { readonly command: EditCommand; readonly removedCount: () => number } {
+    let removed = 0;
+    const command = new CellSnapshotCommand('Remove Duplicates', sheet, [...range.positions()], (ws) => {
+      removed = DuplicateRemover.remove(ws, range, keyColumns, hasHeader);
+    });
+    return { command, removedCount: () => removed };
+  },
+
+  // ---- Text to columns --------------------------------------------------
+
+  /** Split a column's text; snapshots a block as wide as the widest split, so it fully undoes. */
+  textToColumns(worksheet: Worksheet, sourceColumn: CellRange, delimiter: string): EditCommand {
+    let maxFields = 1;
+    for (let row = sourceColumn.top; row <= sourceColumn.bottom; row++) {
+      const v = worksheet.getValue(row, sourceColumn.left);
+      if (v.kind === 'text') maxFields = Math.max(maxFields, TextToColumns.fields(v.value, delimiter).length);
+    }
+    const range = CellRange.fromBounds(
+      sourceColumn.top,
+      sourceColumn.left,
+      sourceColumn.bottom,
+      sourceColumn.left + maxFields - 1,
+    );
+    return new CellSnapshotCommand('Text to Columns', worksheet.name, [...range.positions()], (ws) => {
+      TextToColumns.split(ws, sourceColumn, delimiter);
+    });
+  },
+
+  // ---- Filter -----------------------------------------------------------
+
+  applyFilter: (sheet: string, range: CellRange, spec: FilterSpec, locale: string): EditCommand =>
+    rowVisibilityCommand('Filter', sheet, range, (ws) => FilterEngine.apply(ws, range, spec, locale)),
+
+  clearFilter: (sheet: string, range: CellRange): EditCommand =>
+    rowVisibilityCommand('Clear Filter', sheet, range, (ws) => FilterEngine.clear(ws, range)),
+
+  /**
+   * The Sort & Filter dialog's single undo step for a plain range: records the sheet AutoFilter
+   * state, applies (or clears) the filter, then sorts — undo restores order, visibility, and state.
+   */
+  applySortAndFilter(
+    sheet: string,
+    range: CellRange,
+    sort: SortSpec | null,
+    filter: FilterSpec | null,
+    locale?: string,
+  ): EditCommand {
+    const loc = locale ?? getHostLocale();
+    const steps: EditCommand[] = [
+      setSheetFilterState(sheet, sort || filter ? range : null, filter, sort),
+      filter
+        ? DataEditCommands.applyFilter(sheet, range, filter, loc)
+        : DataEditCommands.clearFilter(sheet, range),
+    ];
+    if (sort && sort.levels.length > 0) steps.push(DataEditCommands.sort(sheet, range, sort, loc));
+    return EditCommands.composite('Sort & Filter', steps);
+  },
+
+  /** As `applySortAndFilter`, but the state lives on the table record, not the sheet AutoFilter. */
+  applyTableSortAndFilter(
+    sheet: string,
+    table: Table,
+    sort: SortSpec | null,
+    filter: FilterSpec | null,
+    locale?: string,
+  ): EditCommand {
+    const loc = locale ?? getHostLocale();
+    const range = table.range;
+    const steps: EditCommand[] = [
+      DataEditCommands.replaceTable(sheet, table, { ...table, filter, sort }),
+      filter
+        ? DataEditCommands.applyFilter(sheet, range, filter, loc)
+        : DataEditCommands.clearFilter(sheet, range),
+    ];
+    if (sort && sort.levels.length > 0) steps.push(DataEditCommands.sort(sheet, range, sort, loc));
+    return EditCommands.composite('Sort & Filter', steps);
+  },
+
+  // ---- Clear structure --------------------------------------------------
+
+  /**
+   * The structural half of Clear All: tables, merges, and validations touching the range go, an
+   * intersecting AutoFilter is dropped (its rows unhidden), and whole rows/columns lose their line
+   * style and hidden flag.
+   */
+  clearRangeStructure(sheet: string, range: CellRange): EditCommand {
+    let removedTables: Table[] = [];
+    let removedMerges: MergedRegion[] = [];
+    let removedValidations: DataValidation[] = [];
+    let clearedFilter = false;
+    let filter: CellRange | null = null;
+    let filterSpec: FilterSpec | null = null;
+    let sortState: SortSpec | null = null;
+    let rowState: LineState[] = [];
+    let columnState: LineState[] = [];
+    return new ActionCommand(
+      'Clear All',
+      (wb) => {
+        const ws = requireSheet(wb, sheet);
+        removedTables = ws.tables.filter((t) => t.range.intersects(range));
+        for (const t of removedTables) ws.removeTable(t);
+        removedMerges = ws.merges.filter((m) => m.range.intersects(range));
+        if (removedMerges.length > 0) ws.replaceMerges(ws.merges.filter((m) => !m.range.intersects(range)));
+        removedValidations = ws.validations.filter((v) => v.target.intersects(range));
+        for (const v of removedValidations) ws.removeValidation(v);
+
+        const active = ws.activeFilter;
+        clearedFilter = active !== null && active.intersects(range);
+        const filterRange = clearedFilter ? active : null;
+        if (clearedFilter) {
+          filter = ws.activeFilter;
+          filterSpec = ws.activeFilterSpec;
+          sortState = ws.activeSort;
+        }
+        const wholeColumns = range.top === 0 && range.bottom >= SheetDimensions.maxRows - 1;
+        const wholeRows = range.left === 0 && range.right >= SheetDimensions.maxColumns - 1;
+        const touchedRows = new Set<number>();
+        if (wholeRows)
+          for (const r of ws.rows.keys()) if (r >= range.top && r <= range.bottom) touchedRows.add(r);
+        if (filterRange) {
+          for (const r of ws.rows.keys()) {
+            if (r >= filterRange.top && r <= filterRange.bottom && ws.isRowHidden(r)) touchedRows.add(r);
+          }
+        }
+        const sortedRows = [...touchedRows].sort((a, b) => a - b);
+        const touchedColumns = wholeColumns
+          ? [...ws.columns.keys()].filter((c) => c >= range.left && c <= range.right)
+          : [];
+        rowState = sortedRows.map((r) => {
+          const row = ws.getOrCreateRow(r);
+          return [r, row.styleId, row.hidden];
+        });
+        columnState = touchedColumns.map((c) => {
+          const col = ws.getOrCreateColumn(c);
+          return [c, col.styleId, col.hidden];
+        });
+        if (clearedFilter) {
+          ws.activeFilter = null;
+          ws.activeFilterSpec = null;
+          ws.activeSort = null;
+        }
+        for (const r of sortedRows) {
+          const row = ws.getOrCreateRow(r);
+          if (wholeRows) row.styleId = StylePool.defaultId;
+          row.hidden = false;
+        }
+        for (const c of touchedColumns) {
+          const col = ws.getOrCreateColumn(c);
+          col.styleId = StylePool.defaultId;
+          col.hidden = false;
+        }
+        return EditResult.none;
+      },
+      (wb) => {
+        const ws = requireSheet(wb, sheet);
+        for (const t of removedTables) ws.addTable(t);
+        if (removedMerges.length > 0) ws.replaceMerges([...ws.merges, ...removedMerges]);
+        for (const v of removedValidations) ws.addValidation(v);
+        if (clearedFilter) {
+          ws.activeFilter = filter;
+          ws.activeFilterSpec = filterSpec;
+          ws.activeSort = sortState;
+        }
+        restoreLines(ws, rowState, columnState);
+        return EditResult.none;
+      },
+    );
+  },
+
+  /** Reset every line style/hidden flag, filter/sort, table, validation, merge, and frozen pane. */
+  resetSheetLayout(sheet: string): EditCommand {
+    let rowState: LineState[] = [];
+    let columnState: LineState[] = [];
+    let filter: CellRange | null = null;
+    let filterSpec: FilterSpec | null = null;
+    let sortState: SortSpec | null = null;
+    let tables: Table[] = [];
+    let merges: MergedRegion[] = [];
+    let validations: DataValidation[] = [];
+    let frozenRows = 0;
+    let frozenColumns = 0;
+    return new ActionCommand(
+      'Reset Sheet Data',
+      (wb) => {
+        const ws = requireSheet(wb, sheet);
+        rowState = [...ws.rows].map(([k, r]) => [k, r.styleId, r.hidden]);
+        columnState = [...ws.columns].map(([k, c]) => [k, c.styleId, c.hidden]);
+        filter = ws.activeFilter;
+        filterSpec = ws.activeFilterSpec;
+        sortState = ws.activeSort;
+        tables = [...ws.tables];
+        merges = [...ws.merges];
+        validations = [...ws.validations];
+        frozenRows = ws.frozenRows;
+        frozenColumns = ws.frozenColumns;
+        for (const row of ws.rows.values()) {
+          row.styleId = StylePool.defaultId;
+          row.hidden = false;
+        }
+        for (const col of ws.columns.values()) {
+          col.styleId = StylePool.defaultId;
+          col.hidden = false;
+        }
+        ws.activeFilter = null;
+        ws.activeFilterSpec = null;
+        ws.activeSort = null;
+        for (const t of tables) ws.removeTable(t);
+        for (const v of validations) ws.removeValidation(v);
+        ws.replaceMerges([]);
+        ws.frozenRows = 0;
+        ws.frozenColumns = 0;
+        return EditResult.none;
+      },
+      (wb) => {
+        const ws = requireSheet(wb, sheet);
+        restoreLines(ws, rowState, columnState);
+        ws.activeFilter = filter;
+        ws.activeFilterSpec = filterSpec;
+        ws.activeSort = sortState;
+        for (const t of tables) ws.addTable(t);
+        for (const v of validations) ws.addValidation(v);
+        ws.replaceMerges(merges);
+        ws.frozenRows = frozenRows;
+        ws.frozenColumns = frozenColumns;
+        return EditResult.none;
+      },
+    );
+  },
+
+  // ---- Tables -----------------------------------------------------------
+
+  createTable: (sheet: string, table: Table): EditCommand =>
+    new ActionCommand(
+      'Create Table',
+      (wb) => {
+        requireSheet(wb, sheet).addTable(table);
+        return EditResult.none;
+      },
+      (wb) => {
+        requireSheet(wb, sheet).removeTable(table);
+        return EditResult.none;
+      },
+    ),
+
+  /**
+   * Create a table and, when it has a header, name its empty header cells ("Column 1", …) and bold
+   * the header row — all one undo step.
+   */
+  createStyledTable(workbook: Workbook, sheet: string, table: Table): EditCommand {
+    const add = DataEditCommands.createTable(sheet, table);
+    if (!table.hasHeader) return add;
+    const r = table.range;
+    const headerRange = CellRange.fromBounds(r.top, r.left, r.top, r.right);
+    const fillHeaders = new CellSnapshotCommand('Create Table', sheet, [...headerRange.positions()], (ws) => {
+      for (let column = r.left; column <= r.right; column++) {
+        if (ws.getValue(r.top, column).kind === 'empty') {
+          ws.setValue(r.top, column, CellValue.text(`Column ${column - r.left + 1}`));
+        }
+      }
+    });
+    const style = EditCommands.applyStyle(workbook, sheet, headerRange, styleTableHeader, 'Create Table');
+    return EditCommands.composite('Create Table', [add, fillHeaders, style]);
+  },
+
+  styleTableHeader: (style: CellStyle): CellStyle => styleTableHeader(style),
+  clearTableHeader: (style: CellStyle): CellStyle => ({ ...style, font: { ...style.font, bold: false } }),
+
+  /** Flip the table's header column and bold (or unbold) its first column below the header row. */
+  setTableHeaderColumn(workbook: Workbook, sheet: string, table: Table, enabled: boolean): EditCommand {
+    const replaced: Table = { ...table, hasHeaderColumn: enabled };
+    const flip = swapTable('Header Column', sheet, table, replaced);
+    const r = table.range;
+    const top = r.top + (table.hasHeader ? 1 : 0);
+    if (top > r.bottom) return flip; // header-only table: nothing to restyle
+    const columnRange = CellRange.fromBounds(top, r.left, r.bottom, r.left);
+    const style = EditCommands.applyStyle(
+      workbook,
+      sheet,
+      columnRange,
+      enabled ? styleTableHeader : DataEditCommands.clearTableHeader,
+      'Header Column',
+    );
+    return EditCommands.composite('Header Column', [flip, style]);
+  },
+
+  setTableBandedRows: (sheet: string, table: Table, enabled: boolean): EditCommand =>
+    swapTable('Banded Rows', sheet, table, { ...table, hasBandedRows: enabled }),
+
+  removeTable: (sheet: string, table: Table): EditCommand =>
+    new ActionCommand(
+      'Remove Table',
+      (wb) => {
+        requireSheet(wb, sheet).removeTable(table);
+        return EditResult.none;
+      },
+      (wb) => {
+        requireSheet(wb, sheet).addTable(table);
+        return EditResult.none;
+      },
+    ),
+
+  replaceTable: (sheet: string, existing: Table, replacement: Table): EditCommand =>
+    swapTable('Resize Table', sheet, existing, replacement),
+
+  /**
+   * Grow a table for an entry typed just past its edge, bolding the header cells the growth adds
+   * (header row when growing right, header column when growing down). Null when not adjacent.
+   */
+  expandTableForEdit(
+    workbook: Workbook,
+    sheet: string,
+    table: Table,
+    editedRow: number,
+    editedColumn: number,
+  ): EditCommand | null {
+    const grownRange = TableAutoExpand.expandFor(table, editedRow, editedColumn);
+    if (!grownRange) return null;
+    const r = table.range;
+    const steps: EditCommand[] = [
+      DataEditCommands.replaceTable(sheet, table, { ...table, range: grownRange }),
+    ];
+    const headerStyle = (range: CellRange) =>
+      EditCommands.applyStyle(workbook, sheet, range, styleTableHeader, 'Expand Table');
+    if (table.hasHeader && grownRange.right > r.right) {
+      steps.push(
+        headerStyle(CellRange.fromBounds(grownRange.top, r.right + 1, grownRange.top, grownRange.right)),
+      );
+    }
+    if (table.hasHeaderColumn && grownRange.bottom > r.bottom) {
+      steps.push(
+        headerStyle(CellRange.fromBounds(r.bottom + 1, grownRange.left, grownRange.bottom, grownRange.left)),
+      );
+    }
+    return EditCommands.composite('Expand Table', steps);
+  },
+
+  // ---- Validation -------------------------------------------------------
+
+  setValidation: (sheet: string, validation: DataValidation): EditCommand =>
+    new ActionCommand(
+      'Data Validation',
+      (wb) => {
+        requireSheet(wb, sheet).addValidation(validation);
+        return EditResult.none;
+      },
+      (wb) => {
+        requireSheet(wb, sheet).removeValidation(validation);
+        return EditResult.none;
+      },
+    ),
+} as const;
+
+function styleTableHeader(style: CellStyle): CellStyle {
+  return { ...style, font: { ...style.font, bold: true } };
+}
+
+function swapTable(label: string, sheet: string, existing: Table, replacement: Table): EditCommand {
+  return new ActionCommand(
+    label,
+    (wb) => {
+      requireSheet(wb, sheet).replaceTable(existing, replacement);
+      return EditResult.none;
+    },
+    (wb) => {
+      requireSheet(wb, sheet).replaceTable(replacement, existing);
+      return EditResult.none;
+    },
+  );
+}
+
+function setSheetFilterState(
+  sheet: string,
+  filterRange: CellRange | null,
+  filterSpec: FilterSpec | null,
+  sort: SortSpec | null,
+): EditCommand {
+  let oldFilter: CellRange | null = null;
+  let oldSpec: FilterSpec | null = null;
+  let oldSort: SortSpec | null = null;
+  return new ActionCommand(
+    'Filter',
+    (wb) => {
+      const ws = requireSheet(wb, sheet);
+      oldFilter = ws.activeFilter;
+      oldSpec = ws.activeFilterSpec;
+      oldSort = ws.activeSort;
+      ws.activeFilter = filterRange;
+      ws.activeFilterSpec = filterSpec;
+      ws.activeSort = sort;
+      return EditResult.none;
+    },
+    (wb) => {
+      const ws = requireSheet(wb, sheet);
+      ws.activeFilter = oldFilter;
+      ws.activeFilterSpec = oldSpec;
+      ws.activeSort = oldSort;
+      return EditResult.none;
+    },
+  );
+}
+
+/** Snapshot the hidden flag of every row of the range, run the change, undo by restoring the flags. */
+function rowVisibilityCommand(
+  label: string,
+  sheet: string,
+  range: CellRange,
+  apply: (ws: Worksheet) => void,
+): EditCommand {
+  let before: boolean[] | null = null;
+  return new ActionCommand(
+    label,
+    (wb) => {
+      const ws = requireSheet(wb, sheet);
+      before = [];
+      for (let row = range.top; row <= range.bottom; row++) before.push(ws.isRowHidden(row));
+      apply(ws);
+      return EditResult.none;
+    },
+    (wb) => {
+      if (!before) return EditResult.none;
+      const ws = requireSheet(wb, sheet);
+      before.forEach((hidden, i) => (ws.getOrCreateRow(range.top + i).hidden = hidden));
+      return EditResult.none;
+    },
+  );
+}
+
+function restoreLines(ws: Worksheet, rows: readonly LineState[], columns: readonly LineState[]): void {
+  for (const [k, styleId, hidden] of rows) {
+    const row = ws.getOrCreateRow(k);
+    row.styleId = styleId;
+    row.hidden = hidden;
+  }
+  for (const [k, styleId, hidden] of columns) {
+    const col = ws.getOrCreateColumn(k);
+    col.styleId = styleId;
+    col.hidden = hidden;
+  }
+}

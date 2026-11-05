@@ -1,0 +1,66 @@
+import { CellRange } from '../model/cellRange.ts';
+import type { Worksheet } from '../model/worksheet.ts';
+
+/** Excel's "current region" and header heuristics. */
+export const DataRegion = {
+  /**
+   * The block of populated cells around (row, column): grows while any adjacent row/column inside
+   * the current span holds a cell. An empty start cell is its own region.
+   */
+  currentRegion(sheet: Worksheet, row: number, column: number): CellRange {
+    if (!sheet.find(row, column)) return CellRange.fromBounds(row, column, row, column);
+    let top = row;
+    let bottom = row;
+    let left = column;
+    let right = column;
+    let grew = true;
+    while (grew) {
+      grew = false;
+      if (rowHasData(sheet, top - 1, left, right)) {
+        top--;
+        grew = true;
+      }
+      if (rowHasData(sheet, bottom + 1, left, right)) {
+        bottom++;
+        grew = true;
+      }
+      if (columnHasData(sheet, left - 1, top, bottom)) {
+        left--;
+        grew = true;
+      }
+      if (columnHasData(sheet, right + 1, top, bottom)) {
+        right++;
+        grew = true;
+      }
+    }
+    return CellRange.fromBounds(top, left, bottom, right);
+  },
+
+  /** A first row of text over a body holding something that isn't text reads as a header. */
+  looksLikeHeader(sheet: Worksheet, range: CellRange): boolean {
+    if (range.rowCount < 2) return false;
+    let headerAllText = true;
+    let bodyHasNonText = false;
+    for (let c = range.left; c <= range.right; c++) {
+      const header = sheet.getValue(range.top, c);
+      if (header.kind !== 'empty' && header.kind !== 'text') headerAllText = false;
+      for (let r = range.top + 1; r <= range.bottom; r++) {
+        const v = sheet.getValue(r, c);
+        if (v.kind !== 'empty' && v.kind !== 'text') bodyHasNonText = true;
+      }
+    }
+    return headerAllText && bodyHasNonText;
+  },
+} as const;
+
+function rowHasData(sheet: Worksheet, row: number, left: number, right: number): boolean {
+  if (row < 0) return false;
+  for (let c = left; c <= right; c++) if (sheet.find(row, c)) return true;
+  return false;
+}
+
+function columnHasData(sheet: Worksheet, column: number, top: number, bottom: number): boolean {
+  if (column < 0) return false;
+  for (let r = top; r <= bottom; r++) if (sheet.find(r, column)) return true;
+  return false;
+}
