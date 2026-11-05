@@ -4,7 +4,9 @@
   "type": "module",
   "description": "Cellestra — an OpenDocument spreadsheet editor for the browser, the desktop (Electron), and a self-hosted NAS.",
   "license": "MIT",
-  "engines": { "node": ">=22.18" },
+  "engines": {
+    "node": ">=22.18"
+  },
   "packageManager": "pnpm@10.18.0",
   "scripts": {
     "typecheck": "tsc -b",

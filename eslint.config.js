@@ -12,6 +12,11 @@ export default tseslint.config(
     },
   },
   {
+    // Build scripts run in Node.
+    files: ['**/scripts/**/*.mjs'],
+    languageOptions: { globals: { console: 'readonly', process: 'readonly' } },
+  },
+  {
     // The engine must stay portable: browser, worker, Node, Electron renderer.
     files: ['packages/core/**/*.ts', 'packages/charts/**/*.ts'],
     rules: {
