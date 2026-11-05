@@ -1,0 +1,22 @@
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  { ignores: ['**/dist/**', '**/out/**', '**/release/**', '**/.types/**', '**/node_modules/**'] },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/consistent-type-imports': 'error',
+    },
+  },
+  {
+    // The engine must stay portable: browser, worker, Node, Electron renderer.
+    files: ['packages/core/**/*.ts', 'packages/charts/**/*.ts'],
+    rules: {
+      'no-restricted-globals': ['error', 'window', 'document', 'navigator', 'localStorage', 'process'],
+      'no-restricted-imports': ['error', { patterns: ['node:*', 'preact', 'preact/*', '@preact/*'] }],
+    },
+  },
+);

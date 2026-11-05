@@ -1,0 +1,19 @@
+{
+  "name": "@cellestra/desktop",
+  "productName": "Cellestra",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Cellestra desktop app (Electron).",
+  "main": "out/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-web.mjs",
+    "start": "pnpm build && electron .",
+    "package": "pnpm build && electron-builder --config electron-builder.yml"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0"
+  }
+}

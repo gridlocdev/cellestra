@@ -1,0 +1,20 @@
+{
+  "name": "@cellestra/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "dependencies": {
+    "@cellestra/charts": "workspace:*",
+    "@cellestra/core": "workspace:*",
+    "@preact/signals": "2.11.4",
+    "preact": "11.1.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.5"
+  }
+}

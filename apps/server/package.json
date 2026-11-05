@@ -1,0 +1,13 @@
+{
+  "name": "@cellestra/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Serves the Cellestra web client and a small file API over folders on a NAS.",
+  "scripts": {
+    "start": "node src/main.ts",
+    "dev": "CELLESTRA_ROOTS=Sample=../../.nas-data CELLESTRA_STATIC=../web/dist node --watch src/main.ts",
+    "build": "echo 'server runs from source (node type stripping)'"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/charts" },
+    { "path": "packages/ui" },
+    { "path": "apps/web" },
+    { "path": "apps/server" },
+    { "path": "apps/desktop" }
+  ]
+}
