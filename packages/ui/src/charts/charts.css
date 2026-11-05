@@ -1,0 +1,164 @@
+/* Charts — the SVG renderer's theme roles and the chart sheet page. */
+.cs-chart {
+  --cs-chart-bg: var(--cs-bg);
+  --cs-chart-text: var(--cs-text);
+  --cs-chart-muted: var(--cs-text-2);
+  --cs-chart-axis: var(--cs-border);
+  --cs-chart-grid: rgba(136, 136, 136, 0.25);
+  display: block;
+  font-family: var(--cs-font);
+  user-select: none;
+}
+.cs-chart.cs-chart-light {
+  --cs-chart-bg: #ffffff;
+  --cs-chart-text: #222222;
+  --cs-chart-muted: #6a6a6a;
+  --cs-chart-axis: #bbbbbb;
+  --cs-chart-grid: rgba(136, 136, 136, 0.25);
+}
+.cs-chart.cs-chart-dark {
+  --cs-chart-bg: #1e1e1e;
+  --cs-chart-text: #e6e6e6;
+  --cs-chart-muted: #9a9a9a;
+  --cs-chart-axis: #555555;
+  --cs-chart-grid: rgba(170, 170, 170, 0.25);
+}
+.cs-chart-fill-bg {
+  fill: var(--cs-chart-bg);
+}
+.cs-chart-fill-text {
+  fill: var(--cs-chart-text);
+}
+.cs-chart-fill-muted {
+  fill: var(--cs-chart-muted);
+}
+.cs-chart-fill-axis {
+  fill: var(--cs-chart-axis);
+}
+.cs-chart-fill-grid {
+  fill: var(--cs-chart-grid);
+}
+.cs-chart-stroke-bg {
+  stroke: var(--cs-chart-bg);
+}
+.cs-chart-stroke-text {
+  stroke: var(--cs-chart-text);
+}
+.cs-chart-stroke-muted {
+  stroke: var(--cs-chart-muted);
+}
+.cs-chart-stroke-axis {
+  stroke: var(--cs-chart-axis);
+}
+.cs-chart-stroke-grid {
+  stroke: var(--cs-chart-grid);
+}
+
+/* Chart sheet page: chart on the left, editing panel on the right. */
+.cs-chart-sheet {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  background: var(--cs-bg);
+}
+.cs-chart-host {
+  flex: 1;
+  min-width: 0;
+  margin: 8px;
+  border: 1px solid var(--cs-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cs-chart-panel {
+  flex: none;
+  width: 344px;
+  padding: 12px;
+  overflow-y: auto;
+  border-left: 1px solid var(--cs-border);
+  background: var(--cs-chrome);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cs-chart-panel h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.cs-chart-panel h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cs-chart-panel hr {
+  width: 100%;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--cs-border);
+}
+.cs-chart-hint {
+  margin: -6px 0 0;
+  font-size: 11px;
+  color: var(--cs-text-2);
+}
+.cs-chart-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cs-chart-field > span {
+  font-size: 11px;
+  color: var(--cs-text-2);
+}
+.cs-chart-field input,
+.cs-chart-field select {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  background: var(--cs-bg);
+  color: var(--cs-text);
+  font: inherit;
+}
+.cs-chart-field input:focus,
+.cs-chart-field select:focus {
+  outline: 2px solid var(--cs-accent);
+  outline-offset: -1px;
+}
+.cs-chart-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cs-chart-series-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cs-chart-series {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--cs-border);
+  border-radius: 4px;
+}
+.cs-chart-series > legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  font-weight: 600;
+  float: left; /* pull the legend inside the fieldset box so it lays out like a header row */
+}
+.cs-chart-series > legend .cs-btn {
+  height: 22px;
+  min-width: 22px;
+}
+.cs-chart-add {
+  width: 100%;
+  border: 1px solid var(--cs-border);
+}

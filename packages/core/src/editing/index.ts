@@ -1,6 +1,7 @@
 export * from './autoSumPlanner.ts';
 export * from './cellSnapshotCommand.ts';
 export * from './cellSnapshots.ts';
+export * from './chartEditCommands.ts';
 export * from './clipboardBlock.ts';
 export * from './dataEditCommands.ts';
 export * from './deleteSheetCommand.ts';
