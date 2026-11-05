@@ -1,0 +1,191 @@
+import { timingSafeEqual } from 'node:crypto';
+import { readFile, stat } from 'node:fs/promises';
+import http from 'node:http';
+import path from 'node:path';
+import { ApiError, type FileApi } from './fileApi.ts';
+
+export interface ServerOptions {
+  readonly api: FileApi;
+  /** The built web client (`apps/web/dist`); null serves the API only (dev, behind Vite). */
+  readonly staticDir: string | null;
+  /** When set, every /api request needs `Authorization: Bearer <token>`. */
+  readonly token: string | null;
+  /** Largest accepted upload. */
+  readonly maxBytes: number;
+}
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
+  '.map': 'application/json',
+  '.woff2': 'font/woff2',
+};
+
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'X-Frame-Options': 'DENY',
+};
+
+export function createServer(opts: ServerOptions): http.Server {
+  return http.createServer((req, res) => {
+    handle(req, res, opts).catch((e: unknown) => {
+      const status = e instanceof ApiError ? e.status : 500;
+      if (status === 500) console.error(e);
+      if (!res.headersSent)
+        send(res, status, { error: e instanceof Error && status !== 500 ? e.message : 'Server error' });
+      else res.end();
+    });
+  });
+}
+
+async function handle(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  opts: ServerOptions,
+): Promise<void> {
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  if (url.pathname.startsWith('/api/')) {
+    // /api/info stays public: it is how the client learns that a token is needed.
+    const isInfo = req.method === 'GET' && url.pathname === '/api/info';
+    if (!isInfo && !authorized(req, opts.token)) throw new ApiError(401, 'Unauthorized');
+    return api(req, res, url, opts);
+  }
+  if (req.method !== 'GET' && req.method !== 'HEAD') throw new ApiError(405, 'Method not allowed');
+  if (!opts.staticDir) throw new ApiError(404, 'Not found');
+  return serveStatic(res, opts.staticDir, url.pathname, req.method === 'HEAD');
+}
+
+async function api(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  url: URL,
+  opts: ServerOptions,
+): Promise<void> {
+  const q = url.searchParams;
+  switch (`${req.method} ${url.pathname}`) {
+    case 'GET /api/info':
+      return send(res, 200, { name: 'Cellestra', auth: opts.token !== null });
+    case 'GET /api/roots':
+      return send(
+        res,
+        200,
+        opts.api.roots.map((r) => ({ id: r.id, name: r.name })),
+      );
+    case 'GET /api/list':
+      return send(res, 200, await opts.api.list(q.get('root'), q.get('path')));
+    case 'GET /api/file': {
+      const { bytes, etag, modified } = await opts.api.read(q.get('root'), q.get('path'));
+      if (req.headers['if-none-match'] === etag) {
+        res.writeHead(304, { ETag: etag, ...SECURITY_HEADERS });
+        return void res.end();
+      }
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': bytes.length,
+        'Cache-Control': 'no-store',
+        'Last-Modified': new Date(modified).toUTCString(),
+        ETag: etag,
+        ...SECURITY_HEADERS,
+      });
+      return void res.end(bytes);
+    }
+    case 'PUT /api/file': {
+      const body = await readBody(req, opts.maxBytes);
+      const { etag } = await opts.api.write(q.get('root'), q.get('path'), body, {
+        ifMatch: header(req, 'if-match'),
+        ifNoneMatch: header(req, 'if-none-match'),
+        force: q.get('force') === '1',
+      });
+      res.setHeader('ETag', etag);
+      return send(res, 200, { etag });
+    }
+    default:
+      throw new ApiError(404, 'Not found');
+  }
+}
+
+async function serveStatic(
+  res: http.ServerResponse,
+  root: string,
+  pathname: string,
+  head: boolean,
+): Promise<void> {
+  const rel = decodeURIComponent(pathname).replace(/^\/+/, '');
+  let file = path.resolve(root, rel || 'index.html');
+  if (!file.startsWith(path.resolve(root) + path.sep) && file !== path.resolve(root))
+    throw new ApiError(403, 'Forbidden');
+  let s = await stat(file).catch(() => null);
+  if (!s || s.isDirectory()) {
+    // Single-page app: unknown routes get the shell.
+    file = path.join(root, 'index.html');
+    s = await stat(file).catch(() => null);
+    if (!s) throw new ApiError(404, 'Web client not built — run `pnpm build`');
+  }
+  const ext = path.extname(file);
+  const hashed = /\/assets\//.test(file);
+  res.writeHead(200, {
+    'Content-Type': MIME[ext] ?? 'application/octet-stream',
+    'Content-Length': s.size,
+    'Cache-Control': hashed ? 'public, max-age=31536000, immutable' : 'no-cache',
+    ...SECURITY_HEADERS,
+  });
+  if (head) return void res.end();
+  res.end(await readFile(file));
+}
+
+function authorized(req: http.IncomingMessage, token: string | null): boolean {
+  if (token === null) return true;
+  const got = req.headers.authorization?.replace(/^Bearer\s+/i, '') ?? '';
+  const a = Buffer.from(got);
+  const b = Buffer.from(token);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function header(req: http.IncomingMessage, name: string): string | null {
+  const v = req.headers[name];
+  return typeof v === 'string' ? v : null;
+}
+
+function readBody(req: http.IncomingMessage, max: number): Promise<Buffer> {
+  const declared = Number(req.headers['content-length'] ?? NaN);
+  if (declared > max) {
+    req.resume(); // drain so the 413 reaches the client
+    return Promise.reject(new ApiError(413, 'File too large'));
+  }
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let over = false;
+    req.on('data', (c: Buffer) => {
+      if (over) return;
+      size += c.length;
+      if (size > max) {
+        over = true;
+        chunks.length = 0;
+        reject(new ApiError(413, 'File too large'));
+      } else chunks.push(c);
+    });
+    req.on('end', () => {
+      if (!over) resolve(Buffer.concat(chunks));
+    });
+    req.on('error', reject);
+  });
+}
+
+function send(res: http.ServerResponse, status: number, body: unknown): void {
+  const json = JSON.stringify(body);
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(json),
+    'Cache-Control': 'no-store',
+    ...SECURITY_HEADERS,
+  });
+  res.end(json);
+}

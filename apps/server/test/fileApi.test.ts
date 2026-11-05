@@ -1,0 +1,125 @@
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import type { AddressInfo } from 'node:net';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { FileApi, parseRoots } from '../src/fileApi.ts';
+import { createServer } from '../src/server.ts';
+
+let dir: string;
+let outside: string;
+let base: string;
+let close: () => void;
+
+beforeAll(async () => {
+  dir = await mkdtemp(path.join(os.tmpdir(), 'cellestra-root-'));
+  outside = await mkdtemp(path.join(os.tmpdir(), 'cellestra-outside-'));
+  await mkdir(path.join(dir, 'sub'));
+  await writeFile(path.join(dir, 'a.ods'), 'AAA');
+  await writeFile(path.join(dir, 'notes.txt'), 'hidden from the picker');
+  await writeFile(path.join(outside, 'secret.ods'), 'nope');
+  await symlink(outside, path.join(dir, 'escape'));
+  const api = new FileApi(parseRoots(`Docs=${dir}`, '/'));
+  const server = createServer({ api, staticDir: null, token: 't0k', maxBytes: 1024 });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  close = () => server.close();
+});
+
+afterAll(async () => {
+  close();
+  await rm(dir, { recursive: true, force: true });
+  await rm(outside, { recursive: true, force: true });
+});
+
+const auth = { Authorization: 'Bearer t0k' };
+
+describe('parseRoots', () => {
+  it('slugs names into ids', () => {
+    expect(parseRoots('My Docs=/a;Shared=/b', '/').map((r) => r.id)).toEqual(['my-docs', 'shared']);
+  });
+  it('rejects malformed entries', () => {
+    expect(() => parseRoots('nopath', '/')).toThrow();
+  });
+});
+
+describe('file API over HTTP', () => {
+  it('requires the token', async () => {
+    expect((await fetch(`${base}/api/roots`)).status).toBe(401);
+    expect((await fetch(`${base}/api/roots`, { headers: { Authorization: 'Bearer wrong' } })).status).toBe(
+      401,
+    );
+  });
+
+  it('says without a token whether one is needed', async () => {
+    const res = await fetch(`${base}/api/info`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ auth: true });
+  });
+
+  it('lists only folders and spreadsheet files', async () => {
+    const res = await fetch(`${base}/api/list?root=docs&path=`, { headers: auth });
+    const names = ((await res.json()) as { name: string }[]).map((e) => e.name);
+    expect(names).toContain('sub');
+    expect(names).toContain('a.ods');
+    expect(names).not.toContain('notes.txt');
+  });
+
+  it('refuses traversal and symlink escapes', async () => {
+    expect(
+      (await fetch(`${base}/api/file?root=docs&path=../../etc/passwd`, { headers: auth })).status,
+    ).not.toBe(200);
+    expect((await fetch(`${base}/api/file?root=docs&path=escape/secret.ods`, { headers: auth })).status).toBe(
+      403,
+    );
+  });
+
+  it('reads with an etag and saves with optimistic concurrency', async () => {
+    const got = await fetch(`${base}/api/file?root=docs&path=a.ods`, { headers: auth });
+    const etag = got.headers.get('etag')!;
+    expect(await got.text()).toBe('AAA');
+
+    const ok = await fetch(`${base}/api/file?root=docs&path=a.ods`, {
+      method: 'PUT',
+      headers: { ...auth, 'If-Match': etag },
+      body: 'BBB',
+    });
+    expect(ok.status).toBe(200);
+    expect(await readFile(path.join(dir, 'a.ods'), 'utf8')).toBe('BBB');
+
+    const stale = await fetch(`${base}/api/file?root=docs&path=a.ods`, {
+      method: 'PUT',
+      headers: { ...auth, 'If-Match': etag },
+      body: 'CCC',
+    });
+    expect(stale.status).toBe(412);
+  });
+
+  it('refuses to overwrite on create, and respects LibreOffice locks', async () => {
+    const create = (name: string) =>
+      fetch(`${base}/api/file?root=docs&path=${name}`, {
+        method: 'PUT',
+        headers: { ...auth, 'If-None-Match': '*' },
+        body: 'x',
+      });
+    expect((await create('sub/new.ods')).status).toBe(200);
+    expect((await create('sub/new.ods')).status).toBe(412);
+    await writeFile(path.join(dir, '.~lock.locked.ods#'), '');
+    expect((await create('locked.ods')).status).toBe(423);
+  });
+
+  it('rejects oversize uploads and non-spreadsheet names', async () => {
+    const big = await fetch(`${base}/api/file?root=docs&path=big.ods`, {
+      method: 'PUT',
+      headers: auth,
+      body: 'x'.repeat(2048),
+    });
+    expect(big.status).toBe(413);
+    const txt = await fetch(`${base}/api/file?root=docs&path=evil.sh`, {
+      method: 'PUT',
+      headers: auth,
+      body: 'x',
+    });
+    expect(txt.status).toBe(400);
+  });
+});

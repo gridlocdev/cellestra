@@ -1,0 +1,18 @@
+# Copy to compose.yaml on the NAS and adjust the volume paths.
+services:
+  cellestra:
+    build: .
+    # image: cellestra:latest
+    ports:
+      - '8787:8787'
+    environment:
+      # One or more folders, Name=/container/path;Other=/container/path2
+      CELLESTRA_ROOTS: 'Documents=/data/documents;Shared=/data/shared'
+      # Optional shared secret. Leave unset if your NAS reverse proxy already authenticates.
+      # CELLESTRA_TOKEN: change-me
+    volumes:
+      - /volume1/documents:/data/documents
+      - /volume1/shared:/data/shared
+    # The container runs as the image's `node` user (uid 1000); match your NAS share's owner:
+    # user: '1026:100'
+    restart: unless-stopped
