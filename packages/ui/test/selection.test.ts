@@ -31,3 +31,15 @@ describe('Selection', () => {
     expect(s.state.value.ranges).toHaveLength(2);
   });
 });
+
+describe('Selection.cycle skip', () => {
+  it('skips cells the predicate rejects', () => {
+    const s = new Selection();
+    s.selectRange({ top: 0, left: 0, bottom: 3, right: 0 });
+    const hidden = new Set([1, 2]);
+    s.cycle(1, 0, (row) => hidden.has(row));
+    expect(s.active.value).toEqual({ row: 3, column: 0 });
+    s.cycle(1, 0, (row) => hidden.has(row));
+    expect(s.active.value).toEqual({ row: 0, column: 0 });
+  });
+});

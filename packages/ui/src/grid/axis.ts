@@ -11,6 +11,12 @@ export class Axis {
   private readonly sizes: Float64Array;
   /** deltaBefore[k] = Σ (sizes[j] − default) for j < k. */
   private readonly deltaBefore: Float64Array;
+  /**
+   * For a hidden exception k, the first line after its run of consecutive hidden lines (runEnd) and
+   * the last line before it (runStart): skipping a hidden run is one lookup, not a walk.
+   */
+  private readonly runEnd: Int32Array;
+  private readonly runStart: Int32Array;
 
   constructor(
     count: number,
@@ -27,6 +33,41 @@ export class Axis {
     this.deltaBefore = new Float64Array(list.length + 1);
     for (let k = 0; k < list.length; k++)
       this.deltaBefore[k + 1] = this.deltaBefore[k]! + this.sizes[k]! - defaultSize;
+    const n = list.length;
+    this.runEnd = new Int32Array(n);
+    this.runStart = new Int32Array(n);
+    for (let k = n - 1; k >= 0; k--) {
+      if (this.sizes[k]! > 0) continue;
+      const nextHiddenAdjacent =
+        k + 1 < n && this.sizes[k + 1]! === 0 && this.indexes[k + 1] === this.indexes[k]! + 1;
+      this.runEnd[k] = nextHiddenAdjacent ? this.runEnd[k + 1]! : this.indexes[k]! + 1;
+    }
+    for (let k = 0; k < n; k++) {
+      if (this.sizes[k]! > 0) continue;
+      const prevHiddenAdjacent =
+        k > 0 && this.sizes[k - 1]! === 0 && this.indexes[k - 1] === this.indexes[k]! - 1;
+      this.runStart[k] = prevHiddenAdjacent ? this.runStart[k - 1]! : this.indexes[k]! - 1;
+    }
+  }
+
+  /** The first visible line at or after i, or `count` when there is none. */
+  nextVisible(i: number): number {
+    if (i < 0) i = 0;
+    if (i >= this.count) return this.count;
+    const k = this.rank(i);
+    if (this.indexes[k] !== i || this.sizes[k]! > 0) return i;
+    const after = this.runEnd[k]!;
+    // A default-size line always shows; a custom-size exception right after the run shows too.
+    return after >= this.count ? this.count : after;
+  }
+
+  /** The last visible line at or before i, or −1 when there is none. */
+  prevVisible(i: number): number {
+    if (i >= this.count) i = this.count - 1;
+    if (i < 0) return -1;
+    const k = this.rank(i);
+    if (this.indexes[k] !== i || this.sizes[k]! > 0) return i;
+    return this.runStart[k]!;
   }
 
   /** Number of exceptions with index < i. */
@@ -75,27 +116,31 @@ export class Axis {
     return this.size(i) === 0;
   }
 
-  /** First visible line at or after i (i itself when none: a fully hidden tail). */
+  /** First visible line at or after i (else the last visible before it; i itself when none). */
   firstVisibleFrom(i: number): number {
-    for (let j = i; j < this.count; j++) if (this.size(j) > 0) return j;
-    return Math.min(i, this.count - 1);
+    const j = this.nextVisible(i);
+    if (j < this.count) return j;
+    const back = this.prevVisible(i);
+    return back >= 0 ? back : Math.min(Math.max(0, i), this.count - 1);
   }
 
+  /** Last visible line at or before i (else the first visible after it). */
   lastVisibleBefore(i: number): number {
-    for (let j = i; j >= 0; j--) if (this.size(j) > 0) return j;
-    return this.firstVisibleFrom(i);
+    const j = this.prevVisible(i);
+    return j >= 0 ? j : this.firstVisibleFrom(i);
   }
 
-  /** Step from i by delta visible lines, clamped to the axis. */
+  /**
+   * Step from i by delta visible lines, clamped to the axis. When there is no visible line in that
+   * direction the result is i itself (which may be hidden: the caller decides what to do).
+   */
   step(i: number, delta: number): number {
     let j = i;
-    const dir = Math.sign(delta);
-    for (let n = Math.abs(delta); n > 0;) {
-      const next = j + dir;
+    for (let n = Math.abs(delta); n > 0; n--) {
+      const next = delta > 0 ? this.nextVisible(j + 1) : this.prevVisible(j - 1);
       if (next < 0 || next >= this.count) break;
       j = next;
-      if (this.size(j) > 0) n--;
     }
-    return this.size(j) > 0 ? j : i;
+    return j;
   }
 }

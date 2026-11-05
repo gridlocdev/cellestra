@@ -46,7 +46,9 @@ const PUNCTUATION: Record<string, string> = {
 
 /** Which key a keyboard event pressed, normalised to the names `parseShortcut` uses. */
 function eventKey(e: KeyboardEvent): string {
-  // Prefer the physical key for letters/digits so ⌥/⇧ layers don't change the match (⌥K → "˚").
+  // The layout's own letter or digit wins (AZERTY ⌘Z is the key labelled Z, Dvorak too) ...
+  if (/^[a-z0-9]$/i.test(e.key)) return e.key.toLowerCase();
+  // ... else the physical key, so ⌥/⇧ layers don't change the match (⌥K → "˚").
   if (/^Key[A-Z]$/.test(e.code)) return e.code.slice(3).toLowerCase();
   if (/^Digit\d$/.test(e.code)) return e.code.slice(5);
   // Punctuation by physical key too, so ⌘⇧; and ⌥= match their specs on any shift/option layer.

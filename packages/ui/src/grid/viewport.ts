@@ -178,9 +178,14 @@ function bands(
   let start = header + (a.offset(i) - scroll) * zoom;
   while (i < a.count && start < extent) {
     const s = a.size(i) * zoom;
-    if (s > 0) out.push({ index: i, start, size: s, frozen: false });
-    start += s;
-    i++;
+    if (s > 0) {
+      out.push({ index: i, start, size: s, frozen: false });
+      start += s;
+      i++;
+    } else {
+      // Jump a hidden run in one step (a hidden tail of a million rows is common).
+      i = a.nextVisible(i);
+    }
   }
   return out;
 }

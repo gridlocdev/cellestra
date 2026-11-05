@@ -18,6 +18,9 @@ describe('shortcuts', () => {
   it('matches mod to ⌘ on mac and Ctrl elsewhere, by physical key', () => {
     const s = parseShortcut('mod+k');
     expect(matches(s, key({ key: 'k', code: 'KeyK', metaKey: true }), true)).toBe(true);
+    // AZERTY: the key labelled K sits elsewhere; its own letter decides.
+    expect(matches(parseShortcut('mod+z'), key({ key: 'z', code: 'KeyW', metaKey: true }), true)).toBe(true);
+    expect(matches(parseShortcut('mod+w'), key({ key: 'z', code: 'KeyW', metaKey: true }), true)).toBe(false);
     expect(matches(s, key({ key: 'k', code: 'KeyK', ctrlKey: true }), true)).toBe(false);
     expect(matches(s, key({ key: 'k', code: 'KeyK', ctrlKey: true }), false)).toBe(true);
     expect(

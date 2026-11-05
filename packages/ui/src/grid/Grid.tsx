@@ -6,7 +6,7 @@ import { chromeButtons, hitChrome, type ChromeButton } from './chrome.ts';
 import { renderGrid, CELL_PAD_X, CELL_PAD_Y, type DisplayText } from './render.ts';
 import { Viewport, HEADER_HEIGHT, HEADER_WIDTH } from './viewport.ts';
 import type { GridPalette } from './palette.ts';
-import { MAX_COLUMN, MAX_ROW, rangeOf, type Selection } from '../session/selection.ts';
+import { MAX_COLUMN, MAX_ROW, rangeOf, type GridRange, type Selection } from '../session/selection.ts';
 
 /** What the grid needs from the document. The grid never edits the model itself. */
 export interface GridHost {
@@ -217,17 +217,31 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   useEffect(() => effect(() => draw()), [size, editing, host, selection, zoom, palette, showFormulas]);
 
   // --- scrolling ---------------------------------------------------------------------------------
-  const syncingScroll = useRef(false);
+  // The scroller's position in sheet px is the truth; a scroll event that only echoes a position we
+  // set ourselves changes nothing (no flag to get stuck when the browser fires no event).
   const onScroll = () => {
-    if (syncingScroll.current) {
-      syncingScroll.current = false;
-      return;
-    }
     const el = scrollerRef.current!;
-    state.current.scrollX = el.scrollLeft / zoom.value;
-    state.current.scrollY = el.scrollTop / zoom.value;
+    const x = el.scrollLeft / zoom.value;
+    const y = el.scrollTop / zoom.value;
+    const s = state.current;
+    if (Math.abs(x - s.scrollX) * zoom.value < 0.5 && Math.abs(y - s.scrollY) * zoom.value < 0.5) return;
+    s.scrollX = x;
+    s.scrollY = y;
     draw();
   };
+
+  // Zoom keeps the same sheet position: the spacer was resized by the redraw, move the scroller to match.
+  useEffect(
+    () =>
+      effect(() => {
+        const z = zoom.value;
+        const el = scrollerRef.current;
+        if (!el) return;
+        el.scrollLeft = state.current.scrollX * z;
+        el.scrollTop = state.current.scrollY * z;
+      }),
+    [zoom],
+  );
 
   const reveal = (row: number, column: number) => {
     const v = state.current.viewport ?? viewport();
@@ -238,7 +252,6 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       state.current.scrollY = y;
       const el = scrollerRef.current!;
       draw();
-      syncingScroll.current = true;
       el.scrollLeft = x * zoom.value;
       el.scrollTop = y * zoom.value;
     }
@@ -297,8 +310,36 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   };
 
   // --- navigation --------------------------------------------------------------------------------
+  /** Widen a range until no merge straddles its edge (merges can chain, so to a fixed point). */
+  const growOverMerges = (r: GridRange): GridRange => {
+    const merges = host.sheet.value.merges;
+    if (merges.length === 0) return r;
+    let { top, left, bottom, right } = r;
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const m of merges) {
+        const g = m.range;
+        if (g.bottom < top || g.top > bottom || g.right < left || g.left > right) continue;
+        if (g.top < top || g.left < left || g.bottom > bottom || g.right > right) {
+          top = Math.min(top, g.top);
+          left = Math.min(left, g.left);
+          bottom = Math.max(bottom, g.bottom);
+          right = Math.max(right, g.right);
+          changed = true;
+        }
+      }
+    }
+    return { top, left, bottom, right };
+  };
+
   const moveActive = (dr: number, dc: number, extend: boolean, cycleInRange = false, jump = false) => {
-    if (cycleInRange && !extend && selection.cycle(dr, dc)) {
+    const skipCell = (row: number, column: number) => {
+      const v = state.current.viewport ?? viewport();
+      if (v.rows.isHidden(row) || v.columns.isHidden(column)) return true;
+      const m = host.sheet.value.findMerge(row, column);
+      return !!m && (m.range.top !== row || m.range.left !== column);
+    };
+    if (cycleInRange && !extend && selection.cycle(dr, dc, skipCell)) {
       const a = selection.active.value;
       reveal(a.row, a.column);
       return;
@@ -314,10 +355,13 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       column = dc ? v.columns.step(from.column, dc) : from.column;
     } else {
       [row, column] = sheet.stepOverMerges(from.row, from.column, dr, dc);
+      // Past hidden lines; with nothing visible that way, stay put rather than land on a hidden one.
       if (dr && v.rows.isHidden(row)) row = v.rows.step(row, dr);
+      if (dr && v.rows.isHidden(row)) row = from.row;
       if (dc && v.columns.isHidden(column)) column = v.columns.step(column, dc);
+      if (dc && v.columns.isHidden(column)) column = from.column;
     }
-    selection.select(row, column, { extend });
+    selection.select(row, column, { extend, grow: growOverMerges });
     reveal(row, column);
   };
 
@@ -469,7 +513,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         selection.selectRange(rangeOf(0, 0, MAX_ROW, MAX_COLUMN));
         return;
       case 'columnHeader':
-        if (e.shiftKey) selection.select(MAX_ROW, hit.column, { extend: true });
+        if (e.shiftKey) selection.extendLines('columns', hit.column);
         else
           selection.selectRange(rangeOf(0, hit.column, MAX_ROW, hit.column), {
             row: v.visibleRows.find((b) => !b.frozen)?.index ?? 0,
@@ -478,13 +522,14 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         state.current.drag = { kind: 'columns', index: hit.column, origin: 0, start: 0 };
         return;
       case 'rowHeader':
-        if (e.shiftKey) selection.select(hit.row, MAX_COLUMN, { extend: true });
+        if (e.shiftKey) selection.extendLines('rows', hit.row);
         else selection.selectRange(rangeOf(hit.row, 0, hit.row, MAX_COLUMN));
         state.current.drag = { kind: 'rows', index: hit.row, origin: 0, start: 0 };
         return;
       case 'cell': {
         const merged = host.sheet.value.selectionRangeAt(hit.row, hit.column);
-        selection.select(merged.top, merged.left, { extend: e.shiftKey, add });
+        if (e.shiftKey) selection.select(hit.row, hit.column, { extend: true, grow: growOverMerges });
+        else selection.select(merged.top, merged.left, { add });
         state.current.drag = { kind: 'cells', index: 0, origin: 0, start: 0 };
         if (e.detail === 2) beginEdit();
         return;
@@ -525,14 +570,14 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       case 'cells': {
         const row = v.rowAt(y);
         const column = v.columnAt(x);
-        selection.select(row, column, { extend: true });
+        selection.select(row, column, { extend: true, grow: growOverMerges });
         return;
       }
       case 'columns':
-        selection.select(MAX_ROW, v.columnAt(x), { extend: true });
+        selection.extendLines('columns', v.columnAt(x));
         return;
       case 'rows':
-        selection.select(v.rowAt(y), MAX_COLUMN, { extend: true });
+        selection.extendLines('rows', v.rowAt(y));
         return;
     }
   };

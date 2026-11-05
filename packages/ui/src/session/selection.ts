@@ -44,10 +44,16 @@ export class Selection {
   readonly range = computed(() => this.state.value.ranges[this.state.value.ranges.length - 1]!);
 
   /** Move the active cell; collapses to a single range unless `extend`. */
-  select(row: number, column: number, opts: { extend?: boolean; add?: boolean } = {}): void {
+  select(
+    row: number,
+    column: number,
+    opts: { extend?: boolean; add?: boolean; grow?: (r: GridRange) => GridRange } = {},
+  ): void {
     const s = this.state.value;
     if (opts.extend) {
-      const next = rangeOf(s.anchorRow, s.anchorColumn, row, column);
+      const plain = rangeOf(s.anchorRow, s.anchorColumn, row, column);
+      // `grow` widens the range over merges it cuts, so a selection never ends mid-merge.
+      const next = opts.grow ? opts.grow(plain) : plain;
       // Drag-select calls this on every pointermove; an unchanged range must not wake every subscriber.
       if (sameRange(s.ranges[s.ranges.length - 1], next)) return;
       const ranges = [...s.ranges.slice(0, -1), next];
@@ -80,6 +86,21 @@ export class Selection {
     this.state.value = { row, column, anchorRow: range.top, anchorColumn: range.left, ranges: [range] };
   }
 
+  /** Shift-click / drag on headers: whole columns (or rows) from the anchor's line to `index`. */
+  extendLines(axis: 'columns' | 'rows', index: number): void {
+    const s = this.state.value;
+    const next =
+      axis === 'columns'
+        ? rangeOf(0, s.anchorColumn, MAX_ROW, index)
+        : rangeOf(s.anchorRow, 0, index, MAX_COLUMN);
+    if (sameRange(s.ranges[s.ranges.length - 1], next)) return;
+    this.state.value = {
+      ...s,
+      ...(axis === 'columns' ? { anchorRow: 0 } : { anchorColumn: 0 }),
+      ranges: [...s.ranges.slice(0, -1), next],
+    };
+  }
+
   /** The moving corner of the last range (the one shift+arrow steps). */
   get extentCorner(): { row: number; column: number } {
     const s = this.state.value;
@@ -91,31 +112,46 @@ export class Selection {
   }
 
   /** Within a multi-cell range, Enter/Tab cycle the active cell instead of leaving the range. */
-  cycle(rowStep: number, columnStep: number): boolean {
+  cycle(rowStep: number, columnStep: number, skip?: (row: number, column: number) => boolean): boolean {
     const s = this.state.value;
     const r = this.range.value;
     if (r.top === r.bottom && r.left === r.right) return false;
     let { row, column } = s;
-    if (columnStep !== 0) {
-      column += columnStep;
-      if (column > r.right) {
-        column = r.left;
-        row = row >= r.bottom ? r.top : row + 1;
-      } else if (column < r.left) {
-        column = r.right;
-        row = row <= r.top ? r.bottom : row - 1;
-      }
-    } else {
-      row += rowStep;
-      if (row > r.bottom) {
-        row = r.top;
-        column = column >= r.right ? r.left : column + 1;
-      } else if (row < r.top) {
-        row = r.bottom;
-        column = column <= r.left ? r.right : column - 1;
-      }
+    // Skip hidden lines and cells a merge covers; bounded so a huge all-hidden range can't hang.
+    for (let tries = 0; tries < 100_000; tries++) {
+      [row, column] = cycleStep(r, row, column, rowStep, columnStep);
+      if (!skip?.(row, column) || (row === s.row && column === s.column)) break;
     }
     this.state.value = { ...s, row, column };
     return true;
   }
+}
+
+function cycleStep(
+  r: GridRange,
+  row: number,
+  column: number,
+  rowStep: number,
+  columnStep: number,
+): [number, number] {
+  if (columnStep !== 0) {
+    column += columnStep;
+    if (column > r.right) {
+      column = r.left;
+      row = row >= r.bottom ? r.top : row + 1;
+    } else if (column < r.left) {
+      column = r.right;
+      row = row <= r.top ? r.bottom : row - 1;
+    }
+  } else {
+    row += rowStep;
+    if (row > r.bottom) {
+      row = r.top;
+      column = column >= r.right ? r.left : column + 1;
+    } else if (row < r.top) {
+      row = r.bottom;
+      column = column <= r.left ? r.right : column - 1;
+    }
+  }
+  return [row, column];
 }

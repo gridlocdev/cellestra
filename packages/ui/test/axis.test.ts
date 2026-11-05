@@ -40,3 +40,36 @@ describe('Axis', () => {
     expect(rows.indexAt(1_000_000 * 20 + 100)).toBe(1_000_001);
   });
 });
+
+describe('Axis hidden runs', () => {
+  const count = 1_048_576;
+  const hiddenTail = Array.from({ length: count - 10 }, (_, k) => [k + 10, 0] as [number, number]);
+
+  it('jumps a hidden tail in one step', () => {
+    const axis = new Axis(count, 20, hiddenTail);
+    const t = performance.now();
+    for (let n = 0; n < 1000; n++) {
+      expect(axis.step(9, 1)).toBe(9);
+      expect(axis.firstVisibleFrom(500_000)).toBe(9);
+      expect(axis.nextVisible(10)).toBe(count);
+    }
+    expect(performance.now() - t).toBeLessThan(200);
+  });
+
+  it('steps over a hidden run in the middle and stays put with nothing visible', () => {
+    const axis = new Axis(20, 20, [
+      [0, 0],
+      [3, 0],
+      [4, 0],
+      [5, 30],
+      [6, 0],
+    ]);
+    expect(axis.step(2, 1)).toBe(5);
+    expect(axis.step(5, 1)).toBe(7);
+    expect(axis.step(7, -1)).toBe(5);
+    expect(axis.step(5, -1)).toBe(2);
+    expect(axis.step(1, -1)).toBe(1); // row 0 is hidden: nowhere to go
+    expect(axis.prevVisible(4)).toBe(2);
+    expect(axis.lastVisibleBefore(0)).toBe(1);
+  });
+});

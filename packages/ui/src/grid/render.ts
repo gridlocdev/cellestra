@@ -178,20 +178,18 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
       const cell = sheet.find(rb.index, cb.index);
       if (!cell || cell.isBlank) continue;
       if (input.editing && input.editing.row === rb.index && input.editing.column === cb.index) continue;
-      const merge = merges.find((m) => m.covers(rb.index, cb.index));
-      if (merge && merge.isCovered(rb.index, cb.index)) continue;
-      const rect = merge
-        ? v.rangeRect(merge.range.top, merge.range.left, merge.range.bottom, merge.range.right)
-        : { x: cb.start, y: rb.start, w: cb.size, h: rb.size };
-      drawCellText(
-        input,
-        cell,
-        rb.index,
-        cb.index,
-        rect,
-        merge ? null : { cols, ci, firstColumn, lastColumn },
-      );
+      if (merges.length > 0 && coveredByMerge(rb.index, cb.index)) continue; // drawn once below
+      const rect = { x: cb.start, y: rb.start, w: cb.size, h: rb.size };
+      drawCellText(input, cell, rb.index, cb.index, rect, { cols, ci, firstColumn, lastColumn });
     }
+  }
+  // A merge's text belongs to its anchor, which may be scrolled out of view while the merge shows.
+  for (const m of merges) {
+    const { top: row, left: column } = m.range;
+    const cell = sheet.find(row, column);
+    if (!cell || cell.isBlank) continue;
+    if (input.editing && input.editing.row === row && input.editing.column === column) continue;
+    drawCellText(input, cell, row, column, v.rangeRect(row, column, m.range.bottom, m.range.right), null);
   }
 
   // 5. Borders.
