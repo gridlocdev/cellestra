@@ -228,30 +228,41 @@ export class XmlElement {
     return this.nodes.some((n) => n instanceof XmlElement);
   }
 
-  /** Every descendant element in document order, optionally only those with `name`. */
+  /**
+   * Every descendant element in document order, optionally only those with `name`. Iterative, so a
+   * hostile file nested a million levels deep cannot overflow the call stack.
+   */
   descendants(name?: XmlName): XmlElement[] {
     const out: XmlElement[] = [];
-    const walk = (e: XmlElement): void => {
-      for (const n of e.nodes) {
-        if (!(n instanceof XmlElement)) continue;
-        if (!name || n.is(name)) out.push(n);
-        walk(n);
+    const stack: Array<{ e: XmlElement; i: number }> = [{ e: this, i: 0 }];
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1]!;
+      if (top.i >= top.e.nodes.length) {
+        stack.pop();
+        continue;
       }
-    };
-    walk(this);
+      const n = top.e.nodes[top.i++]!;
+      if (!(n instanceof XmlElement)) continue;
+      if (!name || n.is(name)) out.push(n);
+      stack.push({ e: n, i: 0 });
+    }
     return out;
   }
 
-  /** The concatenated text of every descendant text node (C#'s `XElement.Value`). */
+  /** The concatenated text of every descendant text node (C#'s `XElement.Value`). Iterative. */
   get value(): string {
     let s = '';
-    const walk = (e: XmlElement): void => {
-      for (const n of e.nodes) {
-        if (n instanceof XmlText) s += n.value;
-        else if (n instanceof XmlElement) walk(n);
+    const stack: Array<{ e: XmlElement; i: number }> = [{ e: this, i: 0 }];
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1]!;
+      if (top.i >= top.e.nodes.length) {
+        stack.pop();
+        continue;
       }
-    };
-    walk(this);
+      const n = top.e.nodes[top.i++]!;
+      if (n instanceof XmlText) s += n.value;
+      else if (n instanceof XmlElement) stack.push({ e: n, i: 0 });
+    }
     return s;
   }
 
@@ -262,16 +273,31 @@ export class XmlElement {
     if (text.length > 0) this.nodes.push(new XmlText(text));
   }
 
-  /** A deep copy, detached from any parent. */
+  /** A deep copy, detached from any parent. Iterative, so depth is bounded only by memory. */
   clone(): XmlElement {
-    const copy = new XmlElement(this.name);
-    for (const a of this.attributes) copy.attributes.push({ name: a.name, value: a.value });
-    for (const n of this.nodes) {
-      if (n instanceof XmlElement) copy.add(n.clone());
-      else if (n instanceof XmlText) copy.nodes.push(new XmlText(n.value, n.cdata));
-      else copy.nodes.push(n);
+    const shallow = (e: XmlElement): XmlElement => {
+      const copy = new XmlElement(e.name);
+      for (const a of e.attributes) copy.attributes.push({ name: a.name, value: a.value });
+      return copy;
+    };
+    const root = shallow(this);
+    const stack: Array<{ from: XmlElement; to: XmlElement; i: number }> = [{ from: this, to: root, i: 0 }];
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1]!;
+      if (top.i >= top.from.nodes.length) {
+        stack.pop();
+        continue;
+      }
+      const n = top.from.nodes[top.i++]!;
+      if (n instanceof XmlElement) {
+        const copy = shallow(n);
+        copy.parent = top.to;
+        top.to.nodes.push(copy);
+        stack.push({ from: n, to: copy, i: 0 });
+      } else if (n instanceof XmlText) top.to.nodes.push(new XmlText(n.value, n.cdata));
+      else top.to.nodes.push(n);
     }
-    return copy;
+    return root;
   }
 }
 

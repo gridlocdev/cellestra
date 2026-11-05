@@ -52,6 +52,16 @@ export function serializeXmlElement(element: XmlElement, options: { indent?: boo
   return w.out;
 }
 
+interface Frame {
+  readonly e: XmlElement;
+  readonly scope: Map<string, string>;
+  readonly depth: number;
+  readonly name: string;
+  readonly indentChildren: boolean;
+  i: number;
+}
+
+/** Writes elements with an explicit stack, so nesting depth cannot overflow the call stack. */
 class Writer {
   out = '';
   private readonly indent: boolean;
@@ -59,7 +69,35 @@ class Writer {
     this.indent = indent;
   }
 
-  element(e: XmlElement, inherited: Map<string, string>, depth: number, pretty = this.indent): void {
+  element(root: XmlElement, inherited: Map<string, string>, depth: number, pretty = this.indent): void {
+    const stack: Frame[] = [];
+    const open = (e: XmlElement, scopeIn: Map<string, string>, d: number, p: boolean): void => {
+      const frame = this.openTag(e, scopeIn, d, p);
+      if (frame) stack.push(frame);
+    };
+    open(root, inherited, depth, pretty);
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1]!;
+      if (top.i >= top.e.nodes.length) {
+        if (top.indentChildren) this.out += '\n' + '  '.repeat(top.depth);
+        this.out += `</${top.name}>`;
+        stack.pop();
+        continue;
+      }
+      const n = top.e.nodes[top.i++]!;
+      if (top.indentChildren) this.out += '\n' + '  '.repeat(top.depth + 1);
+      if (n instanceof XmlElement) open(n, top.scope, top.depth + 1, top.indentChildren);
+      else this.out += writeLeaf(n);
+    }
+  }
+
+  /** Write the start tag (or the whole empty element); returns the frame for its children. */
+  private openTag(
+    e: XmlElement,
+    inherited: Map<string, string>,
+    depth: number,
+    pretty: boolean,
+  ): Frame | null {
     const scope = new Map(inherited);
     // Declarations the element carries itself come into scope first.
     for (const a of e.attributes) {
@@ -90,19 +128,12 @@ class Writer {
     this.out += `<${elementName}${attrs}${extra.join('')}${regular}`;
     if (e.nodes.length === 0) {
       this.out += '/>';
-      return;
+      return null;
     }
     this.out += '>';
 
     const mixed = e.nodes.some((n) => n instanceof XmlText);
-    const indentChildren = pretty && !mixed;
-    for (const n of e.nodes) {
-      if (indentChildren) this.out += '\n' + '  '.repeat(depth + 1);
-      if (n instanceof XmlElement) this.element(n, scope, depth + 1, indentChildren);
-      else this.out += writeLeaf(n);
-    }
-    if (indentChildren) this.out += '\n' + '  '.repeat(depth);
-    this.out += `</${elementName}>`;
+    return { e, scope, depth, name: elementName, indentChildren: pretty && !mixed, i: 0 };
   }
 }
 

@@ -221,8 +221,22 @@ function write(n: Node, depth: number): string {
   return s + `</${n.q}>`;
 }
 
+/**
+ * Characters XML 1.0 cannot carry at all, escaped or not: C0 controls other than tab, newline and
+ * carriage return, and U+FFFE/U+FFFF. One pasted into a chart title made object/content.xml
+ * unparseable, and LibreOffice dropped the whole chart. (Duplicated from core's XML writer, which
+ * this package cannot import.)
+ */
+// eslint-disable-next-line no-control-regex
+const INVALID_XML_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
+
 function escapeText(s: string): string {
-  return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\r', '&#xD;');
+  return s
+    .replace(INVALID_XML_CHARS, '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('\r', '&#xD;');
 }
 
 function escapeAttr(s: string): string {

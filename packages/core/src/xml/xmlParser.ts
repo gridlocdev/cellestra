@@ -22,6 +22,13 @@ export class XmlParseError extends Error {
   override readonly name = 'XmlParseError';
 }
 
+/**
+ * How deeply elements may nest. Real documents stay in the tens; the parser resolves each
+ * element's namespace by walking the open tags, so depth costs quadratic time, and a file of
+ * fifty thousand nested spans took most of a minute to open. Past this it is refused instead.
+ */
+export const MAX_XML_DEPTH = 10_000;
+
 /** Parse an XML document into a namespace-aware tree. Throws `XmlParseError` on malformed input. */
 export function parseXml(text: string, options: XmlParseOptions = {}): XmlDocument {
   const preserve = options.preserveWhitespace ?? true;
@@ -60,6 +67,9 @@ export function parseXml(text: string, options: XmlParseOptions = {}): XmlDocume
     else if (!root) prolog.push(node);
   });
   parser.on('opentag', (tag) => {
+    if (stack.length >= MAX_XML_DEPTH) {
+      throw new XmlParseError(`Elements are nested more than ${MAX_XML_DEPTH} deep.`);
+    }
     const element = new XmlElement(xmlName(tag.local, tag.uri, tag.prefix));
     for (const a of Object.values(tag.attributes)) {
       element.attributes.push({ name: xmlName(a.local, a.uri, a.prefix), value: a.value });
