@@ -1,6 +1,7 @@
 import type { ChartDefinition, ChartSeries, ChartStacking, ChartType } from '@cellestra/charts';
 import { Defaults } from '../defaults.ts';
 import { fixedDigits } from '../formulas/evaluation/decimalDigits.ts';
+import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
 import { CellRange } from '../model/cellRange.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
@@ -56,7 +57,7 @@ function labelOf(value: CellValue): string {
 /** Qualify a sheet-less reference with the fallback sheet so it resolves to a real sheet. */
 function qualify(reference: string, fallbackSheet: string): string {
   const r = reference.trim();
-  return r.includes('.') ? r : `${fallbackSheet}.${r}`;
+  return r.includes('.') ? r : `${quoteSheetIfNeeded(fallbackSheet)}.${r}`;
 }
 
 /** The sheet an unqualified reference targets: the first data (non-chart) sheet, else the first sheet. */
@@ -74,8 +75,25 @@ function resolveRange(
   const range = CellRange.tryParse(qualify(reference, fallbackSheet));
   if (!range) return null;
   const sheet = workbook.findSheet(range.sheet ?? fallbackSheet);
-  return sheet ? { range, sheet } : null;
+  if (!sheet) return null;
+  // Trim to the used range (a whole column holds a million mostly-empty rows), then cap the cell count
+  // so a half-typed reference like A1:XFD1048576 can't allocate billions of points.
+  const used = sheet.getUsedRange();
+  if (!used) return null;
+  const bottom = Math.min(range.bottom, used.bottom);
+  const right = Math.min(range.right, used.right);
+  if (bottom < range.top || right < range.left) return null;
+  const columns = right - range.left + 1;
+  const rows = Math.min(bottom - range.top + 1, Math.max(1, Math.floor(MAX_CHART_CELLS / columns)));
+  const cols = Math.min(columns, MAX_CHART_CELLS);
+  return {
+    range: CellRange.fromBounds(range.top, range.left, range.top + rows - 1, range.left + cols - 1),
+    sheet,
+  };
 }
+
+/** The most points one chart reference reads. */
+const MAX_CHART_CELLS = 100_000;
 
 function readNumbers(workbook: Workbook, reference: string | null, fallbackSheet: string): number[] {
   const resolved = resolveRange(workbook, reference, fallbackSheet);

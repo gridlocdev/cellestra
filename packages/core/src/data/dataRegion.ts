@@ -13,22 +13,24 @@ export const DataRegion = {
     let bottom = row;
     let left = column;
     let right = column;
+    // Grow each side as far as it goes before re-checking the others: growing one row at a time
+    // and rescanning the (often empty) neighbouring columns after each step is quadratic.
     let grew = true;
     while (grew) {
       grew = false;
-      if (rowHasData(sheet, top - 1, left, right)) {
+      while (rowHasData(sheet, top - 1, left, right)) {
         top--;
         grew = true;
       }
-      if (rowHasData(sheet, bottom + 1, left, right)) {
+      while (rowHasData(sheet, bottom + 1, left, right)) {
         bottom++;
         grew = true;
       }
-      if (columnHasData(sheet, left - 1, top, bottom)) {
+      while (columnHasData(sheet, left - 1, top, bottom)) {
         left--;
         grew = true;
       }
-      if (columnHasData(sheet, right + 1, top, bottom)) {
+      while (columnHasData(sheet, right + 1, top, bottom)) {
         right++;
         grew = true;
       }

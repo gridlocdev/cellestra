@@ -118,11 +118,12 @@ describe('stacking', () => {
   const a = S([2, 1, NaN]);
   const b = S([3, -1, 4]);
 
-  it('stacks positives in series order, skipping gaps and negatives', () => {
+  it('stacks in series order, positives up and negatives down, skipping gaps', () => {
     expect(stackBars([a, b], [0, 1], 3, false)).toEqual([
       { seriesIndex: 0, category: 0, start: 0, end: 2 },
       { seriesIndex: 1, category: 0, start: 2, end: 5 },
       { seriesIndex: 0, category: 1, start: 0, end: 1 },
+      { seriesIndex: 1, category: 1, start: 0, end: -1 },
       { seriesIndex: 1, category: 2, start: 0, end: 4 },
     ]);
   });
@@ -260,5 +261,18 @@ describe('buildChartScene', () => {
     expect(chartFamily('bubble')).toBe('xy');
     expect(chartFamily('filledRadar')).toBe('radar');
     expect(chartFamily('area')).toBe('cartesian');
+  });
+});
+
+describe('niceTicks at the edges of the double range', () => {
+  it('never returns NaN or loops on huge spans', () => {
+    const t = niceTicks(-1e308, 1e308);
+    expect(t.values.every(Number.isFinite)).toBe(true);
+    expect(t.values.length).toBeLessThanOrEqual(1001);
+  });
+
+  it('handles a span below the precision of its magnitude', () => {
+    const t = niceTicks(1e20, 1e20 + 1);
+    expect(t.values.every(Number.isFinite)).toBe(true);
   });
 });

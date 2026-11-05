@@ -53,10 +53,11 @@ export function chromeButtons(
   if (rule?.kind === 'list') {
     const cell = v.rangeRect(active.row, active.column, active.row, active.column);
     if (onScreen(cell)) {
-      const size = Math.min(16, cell.h);
+      // Inside the cell (clicks on the next column must select it) and clear of the fill handle.
+      const size = Math.min(14, cell.h - 2);
       out.push({
         kind: 'validation',
-        rect: { x: cell.x + cell.w, y: cell.y + cell.h - size, w: size, h: size },
+        rect: { x: cell.x + cell.w - size - 5, y: cell.y + (cell.h - size) / 2, w: size, h: size },
         rule,
       });
     }

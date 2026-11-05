@@ -127,6 +127,20 @@ describe('buildFormatTransform', () => {
     expect(out.top.style).toBe('none');
     expect(t(boxed).border.left.style).toBe('none');
   });
+
+  it('changing only the line style restyles each cell’s own sides', () => {
+    const boxed: CellStyle = { ...base, border: Borders.all('thin') };
+    const bottomOnly: CellStyle = {
+      ...base,
+      border: { ...Borders.none, bottom: Borders.all('thin').bottom },
+    };
+    const seed = seedFormatCells(boxed, [boxed, bottomOnly, base]);
+    const t = buildFormatTransform(editFormatCells(seed, { borderStyle: 'double' }));
+    expect(t(boxed).border.left.style).toBe('double');
+    expect(t(bottomOnly).border.bottom.style).toBe('double');
+    expect(t(bottomOnly).border.top.style).toBe('none');
+    expect(Borders.hasAnyEdge(t(base).border)).toBe(false);
+  });
 });
 
 describe('dialog helpers', () => {

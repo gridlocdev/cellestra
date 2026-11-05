@@ -42,5 +42,5 @@ export const PastePlanner = {
 } as const;
 
 function isOversized(selection: CellRange): boolean {
-  return selection.rowCount * selection.columnCount > OVERSIZED_CELL_CAP;
+  return selection.rowCount * selection.columnCount >= OVERSIZED_CELL_CAP;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { effect, type ReadonlySignal } from '@preact/signals';
-import type { CellStyle, CellValue, StylePool, Worksheet } from '@cellestra/core';
+import type { CellRange, CellStyle, CellValue, StylePool, Worksheet } from '@cellestra/core';
 import { Axis } from './axis.ts';
 import { chromeButtons, hitChrome, type ChromeButton } from './chrome.ts';
 import { renderGrid, CELL_PAD_X, CELL_PAD_Y, type DisplayText } from './render.ts';
@@ -66,6 +66,8 @@ function axesFor(sheet: Worksheet): { columns: Axis; rows: Axis } {
 
 export function Grid({ host, selection, zoom, palette, showFormulas, controller }: GridProps) {
   const rootRef = useRef<HTMLDivElement>(null);
+  /** The line shown while dragging a column/row edge; the size is committed once, on release. */
+  const guideRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
@@ -83,7 +85,10 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     scrollY: 0,
     viewport: null as Viewport | null,
     axesVersion: -1,
+    axesSheet: null as Worksheet | null,
     axes: null as ReturnType<typeof axesFor> | null,
+    /** The sheet's used range for `axesVersion` — a full cell scan, so not once per frame. */
+    used: null as CellRange | null,
     drag: null as null | Drag,
     chrome: [] as ChromeButton[],
   });
@@ -100,9 +105,11 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const s = state.current;
     const version = host.version.value;
     const sheet = host.sheet.value;
-    if (!s.axes || s.axesVersion !== version) {
+    if (!s.axes || s.axesVersion !== version || s.axesSheet !== sheet) {
       s.axes = axesFor(sheet);
+      s.used = sheet.getUsedRange();
       s.axesVersion = version;
+      s.axesSheet = sheet;
     }
     return new Viewport({
       ...s.axes,
@@ -152,7 +159,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   const updateSpacer = (v: Viewport) => {
     const spacer = spacerRef.current;
     if (!spacer) return;
-    const used = host.sheet.value.getUsedRange();
+    const used = state.current.used;
     const sel = selection.range.value;
     const z = v.zoom;
     const bottom = Math.max(used?.bottom ?? 0, sel.bottom) + 1;
@@ -215,17 +222,19 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     editor.setSelectionRange(end, end);
   };
 
-  const endEdit = (commit: boolean, move: [number, number] = [0, 0]) => {
+  /** False when the host rejected the value (a stop validation rule); the editor stays open. */
+  const endEdit = (commit: boolean, move: [number, number] = [0, 0], refocus = true): boolean => {
     const at = editingRef.current;
-    if (!at) return;
+    if (!at) return true;
     const text = editorRef.current!.value;
     if (commit && host.commit(at.row, at.column, text) === false) {
-      editorRef.current!.select();
-      return;
+      if (refocus) editorRef.current!.select();
+      return false;
     }
     setEditing(null);
-    rootRef.current?.focus();
+    if (refocus) rootRef.current?.focus();
     if (move[0] || move[1]) moveActive(move[0], move[1], false, true);
+    return true;
   };
 
   const placeEditor = (v: Viewport) => {
@@ -388,7 +397,12 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
 
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
-    if (editingRef.current) endEdit(true);
+    if (editingRef.current && !endEdit(true)) {
+      // Rejected: stay in the editor on the same cell rather than moving the selection under it.
+      e.preventDefault();
+      editorRef.current?.focus();
+      return;
+    }
     const { x, y } = point(e);
     const v = state.current.viewport;
     if (!v) return;
@@ -454,11 +468,23 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     if (!v) return;
     switch (drag.kind) {
       case 'resizeColumn':
-        host.resizeColumn(drag.index, Math.max(MIN_COLUMN_WIDTH, drag.start + (x - drag.origin) / v.zoom));
+      case 'resizeRow': {
+        const column = drag.kind === 'resizeColumn';
+        const min = column ? MIN_COLUMN_WIDTH : MIN_ROW_HEIGHT;
+        const size = Math.max(min, drag.start + ((column ? x : y) - drag.origin) / v.zoom);
+        state.current.drag = { ...drag, size };
+        const edge = drag.origin + (size - drag.start) * v.zoom;
+        const g = guideRef.current;
+        if (g)
+          Object.assign(g.style, {
+            display: 'block',
+            left: column ? `${edge}px` : '0',
+            top: column ? '0' : `${edge}px`,
+            width: column ? '1px' : '100%',
+            height: column ? '100%' : '1px',
+          });
         return;
-      case 'resizeRow':
-        host.resizeRow(drag.index, Math.max(MIN_ROW_HEIGHT, drag.start + (y - drag.origin) / v.zoom));
-        return;
+      }
       case 'cells': {
         const row = v.rowAt(y);
         const column = v.columnAt(x);
@@ -475,7 +501,12 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   };
 
   const onPointerUp = () => {
+    const drag = state.current.drag;
     state.current.drag = null;
+    if (guideRef.current) guideRef.current.style.display = 'none';
+    if (drag?.size === undefined) return;
+    if (drag.kind === 'resizeColumn') host.resizeColumn(drag.index, drag.size);
+    else if (drag.kind === 'resizeRow') host.resizeRow(drag.index, drag.size);
   };
 
   const onWheel = (e: WheelEvent) => {
@@ -517,13 +548,18 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       >
         <div ref={spacerRef} class="cs-grid-spacer" />
       </div>
+      <div ref={guideRef} class="cs-grid-resize-guide" />
       <textarea
         ref={editorRef}
         class="cs-grid-editor"
         spellcheck={false}
         autocomplete="off"
         onKeyDown={onEditorKeyDown}
-        onBlur={() => endEdit(true)}
+        onBlur={(e) => {
+          // Grid clicks are handled (and any rejection reported) by onPointerDown.
+          if (rootRef.current?.contains(e.relatedTarget as Node | null)) return;
+          endEdit(true, [0, 0], false);
+        }}
       />
     </div>
   );
@@ -534,4 +570,6 @@ interface Drag {
   readonly index: number;
   readonly origin: number;
   readonly start: number;
+  /** The size a resize drag has reached so far. */
+  readonly size?: number;
 }

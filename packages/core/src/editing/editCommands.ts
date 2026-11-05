@@ -43,7 +43,7 @@ export function clampedPositions(sheet: Worksheet, range: CellRange): Position[]
 
 /** The range to style: verbatim when modest, else clamped to the used range, else its top-left cell. */
 function styleRange(sheet: Worksheet, range: CellRange): CellRange {
-  if (range.rowCount * range.columnCount <= OVERSIZED_CELL_CAP) return range;
+  if (range.rowCount * range.columnCount < OVERSIZED_CELL_CAP) return range;
   return clampToUsed(sheet, range) ?? new CellRange(range.topLeft.relative());
 }
 
@@ -118,7 +118,7 @@ export const EditCommands = {
       sheet,
       (ws) => clampedPositions(ws, range),
       (ws) => {
-        for (const [row, column] of (clampToUsed(ws, range) ?? range).positions()) {
+        for (const [row, column] of clampToUsed(ws, range)?.positions() ?? []) {
           if (ws.find(row, column)) ws.setValue(row, column, CellValue.empty);
         }
       },
@@ -134,7 +134,7 @@ export const EditCommands = {
       sheet,
       (ws) => clampedPositions(ws, range),
       (ws) => {
-        for (const [row, column] of (clampToUsed(ws, range) ?? range).positions()) {
+        for (const [row, column] of clampToUsed(ws, range)?.positions() ?? []) {
           const cell = ws.find(row, column);
           if (!cell) continue;
           cell.formula = null;

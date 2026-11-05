@@ -608,7 +608,7 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
       {d?.kind === 'formatCells' && (
         <FormatCellsDialog
           current={app.activeStyle}
-          styles={app.selectionStyles()}
+          styles={d.styles}
           locale={s.locale}
           onApply={(transform) => app.style('Format Cells', transform)}
           onClose={() => {
@@ -618,10 +618,23 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
         />
       )}
       {d?.kind === 'filter' && (
-        <FilterPopup app={app} target={d.target} column={d.column} anchor={d.anchor} />
+        <FilterPopup
+          key={`${d.target.range.toString()}:${d.column}`}
+          app={app}
+          target={d.target}
+          column={d.column}
+          anchor={d.anchor}
+        />
       )}
       {d?.kind === 'validationList' && (
-        <ValidationListPopup app={app} rule={d.rule} row={d.row} column={d.column} anchor={d.anchor} />
+        <ValidationListPopup
+          key={`${d.row}:${d.column}`}
+          app={app}
+          rule={d.rule}
+          row={d.row}
+          column={d.column}
+          anchor={d.anchor}
+        />
       )}
       {d?.kind === 'sortFilter' && <SortFilterDialog app={app} target={d.target} sortOnly={d.sortOnly} />}
       {d?.kind === 'validation' && <ValidationDialog app={app} range={d.range} existing={d.existing} />}

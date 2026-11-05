@@ -113,8 +113,8 @@ export function FormatCellsDialog(props: {
           <button
             type="button"
             class="cs-btn"
-            title="Reset the text colour to black"
-            onClick={() => edit({ textColor: Argb.black })}
+            title="Reset the text colour to automatic"
+            onClick={() => edit({ textColor: Argb.transparent })}
           >
             Reset
           </button>

@@ -22,6 +22,10 @@ export function rangeOf(r0: number, c0: number, r1: number, c1: number): GridRan
   return { top: Math.min(r0, r1), left: Math.min(c0, c1), bottom: Math.max(r0, r1), right: Math.max(c0, c1) };
 }
 
+function sameRange(a: GridRange | undefined, b: GridRange): boolean {
+  return !!a && a.top === b.top && a.left === b.left && a.bottom === b.bottom && a.right === b.right;
+}
+
 export const MAX_ROW = 1_048_575;
 export const MAX_COLUMN = 16_383;
 
@@ -43,12 +47,23 @@ export class Selection {
   select(row: number, column: number, opts: { extend?: boolean; add?: boolean } = {}): void {
     const s = this.state.value;
     if (opts.extend) {
-      const ranges = [...s.ranges.slice(0, -1), rangeOf(s.anchorRow, s.anchorColumn, row, column)];
+      const next = rangeOf(s.anchorRow, s.anchorColumn, row, column);
+      // Drag-select calls this on every pointermove; an unchanged range must not wake every subscriber.
+      if (sameRange(s.ranges[s.ranges.length - 1], next)) return;
+      const ranges = [...s.ranges.slice(0, -1), next];
       // Extending keeps the active cell at the anchor (like Calc/Excel).
       this.state.value = { ...s, ranges };
       return;
     }
     const r = rangeOf(row, column, row, column);
+    if (
+      !opts.add &&
+      s.row === row &&
+      s.column === column &&
+      s.ranges.length === 1 &&
+      sameRange(s.ranges[0], r)
+    )
+      return;
     this.state.value = {
       row,
       column,

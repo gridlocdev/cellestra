@@ -188,8 +188,7 @@ function axisArea(chart: ResolvedChart, plot: Rect, left: number, bottom: number
   };
 }
 
-const tickGutter = (labels: readonly string[]): number =>
-  Math.max(44, Math.max(0, ...labels.map((l) => estimateTextWidth(l, TICK_SIZE))) + 10);
+const tickGutter = (labels: readonly string[]): number => Math.max(44, widestLabel(labels, TICK_SIZE) + 10);
 
 function drawCartesian(shapes: Shape[], chart: ResolvedChart, plot: Rect): void {
   const categories = categoryCount(chart);
@@ -207,7 +206,7 @@ function drawCartesian(shapes: Shape[], chart: ResolvedChart, plot: Rect): void 
   const labels = Array.from({ length: categories }, (_, c) => categoryLabel(chart, c));
   let area: Rect;
   if (horizontal) {
-    const widest = Math.max(0, ...labels.map((l) => estimateTextWidth(l, CATEGORY_SIZE)));
+    const widest = widestLabel(labels, CATEGORY_SIZE);
     const left = Math.min(Math.max(44, widest + 12), plot.width * 0.4);
     area = axisArea(chart, plot, left, 26);
   } else {
@@ -280,7 +279,7 @@ function drawCartesian(shapes: Shape[], chart: ResolvedChart, plot: Rect): void 
       });
     }
   } else {
-    const widest = Math.max(0, ...labels.map((l) => estimateTextWidth(l, CATEGORY_SIZE)));
+    const widest = widestLabel(labels, CATEGORY_SIZE);
     const step = Math.max(1, Math.ceil((widest + 6) / bandSize));
     for (let c = 0; c < categories; c += step) {
       const label = labels[c]!;
@@ -713,4 +712,11 @@ function drawScatter(shapes: Shape[], chart: ResolvedChart, plot: Rect, bubble: 
   });
 
   drawAxisTitles(shapes, chart, plot, area);
+}
+
+/** The widest label's estimated width; a loop, since spreading 100k+ labels overflows the stack. */
+function widestLabel(labels: readonly string[], size: number): number {
+  let widest = 0;
+  for (const l of labels) widest = Math.max(widest, estimateTextWidth(l, size));
+  return widest;
 }

@@ -1,6 +1,7 @@
 import { batch, computed, effect, signal } from '@preact/signals';
 import {
   AutoSumPlanner,
+  clampToUsed,
   CellRange,
   CellAddress,
   CleanUp,
@@ -91,7 +92,7 @@ export type DialogState =
   | { readonly kind: 'shortcuts' }
   | { readonly kind: 'about' }
   | { readonly kind: 'settings' }
-  | { readonly kind: 'formatCells' }
+  | { readonly kind: 'formatCells'; readonly styles: ReturnType<AppController['selectionStyles']> }
   | {
       readonly kind: 'filter';
       readonly target: DataTarget;
@@ -158,6 +159,8 @@ export class AppController {
   /** Set while reloading the same document, so the cursor stays put. */
   #keepSelection = false;
   #toastTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The session version the last recovery snapshot was taken at. */
+  #snapshotVersion = -1;
 
   constructor() {
     this.session.captureSelection = () => this.selection.state.peek();
@@ -437,7 +440,10 @@ export class AppController {
   }
 
   async snapshot(): Promise<void> {
-    if (!this.session.modified.peek()) return;
+    // Serializing a big workbook takes a while: only redo it when something changed.
+    const version = this.session.version.peek();
+    if (!this.session.modified.peek() || version === this.#snapshotVersion) return;
+    this.#snapshotVersion = version;
     try {
       await saveRecovery(
         this.session.title.peek(),
@@ -598,9 +604,24 @@ export class AppController {
   /** Reads a list rule's source range on the active sheet. */
   readonly resolver = (r: CellRange): Iterable<CellValue> => {
     const sheet = this.sheet;
+    const version = this.session.version.peek();
+    if (this.#listCache.version !== version || this.#listCache.sheet !== sheet)
+      this.#listCache = { version, sheet, ranges: new Map() };
+    const key = r.toString();
+    const hit = this.#listCache.ranges.get(key);
+    if (hit) return hit;
+    // Preflight asks once per pasted cell, so read each source once per version, clipped to the
+    // used range (a `Z:Z` source would otherwise be a million reads per cell).
     const out: CellValue[] = [];
-    for (const [row, column] of r.positions()) out.push(sheet.getValue(row, column));
+    for (const [row, column] of clampToUsed(sheet, r)?.positions() ?? [])
+      out.push(sheet.getValue(row, column));
+    this.#listCache.ranges.set(key, out);
     return out;
+  };
+  #listCache: { version: number; sheet: Worksheet | null; ranges: Map<string, CellValue[]> } = {
+    version: -1,
+    sheet: null,
+    ranges: new Map(),
   };
 
   /** Stop-rule check for paste/fill; true when the writes may go ahead. */
@@ -937,16 +958,28 @@ export class AppController {
   }
 
   sortFilterCommit(target: DataTarget, sort: SortSpec | null, filter: FilterSpec | null): void {
+    this.run(this.#sortFilterCommand(target, sort, filter));
+  }
+
+  /**
+   * One undo step. A plain AutoFilter left with no filter or sort would vanish, so it is put back in
+   * the same step (keeping its chevrons).
+   */
+  #sortFilterCommand(target: DataTarget, sort: SortSpec | null, filter: FilterSpec | null): EditCommand {
     const sheet = this.sheetName;
     const locale = this.session.locale;
+    const steps: EditCommand[] = [];
     if (target.table) {
-      const steps: EditCommand[] = [];
       const auto = this.sheet.activeFilter;
       if (auto && auto.equals(target.table.range))
         steps.push(DataEditCommands.applySortAndFilter(sheet, auto, null, null, locale));
       steps.push(DataEditCommands.applyTableSortAndFilter(sheet, target.table, sort, filter, locale));
-      this.run(each('Sort & Filter', steps));
-    } else this.run(DataEditCommands.applySortAndFilter(sheet, target.range, sort, filter, locale));
+    } else {
+      steps.push(DataEditCommands.applySortAndFilter(sheet, target.range, sort, filter, locale));
+      if (!filter && !sort && this.sheet.activeFilter?.equals(target.range))
+        steps.push(this.#autoFilterState(target.range));
+    }
+    return steps.length === 1 ? steps[0]! : new CompositeEditCommand('Sort & Filter', steps);
   }
 
   /** Filter dropdown: replace one column's checklist (null = show all) and optionally sort by it. */
@@ -967,9 +1000,7 @@ export class AppController {
       sortAscending === undefined
         ? DataScope.effectiveSort(this.sheet, target.range)
         : { levels: [{ column, ascending: sortAscending }], hasHeader: target.hasHeader };
-    // Without a filter or sort a plain AutoFilter would vanish; keep its chevrons.
     this.sortFilterCommit(target, sort, filter);
-    if (!target.table && !filter && !sort) this.#setAutoFilter(target.range);
   }
 
   /** The distinct values for a filter dropdown, honouring the other columns' filters. */
@@ -1009,8 +1040,10 @@ export class AppController {
     }
     const target = this.dataTarget();
     if (target.table) return this.info('Tables have their own filter buttons.');
-    if (target.range.rowCount < 2) return this.info('Select a range with a header row to filter.');
-    this.#setAutoFilter(target.range);
+    // Whole columns (A:D) would filter, and save hidden flags for, a million empty rows.
+    const range = clampToUsed(sheet, target.range);
+    if (!range || range.rowCount < 2) return this.info('Select a range with a header row to filter.');
+    this.#setAutoFilter(range);
   }
 
   clearFilter(): void {
@@ -1018,7 +1051,6 @@ export class AppController {
     if (!target) return;
     if (target.table) return this.sortFilterCommit(target, target.table.sort ?? null, null);
     this.sortFilterCommit(target, this.sheet.activeSort, null);
-    this.#setAutoFilter(target.range);
   }
 
   #setAutoFilter(range: CellRange): void {
@@ -1054,12 +1086,13 @@ export class AppController {
 
   createTable(): void {
     const sheet = this.sheet;
-    const r = this.regionOrSelection;
+    const r = clampToUsed(sheet, this.regionOrSelection);
+    if (!r) return this.info('Select some data to make a table.');
     if (sheet.tables.some((t) => t.range.intersects(r)))
       return this.info('That range overlaps an existing table.');
     let n = 1;
     while (sheet.tables.some((t) => t.name.toLowerCase() === `table${n}`)) n++;
-    const t: Table = { name: `Table${n}`, range: r, hasHeader: r.rowCount > 1 || looksLikeHeader(sheet, r) };
+    const t: Table = { name: `Table${n}`, range: r, hasHeader: looksLikeHeader(sheet, r) };
     this.run(DataEditCommands.createStyledTable(this.session.workbook.peek(), this.sheetName, t));
     this.selection.select(r.top, r.left);
   }
@@ -1100,14 +1133,20 @@ export class AppController {
   setValidation(range: CellRange, rule: DataValidation | null): void {
     const name = this.sheetName;
     const old = this.sheet.validations.filter((v) => v.target.intersects(range));
+    // Rules that reach outside the range keep those parts.
+    const kept = old.flatMap((v) => subtractRange(v.target, range).map((target) => ({ ...v, target })));
     const remove = new ActionCommand(
       'Data Validation',
       (wb) => {
-        for (const v of old) wb.findSheet(name)!.removeValidation(v);
+        const ws = wb.findSheet(name)!;
+        for (const v of old) ws.removeValidation(v);
+        for (const v of kept) ws.addValidation(v);
         return EditResult.none;
       },
       (wb) => {
-        for (const v of old) wb.findSheet(name)!.addValidation(v);
+        const ws = wb.findSheet(name)!;
+        for (const v of kept) ws.removeValidation(v);
+        for (const v of old) ws.addValidation(v);
         return EditResult.none;
       },
     );
@@ -1179,20 +1218,32 @@ export class AppController {
     this.session.touch();
   }
 
-  /** Clear every cell (values, formulas, formatting) on the active sheet; layout stays. */
+  /**
+   * Clear every cell and reset the layout (line styles and hidden flags, filters, tables, validation,
+   * merges, frozen panes) in one step. Asks first when that would discard more than 100 cells.
+   */
   resetSheetData(): void {
-    const used = this.sheet.getUsedRange();
+    const sheet = this.sheet;
+    const used = sheet.getUsedRange();
     if (!used) return this.info('The sheet is already empty.');
-    this.run(EditCommands.clearAll(this.sheetName, used));
+    if (sheet.cellCount > 100) {
+      const ok = window.confirm(
+        `Reset “${this.sheetName}”? This clears ${sheet.cellCount.toLocaleString()} cells and the sheet’s layout. You can undo it.`,
+      );
+      this.grid.current?.focus();
+      if (!ok) return;
+    }
+    this.run(
+      new CompositeEditCommand('Reset Sheet Data', [
+        EditCommands.clearAll(this.sheetName, used),
+        DataEditCommands.resetSheetLayout(this.sheetName),
+      ]),
+    );
   }
 
   insertChartSheet(chart: ChartDefinition | null): void {
     if (!chart) return this.info('Select a range with numbers to chart.');
-    const wb = this.session.workbook.peek();
-    const sheet = wb.addChartSheet(chart);
-    this.session.recalculateAll();
-    this.session.touch(true);
-    this.session.setActiveSheet(wb.worksheets.indexOf(sheet));
+    this.session.insertSheet((wb) => wb.addChartSheet(chart));
   }
 
   // ── Clipboard ────────────────────────────────────────────────────────────
@@ -1237,7 +1288,7 @@ export class AppController {
       cells.map((v, c) => EditCommands.setInput(sheet, row + r, column + c, v, locale, wb)),
     );
     this.run(each('Paste', cmds));
-    const width = Math.max(0, ...rows.map((r) => r.length));
+    const width = rows.reduce((w, r) => Math.max(w, r.length), 0);
     if (rows.length > 0 && width > 0)
       this.selection.selectRange({
         top: row,
@@ -1302,57 +1353,47 @@ export class AppController {
     if (!query) return false;
     const q = query.toLowerCase();
     const sheet = this.sheet;
-    const used = sheet.getUsedRange();
-    if (!used) return false;
     const wb = this.session.workbook.peek();
-    const width = used.right - used.left + 1;
-    const total = (used.bottom - used.top + 1) * width;
-    const { row, column } = this.selection.active.peek();
-    const start =
-      (Math.max(row, used.top) - used.top) * width +
-      (Math.min(Math.max(column, used.left), used.right) - used.left);
-    for (let i = 1; i <= total; i++) {
-      const k = (((start + (backwards ? -i : i)) % total) + total) % total;
-      const r = used.top + Math.floor(k / width);
-      const c = used.left + (k % width);
-      const cell = sheet.find(r, c);
-      if (!cell) continue;
+    // Walk the stored cells (row-major) rather than every position of the used range: one stray
+    // cell at XFD1048576 would make that 17 billion lookups.
+    const matches: [number, number][] = [];
+    for (const [r, c, cell] of sheet.enumerateCells()) {
+      if (cell.value.kind === 'empty' && cell.formula === null) continue;
       const shown = this.session.display(cell.value, wb.styles.get(sheet.effectiveStyleId(r, c)));
-      if (shown.toLowerCase().includes(q) || (cell.formula ?? '').toLowerCase().includes(q)) {
-        this.selection.select(r, c);
-        return true;
-      }
+      if (shown.toLowerCase().includes(q) || (cell.formula ?? '').toLowerCase().includes(q))
+        matches.push([r, c]);
     }
-    return false;
+    if (matches.length === 0) return false;
+    matches.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const { row, column } = this.selection.active.peek();
+    const after = (m: [number, number]) => m[0] > row || (m[0] === row && m[1] > column);
+    const before = (m: [number, number]) => m[0] < row || (m[0] === row && m[1] < column);
+    const hit = backwards
+      ? ([...matches].reverse().find(before) ?? matches[matches.length - 1]!)
+      : (matches.find(after) ?? matches[0]!);
+    this.selection.select(hit[0], hit[1]);
+    return true;
   }
 
   replaceAll(query: string, replacement: string): number {
     if (!query) return 0;
     const sheet = this.sheet;
-    const used = sheet.getUsedRange();
-    if (!used) return 0;
     const s = this.session;
     const cmds: EditCommand[] = [];
+    const writes: { row: number; column: number; value: CellValue; isFormula: boolean }[] = [];
     const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-    for (let r = used.top; r <= used.bottom; r++)
-      for (let c = used.left; c <= used.right; c++) {
-        const cell = sheet.find(r, c);
-        if (!cell) continue;
-        const text =
-          cell.formula !== null ? '=' + cell.formula : cell.value.kind === 'text' ? cell.value.value : null;
-        if (text === null || !pattern.test(text)) continue;
-        pattern.lastIndex = 0;
-        cmds.push(
-          EditCommands.setInput(
-            this.sheetName,
-            r,
-            c,
-            text.replace(pattern, replacement),
-            s.locale,
-            s.workbook.peek(),
-          ),
-        );
-      }
+    // Snapshot the stored cells first: the commands run later, but the walk must not see its own writes.
+    for (const [r, c, cell] of [...sheet.enumerateCells()]) {
+      const text =
+        cell.formula !== null ? '=' + cell.formula : cell.value.kind === 'text' ? cell.value.value : null;
+      if (text === null || !pattern.test(text)) continue;
+      pattern.lastIndex = 0;
+      const next = text.replace(pattern, () => replacement);
+      const parsed = InputParser.parse(next, s.locale);
+      writes.push({ row: r, column: c, value: parsed.value, isFormula: parsed.formula !== null });
+      cmds.push(EditCommands.setInput(this.sheetName, r, c, next, s.locale, s.workbook.peek()));
+    }
+    if (!this.#preflight(writes)) return 0;
     this.run(each('Replace All', cmds));
     return cmds.length;
   }
@@ -1445,4 +1486,17 @@ function normalize(text: string): string {
 
 export function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** The parts of `a` outside `b`, as up to four rectangles (above, below, left, right). */
+function subtractRange(a: CellRange, b: CellRange): CellRange[] {
+  if (!a.intersects(b)) return [a];
+  const out: CellRange[] = [];
+  const top = Math.max(a.top, b.top);
+  const bottom = Math.min(a.bottom, b.bottom);
+  if (a.top < b.top) out.push(CellRange.fromBounds(a.top, a.left, b.top - 1, a.right));
+  if (a.bottom > b.bottom) out.push(CellRange.fromBounds(b.bottom + 1, a.left, a.bottom, a.right));
+  if (a.left < b.left) out.push(CellRange.fromBounds(top, a.left, bottom, b.left - 1));
+  if (a.right > b.right) out.push(CellRange.fromBounds(top, b.right + 1, bottom, a.right));
+  return out;
 }

@@ -181,6 +181,13 @@ function readRows(
     const height = styleName === null ? null : (styles.rowHeights.get(styleName) ?? null);
     const defaultStyleId = defaultStyleIdOf(element, styles);
 
+    // LibreOffice pads sheets with runs like 1,048,000 repeated rows of 1,024 blank cells; a plain
+    // run carries nothing, so skip it whole instead of visiting a billion positions.
+    if (height === null && !hidden && defaultStyleId === null && rowIsInert(element)) {
+      row += repeat;
+      continue;
+    }
+    const inertCells = rowIsInert(element);
     for (let i = 0; i < repeat; i++, row++) {
       if (height !== null || hidden || defaultStyleId !== null) {
         const model = sheet.getOrCreateRow(row);
@@ -188,9 +195,26 @@ function readRows(
         if (defaultStyleId !== null) model.styleId = defaultStyleId;
         model.hidden = hidden;
       }
-      readCells(element, sheet, row, styles, validationCells);
+      if (!inertCells) readCells(element, sheet, row, styles, validationCells);
     }
   }
+}
+
+/** A blank `table:table-cell` that only says how many columns it repeats over. */
+function cellIsInert(element: XmlElement): boolean {
+  if (!element.is(Table('table-cell')) || element.nodes.some((n) => n.kind === 'element')) return false;
+  return element.attributes.every(
+    (a) => a.name.local === 'number-columns-repeated' && a.name.uri === element.uri,
+  );
+}
+
+/** Every cell of the row is inert (so reading it changes nothing). */
+function rowIsInert(row: XmlElement): boolean {
+  for (const element of row.elements()) {
+    if (element.is(Table('covered-table-cell'))) continue;
+    if (element.is(Table('table-cell')) && !cellIsInert(element)) return false;
+  }
+  return true;
 }
 
 function readCells(
@@ -206,10 +230,11 @@ function readCells(
     if (!covered && !element.is(Table('table-cell'))) continue;
 
     const repeat = readPositive(element, Table('number-columns-repeated'));
-    for (let i = 0; i < repeat; i++, column++) {
-      if (covered) continue;
-      readCell(element, sheet, row, column, styles, validationCells);
+    if (covered || cellIsInert(element)) {
+      column += repeat;
+      continue;
     }
+    for (let i = 0; i < repeat; i++, column++) readCell(element, sheet, row, column, styles, validationCells);
   }
 }
 

@@ -3,7 +3,7 @@ import { DateConversion, type CivilDateTime } from '../../formulas/evaluation/da
 import { OpenFormulaTranslator } from '../../formulas/openFormulaTranslator.ts';
 import type { Cell } from '../../model/cell.ts';
 import type { MergedRegion } from '../../model/mergedRegion.ts';
-import { cellKey } from '../../model/sheetDimensions.ts';
+import { cellKey, keyColumn, keyRow } from '../../model/sheetDimensions.ts';
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import { NumberFormats } from '../../styling/cellStyle.ts';
@@ -162,11 +162,15 @@ function writeRows(
   registry: StyleRegistry,
   cellValidation: CellValidation,
 ): void {
+  const occupied = occupiedColumns(sheet, cellValidation);
+  // A row with no occupied columns and a default model is empty; jumping between rows that are not
+  // keeps a sheet with one cell at XFD1048576 from scanning 17 billion positions.
+  const rowIsEmpty = (row: number) => !occupied.has(row) && !(sheet.findRow(row)?.isDefault === false);
   let row = 0;
   while (row <= lastRow) {
-    if (rowIsEmpty(sheet, row, lastColumn, cellValidation)) {
+    if (rowIsEmpty(row)) {
       let repeat = 1;
-      while (row + repeat <= lastRow && rowIsEmpty(sheet, row + repeat, lastColumn, cellValidation)) repeat++;
+      while (row + repeat <= lastRow && rowIsEmpty(row + repeat)) repeat++;
 
       const emptyRow = new XmlElement(Table('table-row'), new XmlElement(Table('table-cell')));
       if (repeat > 1) emptyRow.setAttr(Table('number-rows-repeated'), repeat);
@@ -175,23 +179,31 @@ function writeRows(
       continue;
     }
 
-    table.add(writeRow(sheet, row, lastColumn, registry, cellValidation));
+    table.add(writeRow(sheet, row, lastColumn, registry, cellValidation, occupied.get(row) ?? []));
     row++;
   }
 }
 
-function rowIsEmpty(
-  sheet: Worksheet,
-  row: number,
-  lastColumn: number,
-  cellValidation: CellValidation,
-): boolean {
-  const model = sheet.findRow(row);
-  if (model && !model.isDefault) return false;
-  for (let c = 0; c <= lastColumn; c++) {
-    if (sheet.find(row, c) || sheet.findMerge(row, c) || cellValidation.has(cellKey(row, c))) return false;
-  }
-  return true;
+/** Per row, the sorted columns holding a cell, a merge, or a validation: everything else is blank. */
+function occupiedColumns(sheet: Worksheet, cellValidation: CellValidation): Map<number, number[]> {
+  const sets = new Map<number, Set<number>>();
+  const mark = (row: number, column: number) => {
+    let set = sets.get(row);
+    if (!set) sets.set(row, (set = new Set()));
+    set.add(column);
+  };
+  for (const [row, column] of sheet.enumerateCells()) mark(row, column);
+  for (const key of cellValidation.keys()) mark(keyRow(key), keyColumn(key));
+  for (const m of sheet.merges)
+    for (let row = m.range.top; row <= m.range.bottom; row++)
+      for (let column = m.range.left; column <= m.range.right; column++) mark(row, column);
+  const out = new Map<number, number[]>();
+  for (const [row, set] of sets)
+    out.set(
+      row,
+      [...set].sort((a, b) => a - b),
+    );
+  return out;
 }
 
 function writeRow(
@@ -200,6 +212,7 @@ function writeRow(
   lastColumn: number,
   registry: StyleRegistry,
   cellValidation: CellValidation,
+  occupied: readonly number[],
 ): XmlElement {
   const element = new XmlElement(Table('table-row'));
   const rowModel = sheet.findRow(row);
@@ -213,7 +226,20 @@ function writeRow(
   }
 
   let column = 0;
+  let next = 0; // index into `occupied` of the first occupied column >= `column`
   while (column <= lastColumn) {
+    while (next < occupied.length && occupied[next]! < column) next++;
+    const nextOccupied = occupied[next] ?? Infinity;
+    if (nextOccupied > column) {
+      // Coalesce the run of blank, unvalidated cells up to the next occupied column.
+      const repeat = Math.min(nextOccupied, lastColumn + 1) - column;
+      const blank = new XmlElement(Table('table-cell'));
+      if (repeat > 1) blank.setAttr(Table('number-columns-repeated'), repeat);
+      element.add(blank);
+      column += repeat;
+      continue;
+    }
+
     const merge = sheet.findMerge(row, column);
     if (merge && merge.isCovered(row, column)) {
       element.add(new XmlElement(Table('covered-table-cell')));
@@ -222,25 +248,6 @@ function writeRow(
     }
 
     const cell = sheet.find(row, column);
-    if (!cell && !merge && !cellValidation.has(cellKey(row, column))) {
-      // Coalesce a run of blank, unvalidated cells.
-      let repeat = 1;
-      while (
-        column + repeat <= lastColumn &&
-        !sheet.find(row, column + repeat) &&
-        !sheet.findMerge(row, column + repeat) &&
-        !cellValidation.has(cellKey(row, column + repeat))
-      ) {
-        repeat++;
-      }
-
-      const blank = new XmlElement(Table('table-cell'));
-      if (repeat > 1) blank.setAttr(Table('number-columns-repeated'), repeat);
-      element.add(blank);
-      column += repeat;
-      continue;
-    }
-
     element.add(writeCell(cell ?? null, merge ?? null, row, column, registry, cellValidation));
     column++;
   }

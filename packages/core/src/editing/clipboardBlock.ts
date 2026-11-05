@@ -39,7 +39,7 @@ export class ClipboardBlock {
 
   /** The range a copy actually reads: oversized selections clamp to the used range (else the top-left). */
   static copyRange(sheet: Worksheet, range: CellRange): CellRange {
-    return range.rowCount * range.columnCount <= OVERSIZED_CELL_CAP
+    return range.rowCount * range.columnCount < OVERSIZED_CELL_CAP
       ? range
       : (clampToUsed(sheet, range) ?? new CellRange(range.topLeft.relative()));
   }

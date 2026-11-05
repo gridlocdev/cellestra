@@ -55,7 +55,7 @@ export function buildCommands(app: AppController): CommandCatalog {
   /** Re-read on every edit or cursor move, for enabled/active checks. */
   const live =
     <T>(f: () => T) =>
-    () => (s.version.value, app.selection.state.value, f());
+    () => (s.version.value, s.activeSheet.value, app.selection.state.value, f());
   const inTable = live(() => app.activeTable !== null);
 
   const specs: CommandSpec[] = [
@@ -834,7 +834,7 @@ export function buildCommands(app: AppController): CommandCatalog {
       group: 'Format',
       shortcut: 'mod+1',
       icon: 'settings-2',
-      run: () => (app.dialog.value = { kind: 'formatCells' }),
+      run: () => (app.dialog.value = { kind: 'formatCells', styles: app.selectionStyles() }),
     },
 
     // Data
@@ -1057,7 +1057,17 @@ export function buildCommands(app: AppController): CommandCatalog {
       run: () => void (app.dialog.value = { kind: 'about' }),
     },
   ];
-  return new CommandCatalog(specs);
+  // A chart sheet shows no grid: cell, format, and data commands would write to an invisible A1.
+  const onChart = () => s.activeSheet.value.isChartSheet;
+  const gridOnly = (c: CommandSpec) =>
+    (GRID_GROUPS.has(c.group) && !GRID_EXEMPT.has(c.id)) || c.id === 'sheet.resetData';
+  return new CommandCatalog(
+    specs.map((c) => {
+      if (!gridOnly(c)) return c;
+      const enabled = c.enabled;
+      return { ...c, enabled: () => !onChart() && (enabled?.() ?? true) };
+    }),
+  );
 }
 
 function round(n: number): number {
@@ -1096,3 +1106,13 @@ function insertNow(app: AppController, what: 'date' | 'time'): void {
   const { row, column } = app.selection.active.value;
   app.commit(row, column, text);
 }
+
+const GRID_GROUPS = new Set(['Edit', 'Format', 'Data', 'Insert']);
+/** Edit/Insert commands that still make sense on a chart sheet. */
+const GRID_EXEMPT = new Set([
+  'edit.undo',
+  'edit.redo',
+  'insert.sheet',
+  'insert.namedRange',
+  'insert.chartSheet',
+]);

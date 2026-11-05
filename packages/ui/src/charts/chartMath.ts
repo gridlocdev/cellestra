@@ -133,11 +133,18 @@ export function niceTicks(min: number, max: number, target = 5): Ticks {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return niceTicks(0, 1, target);
   if (max < min) [min, max] = [max, min];
   if (Math.abs(max - min) < 1e-12) max = min + 1;
-  const step = niceStep((max - min) / Math.max(1, target));
+  const span = max - min;
+  // Spans past the double range (±1e308) or below its precision at this magnitude can't be split
+  // into steps: fall back to the bare extent instead of NaN ticks or an unbounded loop.
+  if (!Number.isFinite(span) || span <= Math.max(Math.abs(min), Math.abs(max)) * 1e-12)
+    return { min, max, step: Number.isFinite(span) ? span : max, values: [min, max] };
+  const step = niceStep(span / Math.max(1, target));
   const lo = clean(Math.floor(clean(min / step)) * step);
   const hi = clean(Math.ceil(clean(max / step)) * step);
-  const values: number[] = [];
   const count = Math.round((hi - lo) / step);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || !(count >= 1) || count > 1000)
+    return { min, max, step: span, values: [min, max] };
+  const values: number[] = [];
   for (let i = 0; i <= count; i++) values.push(clean(lo + i * step));
   return { min: lo, max: hi, step, values };
 }
@@ -185,8 +192,9 @@ export interface StackSegment {
 }
 
 /**
- * Stack the positive values of `series` per category, in series order (gaps and non-positive values
- * are skipped). With `percent` each category is scaled so its positives sum to 1.
+ * Stack the values of `series` per category, in series order: positives upward from zero, negatives
+ * downward (gaps skipped). With `percent` each category is scaled so its positives sum to 1 and
+ * negatives are dropped.
  * `indices[i]` is `series[i]`'s index in the chart (its colour).
  */
 export function stackBars(
@@ -199,9 +207,18 @@ export function stackBars(
   for (let c = 0; c < categories; c++) {
     const total = percent ? positiveSum(series, c) : 1;
     let cursor = 0;
+    let below = 0;
     series.forEach((s, i) => {
       const v = valueAt(s, c);
-      if (Number.isNaN(v) || v <= 0) return;
+      if (Number.isNaN(v) || v === 0) return;
+      if (v < 0) {
+        // Negatives stack downward from zero (the axis extent already makes room for them);
+        // 100% stacking scales positives only.
+        if (percent) return;
+        out.push({ seriesIndex: indices[i] ?? i, category: c, start: below, end: below + v });
+        below += v;
+        return;
+      }
       const display = percent ? (total > 0 ? v / total : 0) : v;
       const start = percent ? (total > 0 ? cursor / total : 0) : cursor;
       out.push({ seriesIndex: indices[i] ?? i, category: c, start, end: start + display });

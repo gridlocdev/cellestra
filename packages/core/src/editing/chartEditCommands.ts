@@ -1,6 +1,7 @@
 import type { ChartDefinition, ChartSeries } from '@cellestra/charts';
 import { createChart, createSeries } from '@cellestra/charts';
 import type { Table } from '../data/types.ts';
+import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
 import type { CellRange } from '../model/cellRange.ts';
 import { SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
@@ -11,7 +12,7 @@ const letters = (column: number): string => SheetDimensions.columnToLetters(colu
 
 /** `Sheet.B2:B7`: one column's rows `fromRow..toRow` (zero-based) on `sheet`. */
 function columnRef(sheet: string, column: number, fromRow: number, toRow: number): string {
-  return `${sheet}.${letters(column)}${fromRow + 1}:${letters(column)}${toRow + 1}`;
+  return `${quoteSheetIfNeeded(sheet)}.${letters(column)}${fromRow + 1}:${letters(column)}${toRow + 1}`;
 }
 
 function columnHasNumber(sheet: Worksheet, column: number, fromRow: number, toRow: number): boolean {
@@ -42,7 +43,8 @@ function seriesFromTable(
   }
   if (valueColumn === null) return null;
   const series = createSeries({ valuesReference: columnRef(sheet.name, valueColumn, dataTop, range.bottom) });
-  if (table.hasHeader) series.nameReference = `${sheet.name}.${letters(valueColumn)}${range.top + 1}`;
+  if (table.hasHeader)
+    series.nameReference = `${quoteSheetIfNeeded(sheet.name)}.${letters(valueColumn)}${range.top + 1}`;
   return { categories: columnRef(sheet.name, range.left, dataTop, range.bottom), series: [series] };
 }
 
@@ -54,13 +56,16 @@ function seriesFromTable(
 function seedFromSelection(definition: ChartDefinition, sheet: Worksheet, range: CellRange): void {
   if (range.rowCount < 2) return;
   const { top, bottom, left, right } = range;
-  const headerRow = sheet.getValue(top, left).kind === 'text';
+  // A header row has a text label over the value columns (the top-left corner is often blank).
+  let headerRow = false;
+  for (let column = right > left ? left + 1 : left; column <= right && !headerRow; column++)
+    headerRow = sheet.getValue(top, column).kind === 'text';
   const dataTop = headerRow && bottom > top ? top + 1 : top;
   if (right > left) {
     definition.categoriesReference = columnRef(sheet.name, left, dataTop, bottom);
     for (let column = left + 1; column <= right; column++) {
       const series = createSeries({ valuesReference: columnRef(sheet.name, column, dataTop, bottom) });
-      if (headerRow) series.nameReference = `${sheet.name}.${letters(column)}${top + 1}`;
+      if (headerRow) series.nameReference = `${quoteSheetIfNeeded(sheet.name)}.${letters(column)}${top + 1}`;
       definition.series.push(series);
     }
   } else {

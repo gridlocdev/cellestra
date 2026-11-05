@@ -117,10 +117,23 @@ export function ChartSheetView(props: ChartSheetViewProps) {
     },
   });
 
-  const resolved = useMemo(
+  // Re-read cells only when what the data depends on changes, not on every title keystroke.
+  const dataKey = JSON.stringify([draft.type, draft.categoriesReference, draft.series]);
+  const data = useMemo(
     () => ChartDataResolver.resolve(props.workbook, draft),
     // `version` stands in for workbook content changes.
-    [props.workbook, draft, props.version],
+    [props.workbook, dataKey, props.version],
+  );
+  const resolved = useMemo(
+    () => ({
+      ...data,
+      title: draft.title,
+      stacking: draft.stacking,
+      showLegend: draft.showLegend,
+      xAxisTitle: draft.xAxisTitle,
+      yAxisTitle: draft.yAxisTitle,
+    }),
+    [data, draft],
   );
 
   const host = useRef<HTMLDivElement>(null);

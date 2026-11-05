@@ -151,10 +151,10 @@ export function mathFunctions(): FormulaFunction[] {
       },
     ),
     aggregate('MIN', 'statistical', 'Returns the smallest number.', 'MIN(A1:A10)', (nums) =>
-      nums.length === 0 ? 0 : Math.min(...nums),
+      nums.length === 0 ? 0 : nums.reduce((a, b) => (b < a ? b : a)),
     ),
     aggregate('MAX', 'statistical', 'Returns the largest number.', 'MAX(A1:A10)', (nums) =>
-      nums.length === 0 ? 0 : Math.max(...nums),
+      nums.length === 0 ? 0 : nums.reduce((a, b) => (b > a ? b : a)),
     ),
     defineFunction(
       createMetadata(

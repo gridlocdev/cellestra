@@ -101,6 +101,14 @@ button {
   width: 1px;
   height: 1px;
 }
+.cs-grid-resize-guide {
+  display: none;
+  position: absolute;
+  pointer-events: none;
+  background: var(--cs-accent, #2563eb);
+  z-index: 2;
+}
+
 .cs-grid-editor {
   position: absolute;
   display: none;

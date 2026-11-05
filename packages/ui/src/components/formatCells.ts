@@ -156,7 +156,7 @@ export function seedFormatCells(current: CellStyle, styles: readonly CellStyle[]
     strikethrough: !allSame(all, (s) => s.font.strikethrough),
     size: !allSame(all, (s) => s.font.sizePoints),
     textColor: !allSame(all, (s) => s.font.color, sameColor),
-    fill: !allSame(all, (s) => s.fill.background, sameColor),
+    fill: !allSame(all, (s) => Fills.hasBackground(s.fill)),
     fillColor: !allSame(all, (s) => s.fill.background, sameColor),
     horizontal: !allSame(all, (s) => s.alignment.horizontal),
     vertical: !allSame(all, (s) => s.alignment.vertical),
@@ -296,7 +296,25 @@ export function buildFormatTransform(state: FormatCellsState): (style: CellStyle
   const horizontal = has('horizontal') ? v.horizontal : null;
   const vertical = has('vertical') ? v.vertical : null;
   const wrapText = has('wrapText') ? v.wrapText : null;
-  const border = has('borderStyle') || has('borderColor') || has('borderEdges') ? dialogBorder(v) : null;
+  const borderTouched = has('borderStyle') || has('borderColor') || has('borderEdges');
+  /**
+   * Per cell, so a mixed selection keeps what wasn't touched: changing only the line style restyles
+   * each cell's own visible sides; toggling sides keeps each cell's own style/colour unless those
+   * were touched too.
+   */
+  const borderFor = (current: Border): Border => {
+    if (has('borderEdges') && has('borderStyle') && has('borderColor')) return dialogBorder(v);
+    const own = [current.top, current.bottom, current.left, current.right].find((e) =>
+      BorderEdges.isVisible(e),
+    );
+    const edge = BorderEdges.of(
+      has('borderStyle') || !own ? v.borderStyle : own.style,
+      has('borderColor') || !own || Argb.isTransparent(own.color) ? v.borderColor : own.color,
+    );
+    const side = (k: 'left' | 'right' | 'top' | 'bottom') =>
+      (has('borderEdges') ? v.borderEdges[k] : BorderEdges.isVisible(current[k])) ? edge : BorderEdges.none;
+    return { left: side('left'), right: side('right'), top: side('top'), bottom: side('bottom') };
+  };
 
   return (style) => {
     let font = style.font;
@@ -316,6 +334,7 @@ export function buildFormatTransform(state: FormatCellsState): (style: CellStyle
     if (vertical !== null) alignment = { ...alignment, vertical };
     if (wrapText !== null) alignment = { ...alignment, wrapText };
 
+    const border = borderTouched ? borderFor(style.border) : null;
     const changed =
       font !== style.font ||
       fill !== style.fill ||

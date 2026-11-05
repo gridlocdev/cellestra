@@ -264,6 +264,14 @@ export class WorkbookSession {
     this.setActiveSheet(wb.indexOf(copy));
   }
 
+  /** Add a sheet built by `create` (e.g. a chart sheet); like every sheet-list change, clears history. */
+  insertSheet(create: (workbook: Workbook) => Worksheet): void {
+    const wb = this.#workbook.peek();
+    const sheet = create(wb);
+    this.#structural();
+    this.setActiveSheet(wb.indexOf(sheet));
+  }
+
   /** Rename; returns an error message for invalid or duplicate names. */
   renameSheet(index: number, name: string): string | null {
     const wb = this.#workbook.peek();
