@@ -88,8 +88,33 @@ export function roundAwayFromZero(x: number): number {
   return x < 0 ? -r : r;
 }
 
+/**
+ * `value × 10^digits`, pre-rounded to 15 significant digits so binary noise does not decide the
+ * rounding: 1.005 × 100 is 100.49999999999999 in binary but 100.5 to 15 digits (Calc does the same).
+ */
+function scaled(value: number, factor: number): number {
+  const s = value * factor;
+  return Number.isFinite(s) && s !== 0 ? Number(s.toPrecision(15)) : s;
+}
+
+/**
+ * Round `value` to `digits` places with `round` applied to the scaled value. Digits are clamped to
+ * what a double can express: past +308 nothing changes; past −308 the value rounds to 0, or (rounding
+ * away from zero) to ±Infinity, which callers report as an error.
+ */
+export function roundScaled(value: number, digits: number, round: (scaled: number) => number): number {
+  if (!Number.isFinite(value) || value === 0) return value;
+  if (digits > 308) return value;
+  if (digits < -308)
+    return round(Math.sign(value) * Number.MIN_VALUE) === 0 ? 0 : Math.sign(value) * Infinity;
+  const factor = Math.pow(10, digits);
+  const s = scaled(value, factor);
+  // Scaling overflowed: the value has no digits past that place, so it is already rounded.
+  if (!Number.isFinite(s)) return value;
+  return round(s) / factor;
+}
+
 /** Round half away from zero (Excel/Calc ROUND) to the given decimal places. */
 export function roundHalfAway(value: number, digits: number): number {
-  const factor = Math.pow(10, digits);
-  return roundAwayFromZero(value * factor) / factor;
+  return roundScaled(value, digits, roundAwayFromZero);
 }

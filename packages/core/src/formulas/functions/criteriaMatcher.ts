@@ -1,5 +1,5 @@
 import { CellValue } from '../../values/cellValue.ts';
-import { compareOrdinalIgnoreCase } from '../evaluation/valueComparer.ts';
+import { approxEqual, compareOrdinalIgnoreCase } from '../evaluation/valueComparer.ts';
 import { localeInfo } from '../evaluation/localeInfo.ts';
 import { parseNumberAny } from '../evaluation/valueParsing.ts';
 
@@ -20,9 +20,9 @@ function compareNumeric(value: CellValue, op: Operator, operand: number): boolea
   const v = value.value;
   switch (op) {
     case '=':
-      return v === operand;
+      return approxEqual(v, operand);
     case '<>':
-      return v !== operand;
+      return !approxEqual(v, operand);
     case '>':
       return v > operand;
     case '>=':
@@ -60,6 +60,19 @@ function wildcardToRegex(pattern: string): RegExp {
   return new RegExp(source + '$', 'iu');
 }
 
+/**
+ * Case-insensitive equality with `*`/`?` wildcards and no operators — the exact-match test of
+ * MATCH/VLOOKUP. Only reads `text`; callers decide which cell kinds take part.
+ */
+export function textPattern(pattern: string): (text: string) => boolean {
+  if (!pattern.includes('*') && !pattern.includes('?')) {
+    const target = pattern.toUpperCase();
+    return (t) => t.toUpperCase() === target;
+  }
+  const re = wildcardToRegex(pattern);
+  return (t) => re.test(t);
+}
+
 function textMatcher(pattern: string): Predicate {
   if (!pattern.includes('*') && !pattern.includes('?')) {
     const target = pattern.toUpperCase();
@@ -88,7 +101,7 @@ export class CriteriaMatcher {
   static build(criteria: CellValue, locale: string): CriteriaMatcher {
     if (criteria.kind === 'number') {
       const target = criteria.value;
-      return new CriteriaMatcher((v) => v.kind === 'number' && v.value === target);
+      return new CriteriaMatcher((v) => v.kind === 'number' && approxEqual(v.value, target));
     }
     if (criteria.kind === 'boolean') {
       const target = criteria.value;

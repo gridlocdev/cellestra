@@ -5,7 +5,7 @@ import { Coercion } from '../evaluation/coercion.ts';
 import { CriteriaMatcher } from './criteriaMatcher.ts';
 import { defineFunction, type FormulaFunction, type FunctionEvaluator } from './formulaFunction.ts';
 import { Arg, createMetadata, type FunctionCategory } from './functionMetadata.ts';
-import { collectNumbers, isFailure, readInt, readNumber, roundHalfAway } from './helpers.ts';
+import { collectNumbers, isFailure, readInt, readNumber, roundHalfAway, roundScaled } from './helpers.ts';
 import type { RangeValues } from './rangeValues.ts';
 
 function aggregate(
@@ -60,16 +60,17 @@ function rounding(
         if (isFailure(d)) return d.failed;
         digits = d;
       }
-      return CellValue.number(round(value, digits));
+      const rounded = round(value, digits);
+      // Cellestra has no #NUM!: a non-finite result surfaces as #VALUE! like the evaluator's.
+      return Number.isFinite(rounded)
+        ? CellValue.number(rounded)
+        : CellValue.error(CellError.value('The result is not a finite number.'));
     },
   );
 }
 
 function directional(value: number, digits: number, away: boolean): number {
-  const factor = Math.pow(10, digits);
-  const scaled = value * factor;
-  const adjusted = away ? (scaled < 0 ? Math.floor(scaled) : Math.ceil(scaled)) : Math.trunc(scaled);
-  return adjusted / factor;
+  return roundScaled(value, digits, (s) => (away ? (s < 0 ? Math.floor(s) : Math.ceil(s)) : Math.trunc(s)));
 }
 
 function countValues(args: readonly Expr[], ev: FunctionEvaluator, onlyNumbers: boolean): number {
@@ -111,8 +112,8 @@ function sumOrCountIf(args: readonly Expr[], ev: FunctionEvaluator, sum: boolean
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < columns; c++) {
       const cell = range.get(r, c);
-      if (cell.kind === 'error') return cell;
-      if (!matcher.matches(cell)) continue;
+      // An error in the criteria range never matches (Calc), so it does not poison the result.
+      if (cell.kind === 'error' || !matcher.matches(cell)) continue;
       count++;
       if (!sum) continue;
       // Excel/Calc anchor sum_range at its top-left and reshape it to the criteria range, so its own

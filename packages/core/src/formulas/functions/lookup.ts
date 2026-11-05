@@ -1,38 +1,60 @@
 import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import type { Expr } from '../ast/expr.ts';
-import { ValueComparer } from '../evaluation/valueComparer.ts';
-import { CriteriaMatcher } from './criteriaMatcher.ts';
+import { approxEqual, ValueComparer } from '../evaluation/valueComparer.ts';
+import { textPattern } from './criteriaMatcher.ts';
 import { defineFunction, type FormulaFunction, type FunctionEvaluator } from './formulaFunction.ts';
 import { Arg, createMetadata } from './functionMetadata.ts';
 import { isFailure, readBoolean, readInt } from './helpers.ts';
 import type { RangeValues } from './rangeValues.ts';
 
-/** Position of `lookup` in `values` (−1 when absent), or the error value to return. */
-function search(
-  values: readonly CellValue[],
-  lookup: CellValue,
-  matchType: number,
-  locale: string,
-): number | CellValue {
-  if (matchType === 0) {
-    // Exact match, honouring text wildcards.
-    const matcher = lookup.kind === 'text' ? CriteriaMatcher.build(lookup, locale) : null;
-    for (let i = 0; i < values.length; i++) {
-      const v = values[i]!;
-      if (v.kind === 'error') return v;
-      const isMatch = matcher ? matcher.matches(v) : ValueComparer.compare(v, lookup) === 0;
-      if (isMatch) return i;
+/**
+ * The exact-match test of MATCH/VLOOKUP: plain value equality, never a criteria expression. Text is
+ * compared case-insensitively with `*`/`?` wildcards (so ">3" only finds the text ">3"); numbers
+ * match numbers within `approxEqual` and are never coerced from text; booleans match booleans.
+ * Error cells never match.
+ */
+function exactMatcher(lookup: CellValue): (v: CellValue) => boolean {
+  switch (lookup.kind) {
+    case 'text': {
+      const test = textPattern(lookup.value);
+      // A blank cell reads as "" here, so MATCH("", …, 0) finds the first blank.
+      return (v) => (v.kind === 'text' ? test(v.value) : v.kind === 'empty' && test(''));
     }
+    case 'number': {
+      const target = lookup.value;
+      return (v) => v.kind === 'number' && approxEqual(v.value, target);
+    }
+    case 'boolean': {
+      const target = lookup.value;
+      return (v) => v.kind === 'boolean' && v.value === target;
+    }
+    default:
+      // A blank lookup value takes the shape of each cell it meets (0, "" or FALSE), as before.
+      return (v) => v.kind !== 'error' && ValueComparer.compare(v, lookup) === 0;
+  }
+}
+
+/** Whether a sorted search compares `v` with `lookup`: only values of the same type do. */
+function sameType(v: CellValue, lookup: CellValue): boolean {
+  if (lookup.kind === 'empty') return v.kind === 'number';
+  return v.kind === lookup.kind;
+}
+
+/** Position of `lookup` in `values` (−1 when absent), or the error value to return. */
+function search(values: readonly CellValue[], lookup: CellValue, matchType: number): number | CellValue {
+  if (matchType === 0) {
+    const matches = exactMatcher(lookup);
+    for (let i = 0; i < values.length; i++) if (matches(values[i]!)) return i;
     return -1;
   }
   // Approximate: assume sorted (ascending for 1, descending for -1); take the last value on the
-  // correct side of the lookup.
+  // correct side of the lookup. Cells of another type (a text header above numbers, blanks, errors)
+  // are skipped, not treated as the boundary.
   let best = -1;
   for (let i = 0; i < values.length; i++) {
     const v = values[i]!;
-    if (v.kind === 'error') return v;
-    if (v.kind === 'empty') continue; // Calc skips empty cells in a sorted lookup
+    if (!sameType(v, lookup)) continue;
     const cmp = ValueComparer.compare(v, lookup);
     if (cmp instanceof CellError) return CellValue.error(cmp);
     const onSide = matchType > 0 ? cmp <= 0 : cmp >= 0;
@@ -52,16 +74,14 @@ function searchUsed(
   length: number,
   lookup: CellValue,
   matchType: number,
-  locale: string,
 ): number | CellValue {
   const position = search(
     Array.from({ length: used }, (_, i) => read(i)),
     lookup,
     matchType,
-    locale,
   );
   if (position !== -1 || used >= length || matchType !== 0) return position;
-  return search([CellValue.empty], lookup, 0, locale) === 0 ? used : -1;
+  return search([CellValue.empty], lookup, 0) === 0 ? used : -1;
 }
 
 function lookupTable(args: readonly Expr[], ev: FunctionEvaluator, vertical: boolean): CellValue {
@@ -84,7 +104,6 @@ function lookupTable(args: readonly Expr[], ev: FunctionEvaluator, vertical: boo
     vertical ? table.rowCount : table.columnCount,
     lookup,
     approximate ? 1 : 0,
-    ev.context.locale,
   );
   if (typeof position !== 'number') return position;
   if (position < 0) return CellValue.error(CellError.notAvailable('No match found.'));
@@ -179,7 +198,6 @@ export function lookupFunctions(): FormulaFunction[] {
           vertical ? range.rowCount : range.columnCount,
           lookup,
           matchType,
-          ev.context.locale,
         );
         if (typeof position !== 'number') return position;
         return position < 0
