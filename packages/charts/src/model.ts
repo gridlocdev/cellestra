@@ -1,16 +1,7 @@
 /** Chart model — standalone, no dependency on the spreadsheet engine. */
 
 export type ChartType =
-  | 'column'
-  | 'bar'
-  | 'line'
-  | 'area'
-  | 'pie'
-  | 'doughnut'
-  | 'scatter'
-  | 'bubble'
-  | 'radar'
-  | 'filledRadar';
+  'column' | 'bar' | 'line' | 'area' | 'pie' | 'doughnut' | 'scatter' | 'bubble' | 'radar' | 'filledRadar';
 
 export type ChartStacking = 'none' | 'stacked' | 'percent';
 
@@ -54,7 +45,14 @@ export function createChart(init: Partial<ChartDefinition> = {}): ChartDefinitio
 }
 
 export function createSeries(init: Partial<ChartSeries> & Pick<ChartSeries, 'valuesReference'>): ChartSeries {
-  return { name: null, nameReference: null, xValuesReference: null, bubbleSizeReference: null, type: null, ...init };
+  return {
+    name: null,
+    nameReference: null,
+    xValuesReference: null,
+    bubbleSizeReference: null,
+    type: null,
+    ...init,
+  };
 }
 
 export function cloneChart(c: ChartDefinition): ChartDefinition {
@@ -103,7 +101,8 @@ export const ChartTypes = {
         return 'column';
     }
   },
-  usesCategoryAxis: (t: ChartType): boolean => ['column', 'bar', 'line', 'area', 'radar', 'filledRadar'].includes(t),
+  usesCategoryAxis: (t: ChartType): boolean =>
+    ['column', 'bar', 'line', 'area', 'radar', 'filledRadar'].includes(t),
   supportsStacking: (t: ChartType): boolean => t === 'column' || t === 'bar' || t === 'area',
   isXY: (t: ChartType): boolean => t === 'scatter' || t === 'bubble',
 } as const;
