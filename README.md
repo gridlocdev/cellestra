@@ -28,8 +28,11 @@ Then open `http://<nas>:8787`. To expose several folders, add a password, or run
 | ------------------ | ----------------- | ----------------------------------------------------------------- |
 | `CELLESTRA_ROOTS`  | `Documents=/data` | The folders to show, as `Name=/path;Other=/path2`                 |
 | `CELLESTRA_TOKEN`  | unset             | If set, the browser asks for this token before it shows any files |
+| `CELLESTRA_HOSTS`  | unset             | Without a token, the extra host names to answer (comma-separated) |
 | `PORT`             | `8787`            | The port to listen on                                             |
 | `CELLESTRA_MAX_MB` | `64`              | The largest file you can save, in MB                              |
+
+Without `CELLESTRA_TOKEN`, the server only answers requests addressed to an IP address or `localhost`. If you open it by name (for example `http://nas.lan:8787`), list that name in `CELLESTRA_HOSTS=nas.lan`. Other names get `421 Misdirected Request`, which stops a hostile web page from reaching your files through DNS rebinding.
 
 If LibreOffice has a file open (it leaves a `.~lock` file next to it), saving that file is refused. If someone else saved the file after you opened it, Cellestra warns you before overwriting their changes.
 

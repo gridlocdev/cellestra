@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import { mkdir, open, readdir, readFile, realpath, rename, stat, unlink } from 'node:fs/promises';
+import { chown, mkdir, open, readdir, readFile, realpath, rename, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
 /** A named folder on the NAS that the web client may browse and save into. */
@@ -56,8 +56,21 @@ export function parseRoots(spec: string, baseDir: string): Root[] {
 /** Files the picker offers. Everything else is hidden (dirs are always listed). */
 const OPENABLE = /\.(ods|csv|tsv)$/i;
 
+/**
+ * The rule `list` shows and `read`/`write` enforce: a spreadsheet file, reached without any
+ * dot-named segment (dotfiles, `.git`, LibreOffice `.~lock` files, our own temp files).
+ */
+function checkSpreadsheetPath(rel: string | null, verb: string): void {
+  const segments = (rel ?? '').replaceAll('\\', '/').split('/').filter(Boolean);
+  if (segments.some((s) => s.startsWith('.'))) throw new ApiError(403, 'Hidden paths are not served');
+  const base = segments.at(-1) ?? '';
+  if (!OPENABLE.test(base)) throw new ApiError(400, `Only .ods, .csv, and .tsv files can be ${verb}`);
+}
+
 export class FileApi {
   readonly roots: readonly Root[];
+  /** Tail of the write queue per resolved path: check-then-write runs one at a time per file. */
+  private readonly writeQueue = new Map<string, Promise<unknown>>();
 
   constructor(roots: readonly Root[]) {
     this.roots = roots;
@@ -134,6 +147,7 @@ export class FileApi {
     rel: string | null,
   ): Promise<{ bytes: Buffer; etag: string; modified: number }> {
     const root = this.root(rootId);
+    checkSpreadsheetPath(rel, 'opened');
     const full = await this.resolveReal(root, rel);
     try {
       const [bytes, s] = await Promise.all([readFile(full), stat(full)]);
@@ -148,6 +162,9 @@ export class FileApi {
    * Atomic save: write a temp file beside the target, fsync, rename over it. `ifMatch` is the etag
    * the client opened (conflict → 412); `'*'`-less create with `ifNoneMatch` refuses to overwrite.
    * A LibreOffice `.~lock.<name>#` file means someone has it open there (PRD §10.2) → 423.
+   * Writes to one path run one at a time, so two saves from the same etag cannot both win. The
+   * replacement keeps the target's mode (and owner, where permitted); a hard-linked target is
+   * written in place so the link survives.
    */
   async write(
     rootId: string | null,
@@ -156,32 +173,77 @@ export class FileApi {
     opts: { ifMatch?: string | null; ifNoneMatch?: string | null; force?: boolean },
   ): Promise<{ etag: string }> {
     const root = this.root(rootId);
+    checkSpreadsheetPath(rel, 'saved');
     const full = await this.resolveReal(root, rel);
+    return this.serialized(full, () => this.writeLocked(full, bytes, opts));
+  }
+
+  /** Run `fn` after every earlier write to `key` has settled, so the If-Match check and the rename are atomic. */
+  private async serialized<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.writeQueue.get(key) ?? Promise.resolve();
+    const run = prev.then(fn, fn);
+    const tail = run.catch(() => {});
+    this.writeQueue.set(key, tail);
+    try {
+      return await run;
+    } finally {
+      if (this.writeQueue.get(key) === tail) this.writeQueue.delete(key);
+    }
+  }
+
+  private async writeLocked(
+    full: string,
+    bytes: Buffer,
+    opts: { ifMatch?: string | null; ifNoneMatch?: string | null; force?: boolean },
+  ): Promise<{ etag: string }> {
     const dir = path.dirname(full);
     const base = path.basename(full);
-    if (!OPENABLE.test(base)) throw new ApiError(400, 'Only .ods, .csv, and .tsv files can be saved');
     await mkdir(dir, { recursive: true }).catch((e: unknown) => {
       throw fsError(e);
     });
 
     const current = await readFile(full).catch(() => null);
     if (opts.ifNoneMatch === '*' && current) throw new ApiError(412, 'A file with that name already exists');
-    if (opts.ifMatch && current && etagOf(current) !== opts.ifMatch && !opts.force)
-      throw new ApiError(412, 'The file changed on the server since you opened it');
+    if (opts.ifMatch && !opts.force) {
+      if (!current)
+        throw new ApiError(412, 'The file was moved or deleted on the server since you opened it');
+      if (opts.ifMatch !== '*' && etagOf(current) !== opts.ifMatch)
+        throw new ApiError(412, 'The file changed on the server since you opened it');
+    }
     if (!opts.force) {
       const lock = await stat(path.join(dir, `.~lock.${base}#`)).catch(() => null);
       if (lock) throw new ApiError(423, 'The file is open in LibreOffice');
     }
 
+    const target = await stat(full).catch(() => null);
+    try {
+      if (target && target.nlink > 1) {
+        // A rename would split the hard link; write through it instead (not atomic, but keeps the link).
+        const handle = await open(full, fsConstants.O_WRONLY | fsConstants.O_TRUNC);
+        try {
+          await handle.writeFile(bytes);
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+        return { etag: etagOf(bytes) };
+      }
+    } catch (e) {
+      throw fsError(e);
+    }
+
+    const mode = target ? target.mode & 0o7777 : 0o644;
     const tmp = path.join(dir, `.${base}.${randomBytes(6).toString('hex')}.tmp`);
     try {
-      const handle = await open(tmp, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o644);
+      const handle = await open(tmp, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, mode);
       try {
+        await handle.chmod(mode); // open() applies the umask; the replacement keeps the original bits
         await handle.writeFile(bytes);
         await handle.sync();
       } finally {
         await handle.close();
       }
+      if (target) await chown(tmp, target.uid, target.gid).catch(() => {}); // only root may give files away
       await rename(tmp, full);
     } catch (e) {
       await unlink(tmp).catch(() => {});

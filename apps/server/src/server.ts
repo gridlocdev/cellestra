@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import http from 'node:http';
+import { isIP } from 'node:net';
 import path from 'node:path';
 import { ApiError, type FileApi } from './fileApi.ts';
 
@@ -12,6 +13,34 @@ export interface ServerOptions {
   readonly token: string | null;
   /** Largest accepted upload. */
   readonly maxBytes: number;
+  /**
+   * Extra `Host` names accepted when there is no token (`CELLESTRA_HOSTS`). Without a token only IP
+   * literals, `localhost` and these names are served, which stops DNS rebinding.
+   */
+  readonly allowedHosts?: readonly string[];
+}
+
+/** Parse `CELLESTRA_HOSTS` (`nas.lan, cellestra.example.com`) into lowercase host names. */
+export function parseHosts(spec: string | undefined): string[] {
+  return (spec ?? '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase().replace(/:\d+$/, ''))
+    .filter(Boolean);
+}
+
+/** Is this `Host` header one we answer without a token? */
+export function hostAllowed(hostHeader: string | undefined, allowed: readonly string[]): boolean {
+  if (!hostHeader) return false;
+  let hostname: string;
+  try {
+    hostname = new URL(`http://${hostHeader}`).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const bare = hostname.replace(/^\[|\]$/g, '');
+  if (isIP(bare) !== 0) return true;
+  if (bare === 'localhost' || bare.endsWith('.localhost')) return true;
+  return allowed.includes(bare);
 }
 
 const MIME: Record<string, string> = {
@@ -50,6 +79,8 @@ async function handle(
   res: http.ServerResponse,
   opts: ServerOptions,
 ): Promise<void> {
+  if (opts.token === null && !hostAllowed(req.headers.host, opts.allowedHosts ?? []))
+    throw new ApiError(421, 'Unknown host: add it to CELLESTRA_HOSTS or set CELLESTRA_TOKEN');
   const url = new URL(req.url ?? '/', 'http://localhost');
   if (url.pathname.startsWith('/api/')) {
     // /api/info stays public: it is how the client learns that a token is needed.

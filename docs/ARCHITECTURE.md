@@ -61,8 +61,11 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
   - Each save is atomic: temp file, then fsync, then rename.
   - `If-Match` gives optimistic concurrency (412 if the file changed). `If-None-Match: *` stops a new file from overwriting an existing one.
   - A LibreOffice `.~lock` file next to the target blocks the save (423).
-  - Only `.ods`, `.csv` and `.tsv` files can be written.
+  - Only `.ods`, `.csv` and `.tsv` files can be read or written, and no path segment may start with a dot.
+  - Writes to one file are serialized, so the If-Match check and the rename cannot interleave. If-Match on a missing file is 412.
+  - The replacement keeps the file's mode and, where permitted, its owner. A hard-linked file is written in place.
 - **Auth.** Optional: set `CELLESTRA_TOKEN` to require a bearer token, or put the server behind the NAS's reverse proxy.
+- **Host check.** Without a token, a request whose `Host` is not an IP literal, `localhost`, or a name in `CELLESTRA_HOSTS` gets 421. This blocks DNS rebinding.
 
 ## Desktop (`apps/desktop`)
 

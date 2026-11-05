@@ -10,6 +10,8 @@ services:
       CELLESTRA_ROOTS: 'Documents=/data/documents;Shared=/data/shared'
       # Optional shared secret. Leave unset if your NAS reverse proxy already authenticates.
       # CELLESTRA_TOKEN: change-me
+      # Without a token, only IP addresses and localhost are answered. Add the names you browse to:
+      # CELLESTRA_HOSTS: 'nas.lan,cellestra.home.arpa'
     volumes:
       - /volume1/documents:/data/documents
       - /volume1/shared:/data/shared

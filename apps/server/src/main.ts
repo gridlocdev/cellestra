@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { FileApi, parseRoots } from './fileApi.ts';
-import { createServer } from './server.ts';
+import { createServer, parseHosts } from './server.ts';
 
 /**
  * Cellestra NAS server. Configuration is environment-only so it drops straight into Docker:
@@ -8,6 +8,8 @@ import { createServer } from './server.ts';
  *   CELLESTRA_STATIC  path to the built web client (default ../web/dist); empty = API only
  *   CELLESTRA_TOKEN   optional shared bearer token; leave unset when a reverse proxy does auth
  *   CELLESTRA_HOST    bind address (default 0.0.0.0)    PORT  (default 8787)
+ *   CELLESTRA_HOSTS   extra Host names (comma-separated) served when there is no token; IP
+ *                     literals and localhost are always accepted, anything else gets 421
  *   CELLESTRA_MAX_MB  largest upload in MiB (default 64)
  */
 const env = process.env;
@@ -28,8 +30,14 @@ const server = createServer({
   api: new FileApi(roots),
   staticDir,
   token: env.CELLESTRA_TOKEN || null,
-  maxBytes: Number(env.CELLESTRA_MAX_MB ?? 64) * 1024 * 1024,
+  maxBytes: maxMb(env.CELLESTRA_MAX_MB) * 1024 * 1024,
+  allowedHosts: parseHosts(env.CELLESTRA_HOSTS),
 });
+
+function maxMb(spec: string | undefined): number {
+  const n = Number(spec);
+  return spec && Number.isFinite(n) && n > 0 ? n : 64;
+}
 
 server.listen(port, host, () => {
   console.log(`Cellestra listening on http://${host}:${port}`);

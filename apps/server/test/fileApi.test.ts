@@ -1,10 +1,11 @@
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, link, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FileApi, parseRoots } from '../src/fileApi.ts';
-import { createServer } from '../src/server.ts';
+import { createServer, hostAllowed, parseHosts } from '../src/server.ts';
 
 let dir: string;
 let outside: string;
@@ -17,6 +18,9 @@ beforeAll(async () => {
   await mkdir(path.join(dir, 'sub'));
   await writeFile(path.join(dir, 'a.ods'), 'AAA');
   await writeFile(path.join(dir, 'notes.txt'), 'hidden from the picker');
+  await writeFile(path.join(dir, '.env'), 'SECRET=1');
+  await mkdir(path.join(dir, '.git'));
+  await writeFile(path.join(dir, '.git', 'x.ods'), 'hidden');
   await writeFile(path.join(outside, 'secret.ods'), 'nope');
   await symlink(outside, path.join(dir, 'escape'));
   const api = new FileApi(parseRoots(`Docs=${dir}`, '/'));
@@ -121,5 +125,100 @@ describe('file API over HTTP', () => {
       body: 'x',
     });
     expect(txt.status).toBe(400);
+  });
+});
+
+describe('read and write rules', () => {
+  const put = (name: string, body: string, headers: Record<string, string> = {}) =>
+    fetch(`${base}/api/file?root=docs&path=${name}`, {
+      method: 'PUT',
+      headers: { ...auth, ...headers },
+      body,
+    });
+
+  it('reads only spreadsheet files outside dot folders', async () => {
+    const get = (p: string) => fetch(`${base}/api/file?root=docs&path=${p}`, { headers: auth });
+    expect((await get('.env')).status).toBe(403);
+    expect((await get('notes.txt')).status).toBe(400);
+    expect((await get('.git/x.ods')).status).toBe(403);
+    expect((await put('.git/y.ods', 'x')).status).toBe(403);
+  });
+
+  it('lets only one of two concurrent saves from the same etag win', async () => {
+    await writeFile(path.join(dir, 'race.ods'), 'v0');
+    const etag = (await fetch(`${base}/api/file?root=docs&path=race.ods`, { headers: auth })).headers.get(
+      'etag',
+    )!;
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => put('race.ods', `v${i + 1}`, { 'If-Match': etag })),
+    );
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses).toEqual([200, 412, 412, 412, 412]);
+  });
+
+  it('answers If-Match on a missing file with 412', async () => {
+    expect((await put('gone.ods', 'x', { 'If-Match': '"abc"' })).status).toBe(412);
+  });
+
+  it('keeps the file mode and hard links across a save', async () => {
+    const file = path.join(dir, 'mode.ods');
+    await writeFile(file, 'a');
+    await chmod(file, 0o600);
+    expect((await put('mode.ods', 'b')).status).toBe(200);
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+
+    const linked = path.join(dir, 'linked.ods');
+    const other = path.join(outside, 'linked-copy.ods');
+    await writeFile(linked, 'one');
+    await link(linked, other);
+    expect((await put('linked.ods', 'two')).status).toBe(200);
+    expect(await readFile(other, 'utf8')).toBe('two');
+  });
+});
+
+describe('Host check without a token', () => {
+  let port = 0;
+  let stop = () => {};
+  beforeAll(async () => {
+    const api = new FileApi(parseRoots(`Docs=${dir}`, '/'));
+    const server = createServer({
+      api,
+      staticDir: null,
+      token: null,
+      maxBytes: 1024,
+      allowedHosts: ['nas.lan'],
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    port = (server.address() as AddressInfo).port;
+    stop = () => server.close();
+  });
+  afterAll(() => stop());
+
+  // fetch() will not let us set Host, so use node:http directly.
+  const statusFor = (host: string) =>
+    new Promise<number>((resolve, reject) => {
+      const req = http.get(
+        { host: '127.0.0.1', port, path: '/api/roots', headers: { Host: host } },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        },
+      );
+      req.on('error', reject);
+    });
+
+  it('serves IP literals, localhost and CELLESTRA_HOSTS names, and refuses others with 421', async () => {
+    expect(await statusFor(`127.0.0.1:${port}`)).toBe(200);
+    expect(await statusFor(`[::1]:${port}`)).toBe(200);
+    expect(await statusFor(`localhost:${port}`)).toBe(200);
+    expect(await statusFor(`NAS.lan:${port}`)).toBe(200);
+    expect(await statusFor(`evil.example.com:${port}`)).toBe(421);
+  });
+
+  it('parses the host list', () => {
+    expect(parseHosts(' nas.lan , Other.Example:8787,')).toEqual(['nas.lan', 'other.example']);
+    expect(hostAllowed(undefined, [])).toBe(false);
+    expect(hostAllowed('10.0.0.5', [])).toBe(true);
+    expect(hostAllowed('attacker.test', [])).toBe(false);
   });
 });
