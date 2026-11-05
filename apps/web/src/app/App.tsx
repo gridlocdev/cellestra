@@ -170,7 +170,11 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       const file = e.dataTransfer?.files[0];
       if (!file) return;
       e.preventDefault();
-      void app.openFile(file);
+      // Chromium can hand over a writable handle, so Save goes back to the dropped file. It must
+      // be asked for now: the DataTransfer is emptied once this handler returns.
+      const item = e.dataTransfer.items[0] as
+        (DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileSystemHandle | null> }) | undefined;
+      void app.openFile(file, item?.getAsFileSystemHandle?.());
     };
     addEventListener('dragenter', enter);
     addEventListener('dragleave', leave);
@@ -603,6 +607,31 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
           onSubmit={() => d.resolve(true)}
         >
           <p>Cellestra closed with unsaved changes to “{d.name}”. Recover them?</p>
+        </Dialog>
+      )}
+      {d?.kind === 'csv-loss' && (
+        <Dialog
+          title="Keep CSV format?"
+          onClose={() => d.resolve('cancel')}
+          actions={
+            <>
+              <button type="button" class="cs-btn" onClick={() => d.resolve('cancel')}>
+                Cancel
+              </button>
+              <button type="button" class="cs-btn" onClick={() => d.resolve('csv')}>
+                Keep CSV Format
+              </button>
+              <button type="submit" class="cs-btn primary" autofocus>
+                Save as .ods…
+              </button>
+            </>
+          }
+          onSubmit={() => d.resolve('ods')}
+        >
+          <p>
+            CSV keeps only the values of the current sheet. Saving “{d.name}” as CSV loses its{' '}
+            {d.losses.join(', ')}.
+          </p>
         </Dialog>
       )}
       {d?.kind === 'find' && <FindDialog app={app} />}

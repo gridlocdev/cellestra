@@ -8,7 +8,7 @@
     "jsxImportSource": "preact",
     "types": ["vite/client"]
   },
-  "include": ["src", "vite.config.ts"],
+  "include": ["src", "test", "vite.config.ts"],
   "references": [
     { "path": "../../packages/charts" },
     { "path": "../../packages/core" },

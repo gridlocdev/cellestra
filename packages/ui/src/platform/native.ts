@@ -39,6 +39,8 @@ export interface CellestraNative {
   setDocumentState(state: DocumentState): void;
   setMenu(menu: readonly NativeMenuItem[]): void;
   confirmClose(): void;
+  /** The close (or quit) was cancelled; the window stays open. */
+  cancelClose(): void;
   watch(path: string | null): void;
   onCommand(cb: (id: string) => void): () => void;
   onOpenFile(cb: (path: string) => void): () => void;

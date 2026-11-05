@@ -44,11 +44,12 @@ import {
   Selection,
   WorkbookSession,
   clearRecovery,
+  csvLosses,
   darkPalette,
   forgetRecent,
   lightPalette,
-  loadRecovery,
   nativeBridge,
+  orphanedRecoveries,
   recentFiles,
   rememberRecent,
   saveRecovery,
@@ -89,6 +90,12 @@ export type DialogState =
     }
   | { readonly kind: 'find' }
   | { readonly kind: 'recovery'; readonly name: string; readonly resolve: (restore: boolean) => void }
+  | {
+      readonly kind: 'csv-loss';
+      readonly name: string;
+      readonly losses: readonly string[];
+      readonly resolve: (choice: 'csv' | 'ods' | 'cancel') => void;
+    }
   | { readonly kind: 'shortcuts' }
   | { readonly kind: 'about' }
   | { readonly kind: 'settings' }
@@ -161,8 +168,16 @@ export class AppController {
   #toastTimer: ReturnType<typeof setTimeout> | null = null;
   /** The session version the last recovery snapshot was taken at. */
   #snapshotVersion = -1;
+  /** The save (or Save As) in flight; a second one waits for it instead of racing it. */
+  #saving: Promise<boolean> | null = null;
+  /** A close request is showing its prompt; repeated requests don't stack dialogs. */
+  #closing = false;
+  /** Settles when `start()` has finished (recovery offered): OS file opens wait for it. */
+  readonly #ready: Promise<void>;
+  #markReady: () => void = () => {};
 
   constructor() {
+    this.#ready = new Promise<void>((resolve) => (this.#markReady = resolve));
     this.session.captureSelection = () => this.selection.state.peek();
     this.session.restoreSelection = (s) => (this.selection.state.value = s);
     matchMedia('(prefers-color-scheme: dark)').addEventListener(
@@ -187,30 +202,53 @@ export class AppController {
 
   /** Detect the NAS server, wire Electron, offer crash recovery, open a file passed by the OS. */
   async start(): Promise<void> {
-    if (!this.native) {
-      this.nasAvailable.value = (await this.nas.info()) !== null;
-      addEventListener('beforeunload', (e) => {
-        if (this.session.modified.peek()) e.preventDefault();
-      });
+    try {
+      if (!this.native) {
+        this.nasAvailable.value = (await this.nas.info()) !== null;
+        addEventListener('beforeunload', (e) => {
+          if (this.session.modified.peek()) e.preventDefault();
+        });
+      }
+      void this.refreshRecents();
+      setInterval(() => void this.snapshot(), RECOVERY_INTERVAL_MS);
+      addEventListener('focus', () => this.session.recalculateVolatile());
+      await this.offerRecovery();
+    } finally {
+      this.#markReady();
     }
-    void this.refreshRecents();
-    setInterval(() => void this.snapshot(), RECOVERY_INTERVAL_MS);
-    addEventListener('focus', () => this.session.recalculateVolatile());
+  }
 
-    const snapshot = await loadRecovery().catch(() => null);
-    if (snapshot) {
+  /**
+   * Offer the snapshots no open tab owns (each tab keeps its own), newest first. Restoring one
+   * stops the round; the rest wait for the next start. Discarded ones are deleted.
+   */
+  async offerRecovery(): Promise<void> {
+    const orphans = await orphanedRecoveries().catch(() => []);
+    for (const snapshot of orphans) {
       const restore = await new Promise<boolean>(
         (resolve) => (this.dialog.value = { kind: 'recovery', name: snapshot.name, resolve }),
       );
       this.dialog.value = null;
-      if (restore) {
-        try {
-          this.session.load(snapshot.bytes, snapshot.ref, snapshot.name.replace(/\.(csv|tsv)$/i, '.ods'));
-          this.session.touch();
-        } catch (e) {
-          this.error(e);
-        }
-      } else await clearRecovery();
+      if (!restore) {
+        await clearRecovery(snapshot.key);
+        continue;
+      }
+      try {
+        // Snapshots are always .ods bytes. A CSV document keeps saving as CSV, so its ref stays valid.
+        const csv = /\.(csv|tsv)$/i.test(snapshot.ref?.name ?? snapshot.name);
+        this.session.load(
+          snapshot.bytes,
+          snapshot.ref,
+          snapshot.name.replace(/\.(csv|tsv)$/i, '.ods'),
+          csv ? 'csv' : 'ods',
+        );
+        this.session.touch();
+        await this.snapshot(); // now held under this tab's key
+        await clearRecovery(snapshot.key);
+      } catch (e) {
+        this.error(e);
+      }
+      return;
     }
   }
 
@@ -261,16 +299,22 @@ export class AppController {
     }
   }
 
-  async openFile(file: File): Promise<void> {
+  /** Open a dropped file; with a File System Access handle it can be saved back in place. */
+  async openFile(file: File, handle?: Promise<FileSystemHandle | null>): Promise<void> {
     if (!(await this.confirmDiscard())) return;
     try {
-      this.adopt(await this.browser.openFile(file));
+      const h = await handle?.catch(() => null);
+      this.adopt(
+        await this.browser.openFile(file, h?.kind === 'file' ? (h as FileSystemFileHandle) : undefined),
+      );
     } catch (e) {
       this.error(e);
     }
   }
 
   async openNativePath(path: string): Promise<void> {
+    // A file passed at launch waits for the recovery prompt, so neither replaces the other unasked.
+    await this.#ready;
     if (!this.nativeStore || !(await this.confirmDiscard())) return;
     try {
       this.adopt(await this.nativeStore.openPath(path));
@@ -291,8 +335,11 @@ export class AppController {
             : await this.browser.reload(ref);
       this.adopt(opened);
     } catch (e) {
-      await forgetRecent(entry.ref);
-      void this.refreshRecents();
+      // Only a file that is gone leaves the list; a denied permission or an offline NAS doesn't.
+      if (isNotFound(e)) {
+        await forgetRecent(entry);
+        void this.refreshRecents();
+      }
       this.error(e);
     }
   }
@@ -310,15 +357,49 @@ export class AppController {
   }
 
   /** Save in place when the store can; otherwise (new document, browser without a handle) Save As. */
-  async save(force = false): Promise<boolean> {
+  save(force = false): Promise<boolean> {
+    return this.#exclusive(() => this.#save(force));
+  }
+
+  saveAs(format: 'ods' | 'csv' = this.session.format.peek()): Promise<boolean> {
+    return this.#exclusive(() => this.#saveAs(format));
+  }
+
+  /**
+   * One save at a time. A save asked for while another runs waits for it, then runs only if there
+   * is still something to save (so a second ⌘S never races the first into a false conflict).
+   */
+  async #exclusive(run: () => Promise<boolean>): Promise<boolean> {
+    while (this.#saving) {
+      const result = await this.#saving.catch(() => false);
+      if (!this.session.modified.peek()) return result;
+    }
+    const p = run();
+    this.#saving = p;
+    try {
+      return await p;
+    } finally {
+      if (this.#saving === p) this.#saving = null;
+    }
+  }
+
+  async #save(force: boolean): Promise<boolean> {
     const ref = this.session.document.peek();
-    if (!ref) return this.saveAs();
+    if (!ref) return this.#saveAs(this.session.format.peek());
     const store = this.storeFor(ref);
-    if (!store.capabilities.saveInPlace && !(ref.store === 'browser' && ref.handle)) return this.saveAs();
+    // Without a handle, a browser file (uploaded, dropped) cannot be written back: ask where.
+    if (!store.capabilities.saveInPlace || (ref.store === 'browser' && !ref.handle))
+      return this.#saveAs(this.session.format.peek());
+    if (this.session.format.peek() === 'csv') {
+      const keep = await this.askCsvLoss(ref.name);
+      if (keep === 'cancel') return false;
+      if (keep === 'ods') return this.#saveAs('ods');
+    }
+    const edits = this.session.editCount;
     const bytes = this.session.serialize();
     try {
       const saved = await store.save(ref, bytes, { force });
-      this.saved(saved);
+      this.saved(saved, edits);
       return true;
     } catch (e) {
       if (!(e instanceof ConflictError)) {
@@ -326,16 +407,24 @@ export class AppController {
         return false;
       }
       const choice = await this.askConflict(e);
-      if (choice === 'overwrite') return this.save(true);
-      if (choice === 'saveAs') return this.saveAs();
+      if (choice === 'overwrite') return this.#save(true);
+      if (choice === 'saveAs') return this.#saveAs(this.session.format.peek());
       if (choice === 'reload') await this.reloadFromStore(true);
       return false;
     }
   }
 
-  async saveAs(format: 'ods' | 'csv' = this.session.format.peek()): Promise<boolean> {
+  async #saveAs(format: 'ods' | 'csv'): Promise<boolean> {
     const base = this.session.title.peek().replace(/\.[^.]+$/, '');
+    // A CSV export of an .ods document is a copy: the document stays the .ods.
+    const isExport = format === 'csv' && this.session.format.peek() === 'ods';
+    if (format === 'csv' && !isExport) {
+      const keep = await this.askCsvLoss(this.session.title.peek());
+      if (keep === 'cancel') return false;
+      if (keep === 'ods') format = 'ods';
+    }
     const name = `${base}.${format}`;
+    const edits = this.session.editCount;
     const bytes = this.session.serialize(format, name);
     try {
       let saved: DocumentRef | null;
@@ -344,17 +433,30 @@ export class AppController {
       else if (kind === 'nas') saved = await this.saveToNas(name, bytes);
       else saved = await this.browser.saveAs(name, bytes);
       if (!saved) return false;
-      // A CSV export of an .ods document is a copy: the document stays the .ods.
-      if (format === 'csv' && this.session.format.peek() === 'ods') {
+      if (isExport) {
         this.info(`Exported ${saved.name}`);
         return true;
       }
-      this.saved(saved);
+      this.saved(saved, edits);
       return true;
     } catch (e) {
       this.error(e);
       return false;
     }
+  }
+
+  /**
+   * Saving a CSV document keeps one sheet's values. When that loses something (other sheets,
+   * formulas, formatting), ask first. Resolves 'csv' straight away when nothing would be lost.
+   */
+  async askCsvLoss(name: string): Promise<'csv' | 'ods' | 'cancel'> {
+    const losses = csvLosses(this.session.workbook.peek(), this.session.activeSheet.peek());
+    if (losses.length === 0) return 'csv';
+    const choice = await new Promise<'csv' | 'ods' | 'cancel'>(
+      (resolve) => (this.dialog.value = { kind: 'csv-loss', name, losses, resolve }),
+    );
+    this.dialog.value = null;
+    return choice;
   }
 
   /** Save to this computer (download / picker) even when the NAS is primary. */
@@ -389,12 +491,21 @@ export class AppController {
     }
   }
 
-  async reloadFromStore(force = false): Promise<void> {
+  /**
+   * Re-read the document from its store. `onlyIfClean` (external changes) gives up when edits
+   * landed while the file was being read, instead of throwing them away.
+   */
+  async reloadFromStore(force = false, onlyIfClean = false): Promise<void> {
     const ref = this.session.document.peek();
     if (!ref) return;
     if (!force && !(await this.confirmDiscard())) return;
+    const edits = this.session.editCount;
     try {
       const opened = await this.storeFor(ref).reload(ref);
+      if (onlyIfClean && (this.session.editCount !== edits || this.session.document.peek() !== ref)) {
+        this.info('The file changed on disk. Saving will ask before overwriting it.');
+        return;
+      }
       const kept = this.selection.state.peek();
       this.#keepSelection = true;
       try {
@@ -410,21 +521,28 @@ export class AppController {
 
   /** Electron noticed the file change on disk: reload silently when clean, ask when dirty. */
   async externalChange(): Promise<void> {
-    if (!this.session.modified.peek()) return this.reloadFromStore(true);
+    if (!this.session.modified.peek() && !this.#saving) return this.reloadFromStore(true, true);
     this.info('The file changed on disk. Saving will ask before overwriting it.');
   }
 
   /** Before closing the window (Electron): save, discard, or stay. */
   async requestClose(): Promise<void> {
-    if (await this.confirmDiscard()) {
-      void clearRecovery();
-      this.native?.confirmClose();
+    if (this.#closing) return;
+    this.#closing = true;
+    try {
+      if (await this.confirmDiscard()) {
+        await clearRecovery();
+        this.native?.confirmClose();
+      } else this.native?.cancelClose();
+    } finally {
+      this.#closing = false;
     }
   }
 
-  saved(ref: DocumentRef): void {
-    this.session.markSaved(ref);
-    void clearRecovery();
+  /** Record a save. `edits` is the session's edit count when the bytes were serialized. */
+  saved(ref: DocumentRef, edits = this.session.editCount): void {
+    this.session.markSaved(ref, edits);
+    if (!this.session.modified.peek()) void clearRecovery();
     void this.remember(ref);
     this.native?.watch(ref.store === 'native' ? ref.id : null);
     this.info(`Saved ${ref.name}`);
@@ -1511,4 +1629,10 @@ function subtractRange(a: CellRange, b: CellRange): CellRange[] {
   if (a.left < b.left) out.push(CellRange.fromBounds(top, a.left, bottom, b.left - 1));
   if (a.right > b.right) out.push(CellRange.fromBounds(top, b.right + 1, bottom, a.right));
   return out;
+}
+
+/** The file is gone (not just unreadable right now): browser NotFoundError, NAS 404, native ENOENT. */
+function isNotFound(e: unknown): boolean {
+  if (!(e instanceof Error) && !(e instanceof DOMException)) return false;
+  return e.name === 'NotFoundError' || /\bENOENT\b/.test(e.message);
 }

@@ -13,8 +13,20 @@ interface PickerWindow {
   showSaveFilePicker?: (opts: object) => Promise<FileSystemFileHandle>;
 }
 interface WritableHandle extends FileSystemFileHandle {
-  queryPermission?(d: { mode: 'readwrite' }): Promise<PermissionState>;
-  requestPermission?(d: { mode: 'readwrite' }): Promise<PermissionState>;
+  queryPermission?(d: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  requestPermission?(d: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+}
+
+/** Make sure the page may use a handle (one restored from IndexedDB starts at 'prompt'). */
+async function ensurePermission(handle: FileSystemFileHandle, mode: 'read' | 'readwrite'): Promise<void> {
+  const h = handle as WritableHandle;
+  if (!h.queryPermission) return;
+  if ((await h.queryPermission({ mode })) === 'granted') return;
+  if ((await h.requestPermission?.({ mode })) === 'granted') return;
+  throw new DOMException(
+    `Cellestra was not allowed to ${mode === 'read' ? 'open' : 'save'} ${handle.name}.`,
+    'NotAllowedError',
+  );
 }
 
 const pickerTypes = [{ description: 'Spreadsheets', accept: SPREADSHEET_TYPES }];
@@ -62,14 +74,13 @@ export class BrowserStore implements FileStore {
 
   async save(ref: DocumentRef, bytes: Uint8Array): Promise<DocumentRef> {
     if (ref.handle) {
-      const h = ref.handle as WritableHandle;
-      if (h.queryPermission && (await h.queryPermission({ mode: 'readwrite' })) !== 'granted')
-        await h.requestPermission?.({ mode: 'readwrite' });
-      const w = await h.createWritable();
+      await ensurePermission(ref.handle, 'readwrite');
+      const w = await ref.handle.createWritable();
       await w.write(bytes as Uint8Array<ArrayBuffer>);
       await w.close();
       return ref;
     }
+    // No handle (an uploaded or dropped file): the controller sends these through Save As.
     download(ref.name, bytes);
     return ref;
   }
@@ -96,6 +107,7 @@ export class BrowserStore implements FileStore {
   }
 
   private async fromHandle(handle: FileSystemFileHandle): Promise<OpenedDocument> {
+    await ensurePermission(handle, 'read');
     const file = await handle.getFile();
     return {
       ref: { store: 'browser', name: file.name, id: file.name, version: String(file.lastModified), handle },

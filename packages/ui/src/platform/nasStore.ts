@@ -145,7 +145,9 @@ export class NasStore implements FileStore {
         message,
       );
     if (res.status === 423) throw new ConflictError('locked', message);
-    throw new Error(message);
+    const err = new Error(message);
+    if (res.status === 404) err.name = 'NotFoundError';
+    throw err;
   }
 
   private headers(): Record<string, string> {

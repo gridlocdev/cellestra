@@ -46,6 +46,8 @@ export class WorkbookSession {
   #engine: RecalculationEngine;
   #history: EditHistory;
   #package: OdsPackage | null = null;
+  /** Counts every dirtying change, so a save can tell whether edits landed while it was in flight. */
+  #edits = 0;
   readonly #undoSelections: HistoryEntry[] = [];
   readonly #redoSelections: HistoryEntry[] = [];
 
@@ -83,6 +85,11 @@ export class WorkbookSession {
     this.#history = new EditHistory(wb);
   }
 
+  /** Bumps on every change that dirties the document; pass it to `markSaved` from serialize time. */
+  get editCount(): number {
+    return this.#edits;
+  }
+
   get locale(): string {
     return this.#workbook.peek().settings.effectiveLocale;
   }
@@ -101,12 +108,20 @@ export class WorkbookSession {
     this.#adopt(Workbook.createNew(), null, null, 'ods');
   }
 
-  /** Parse bytes by file name (.ods, else CSV/TSV) and make them the open document. Throws on bad files. */
-  load(bytes: Uint8Array, ref: DocumentRef | null, name = ref?.name ?? 'Untitled.ods'): void {
+  /**
+   * Parse bytes by file name (.ods, else CSV/TSV) and make them the open document. Throws on bad
+   * files. `saveAs` overrides the format Save writes (recovery restores ODS bytes of a CSV document).
+   */
+  load(
+    bytes: Uint8Array,
+    ref: DocumentRef | null,
+    name = ref?.name ?? 'Untitled.ods',
+    saveAs?: DocumentFormat,
+  ): void {
     const format = formatOf(name);
     if (format === 'ods') {
       const { workbook, package: pkg } = OdsReader.readWithPackage(bytes);
-      this.#adopt(workbook, pkg, ref, 'ods');
+      this.#adopt(workbook, pkg, ref, saveAs ?? 'ods');
     } else {
       const text = new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '');
       const options = /\.tsv$/i.test(name) ? CsvOptions.tab : sniffDelimiter(text);
@@ -122,12 +137,15 @@ export class WorkbookSession {
     return new TextEncoder().encode(writeCsv(wb, this.activeSheet.peek(), options));
   }
 
-  /** Record a successful save: the new ref (name, version) and a clean flag. */
-  markSaved(ref: DocumentRef): void {
+  /**
+   * Record a successful save: the new ref (name, version), and a clean flag unless edits landed
+   * after `editCount` (the value of `editCount` when the saved bytes were serialized).
+   */
+  markSaved(ref: DocumentRef, editCount = this.#edits): void {
     batch(() => {
       this.#document.value = ref;
       this.#format.value = formatOf(ref.name);
-      this.#modified.value = false;
+      if (editCount === this.#edits) this.#modified.value = false;
     });
   }
 
@@ -199,6 +217,7 @@ export class WorkbookSession {
   touch(structural = false): void {
     batch(() => {
       this.#modified.value = true;
+      this.#edits++;
       if (structural) this.#structure.value++;
       this.#version.value++;
     });
@@ -214,6 +233,7 @@ export class WorkbookSession {
     }
     batch(() => {
       this.#modified.value = true;
+      this.#edits++;
       this.#circular.value = circular;
       if (result.structural) this.#structure.value++;
       this.#version.value++;
@@ -304,6 +324,7 @@ export class WorkbookSession {
     batch(() => {
       this.#circular.value = result.hasCircularReference;
       this.#modified.value = true;
+      this.#edits++;
       this.#structure.value++;
       this.#version.value++;
     });
