@@ -9,7 +9,7 @@
   "main": "out/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/copy-web.mjs",
-    "start": "pnpm build && electron .",
+    "start": "pnpm build && node scripts/start.mjs",
     "package": "pnpm build && electron-builder --config electron-builder.yml"
   },
   "devDependencies": {
