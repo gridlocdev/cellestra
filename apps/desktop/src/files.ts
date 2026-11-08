@@ -1,6 +1,7 @@
 // File-system helpers for the main process. No Electron imports, so the tests can run them in Node.
 import { watch, type FSWatcher } from 'node:fs';
-import { chown, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { chown, mkdir, open, readFile, readlink, realpath, rename, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
 const SPREADSHEET = /\.(ods|csv|tsv)$/i;
@@ -20,14 +21,17 @@ export function spreadsheetArgs(argv: readonly string[], cwd: string): string[] 
 }
 
 /**
- * Atomic save: a temp file beside the target, fsync, rename. The replacement keeps the target's
- * mode (and owner, where permitted). A hard-linked target is written in place instead, since a
- * rename would split the link.
+ * Atomic save: a temp file beside the target, fsync, rename. A symlink is followed, so the link
+ * stays and its target is replaced. The replacement keeps the target's mode (and owner, where
+ * permitted). A hard-linked target is written in place instead, since a rename would split the link.
+ * Each call uses its own random temp name and only ever removes that one, so two saves of one file
+ * cannot delete each other's temp; `withFileLock` orders them.
  */
 export async function writeAtomic(p: string, bytes: Uint8Array): Promise<void> {
-  const target = await stat(p).catch(() => null);
+  const real = await realTarget(path.resolve(p));
+  const target = await stat(real).catch(() => null);
   if (target && target.nlink > 1) {
-    const h = await open(p, 'r+');
+    const h = await open(real, 'r+');
     try {
       await h.truncate(0);
       await h.writeFile(bytes);
@@ -38,9 +42,11 @@ export async function writeAtomic(p: string, bytes: Uint8Array): Promise<void> {
     return;
   }
   const mode = target ? target.mode & 0o7777 : 0o644;
-  const tmp = path.join(path.dirname(p), `.${path.basename(p)}.${process.pid}.${Date.now()}.tmp`);
+  const tmp = path.join(path.dirname(real), `.${path.basename(real)}.${randomBytes(8).toString('hex')}.tmp`);
+  let created = false;
   try {
     const h = await open(tmp, 'wx', mode);
+    created = true;
     try {
       await h.chmod(mode); // open() applies the umask
       await h.writeFile(bytes);
@@ -49,10 +55,39 @@ export async function writeAtomic(p: string, bytes: Uint8Array): Promise<void> {
       await h.close();
     }
     if (target) await chown(tmp, target.uid, target.gid).catch(() => {});
-    await rename(tmp, p);
+    await rename(tmp, real);
   } catch (e) {
-    await unlink(tmp).catch(() => {});
+    if (created) await unlink(tmp).catch(() => {});
     throw e;
+  }
+}
+
+/** The file a path names after following symlinks; a path that doesn't exist yet is its own target. */
+async function realTarget(abs: string): Promise<string> {
+  const real = await realpath(abs).catch(() => null);
+  if (real !== null) return real;
+  const link = await readlink(abs).catch(() => null); // dangling: write where it points
+  return link === null ? abs : path.resolve(path.dirname(abs), link);
+}
+
+const fileLocks = new Map<string, Promise<unknown>>();
+
+/**
+ * Run `fn` after every earlier `withFileLock` call for the same file has settled, so a save's
+ * check-then-write cannot interleave with another save of that file. Paths are compared resolved,
+ * and case-folded where the volume usually is case-insensitive (macOS, Windows).
+ */
+export async function withFileLock<T>(p: string, fn: () => Promise<T>): Promise<T> {
+  const abs = path.resolve(p);
+  const key = process.platform === 'linux' ? abs : abs.normalize('NFC').toLowerCase();
+  const prev = fileLocks.get(key) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  const tail = run.catch(() => {});
+  fileLocks.set(key, tail);
+  try {
+    return await run;
+  } finally {
+    if (fileLocks.get(key) === tail) fileLocks.delete(key);
   }
 }
 
@@ -96,16 +131,20 @@ export class PathGrants {
   readonly #file: string | null;
   readonly #limit: number;
   #paths: string[] = [];
-  #writing: Promise<void> = Promise.resolve();
+  /** Persisting waits for `load()`, so a grant made first (argv, open-file) can't overwrite the file. */
+  #writing: Promise<void>;
+  #loaded: () => void = () => {};
+  #persistEnabled = true;
 
   constructor(file: string | null, limit = 200) {
     this.#file = file;
     this.#limit = limit;
+    this.#writing = new Promise((resolve) => (this.#loaded = resolve));
   }
 
   async load(): Promise<void> {
-    if (!this.#file) return;
     try {
+      if (!this.#file) return;
       const data: unknown = JSON.parse(await readFile(this.#file, 'utf8'));
       if (!Array.isArray(data)) return;
       // Grants made while loading (argv, open-file) stay in front.
@@ -113,7 +152,17 @@ export class PathGrants {
       this.#paths = [...this.#paths, ...loaded].slice(0, this.#limit);
     } catch {
       // Missing or unreadable: start empty.
+    } finally {
+      this.#loaded();
     }
+  }
+
+  /**
+   * Keep grants in memory only, never on disk: for an instance that lost the single-instance lock
+   * and is about to quit, so it can't race the running app's writes.
+   */
+  disablePersist(): void {
+    this.#persistEnabled = false;
   }
 
   has(p: unknown): p is string {
@@ -127,16 +176,16 @@ export class PathGrants {
     this.#writing = this.#writing.then(() => this.#persist());
   }
 
-  /** Resolves once every grant so far is on disk (for tests). */
+  /** Resolves once every grant so far is on disk (for tests). Waits for `load()` first. */
   flushed(): Promise<void> {
     return this.#writing;
   }
 
   async #persist(): Promise<void> {
-    if (!this.#file) return;
+    if (!this.#file || !this.#persistEnabled) return;
     try {
       await mkdir(path.dirname(this.#file), { recursive: true });
-      await writeFile(this.#file, JSON.stringify(this.#paths));
+      await writeAtomic(this.#file, new TextEncoder().encode(JSON.stringify(this.#paths)));
     } catch {
       // Best effort: the grants still hold for this run.
     }

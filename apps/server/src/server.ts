@@ -148,7 +148,13 @@ async function serveStatic(
   pathname: string,
   head: boolean,
 ): Promise<void> {
-  const rel = decodeURIComponent(pathname).replace(/^\/+/, '');
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    throw new ApiError(400, 'Bad path');
+  }
+  const rel = decoded.replace(/^\/+/, '');
   let file = path.resolve(root, rel || 'index.html');
   if (!file.startsWith(path.resolve(root) + path.sep) && file !== path.resolve(root))
     throw new ApiError(403, 'Forbidden');
@@ -160,7 +166,9 @@ async function serveStatic(
     if (!s) throw new ApiError(404, 'Web client not built — run `pnpm build`');
   }
   const ext = path.extname(file);
-  const hashed = /\/assets\//.test(file);
+  // Only the build's own hashed bundles under <root>/assets/ are immutable (not an 'assets' folder
+  // somewhere above the root).
+  const hashed = path.relative(path.resolve(root), file).split(path.sep)[0] === 'assets';
   res.writeHead(200, {
     'Content-Type': MIME[ext] ?? 'application/octet-stream',
     'Content-Length': s.size,

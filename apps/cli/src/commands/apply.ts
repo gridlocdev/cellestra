@@ -50,6 +50,7 @@ import type { CommandSpec, Parsed } from '../spec.ts';
 import { addChart, chartSheet, updateChart } from './chartOps.ts';
 import { editTarget, fileArg, inPlaceOpt, jsonOpt, localeOpt, outputOpt } from './options.ts';
 import {
+  checkStructuralEdit,
   nextTableName,
   parseColumn,
   parseColumnSpan,
@@ -795,6 +796,7 @@ function structural(
   const index = axis === 'row' ? parseRow(at) : parseColumn(at);
   const count = op.int('count', 1);
   if (count < 1) throw new CliError('"count" must be at least 1.');
+  checkStructuralEdit(sheet, axis, operation, index, count);
   session.apply(new StructuralEditCommand(sheet.name, axis, operation, index, count));
 }
 

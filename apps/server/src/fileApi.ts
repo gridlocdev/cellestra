@@ -61,10 +61,16 @@ const OPENABLE = /\.(ods|csv|tsv)$/i;
  * dot-named segment (dotfiles, `.git`, LibreOffice `.~lock` files, our own temp files).
  */
 function checkSpreadsheetPath(rel: string | null, verb: string): void {
-  const segments = (rel ?? '').replaceAll('\\', '/').split('/').filter(Boolean);
-  if (segments.some((s) => s.startsWith('.'))) throw new ApiError(403, 'Hidden paths are not served');
+  const segments = checkVisiblePath(rel);
   const base = segments.at(-1) ?? '';
   if (!OPENABLE.test(base)) throw new ApiError(400, `Only .ods, .csv, and .tsv files can be ${verb}`);
+}
+
+/** Refuse a path with any dot-named segment; returns its segments. */
+function checkVisiblePath(rel: string | null): string[] {
+  const segments = (rel ?? '').replaceAll('\\', '/').split('/').filter(Boolean);
+  if (segments.some((s) => s.startsWith('.'))) throw new ApiError(403, 'Hidden paths are not served');
+  return segments;
 }
 
 export class FileApi {
@@ -115,6 +121,7 @@ export class FileApi {
 
   async list(rootId: string | null, rel: string | null): Promise<Entry[]> {
     const root = this.root(rootId);
+    checkVisiblePath(rel);
     const dir = await this.resolveReal(root, rel);
     let dirents;
     try {
@@ -175,7 +182,7 @@ export class FileApi {
     const root = this.root(rootId);
     checkSpreadsheetPath(rel, 'saved');
     const full = await this.resolveReal(root, rel);
-    return this.serialized(full, () => this.writeLocked(full, bytes, opts));
+    return this.serialized(await queueKey(full), () => this.writeLocked(full, bytes, opts));
   }
 
   /** Run `fn` after every earlier write to `key` has settled, so the If-Match check and the rename are atomic. */
@@ -202,7 +209,9 @@ export class FileApi {
       throw fsError(e);
     });
 
-    const current = await readFile(full).catch(() => null);
+    const existing = await stat(full).catch(() => null);
+    if (existing && !existing.isFile()) throw new ApiError(400, 'Not a file');
+    const current = existing ? await readFile(full).catch(() => null) : null;
     if (opts.ifNoneMatch === '*' && current) throw new ApiError(412, 'A file with that name already exists');
     if (opts.ifMatch && !opts.force) {
       if (!current)
@@ -253,6 +262,30 @@ export class FileApi {
   }
 }
 
+/**
+ * The write-queue key for a path: the same file under any spelling gets the same key. Symlinks are
+ * resolved (for a new file, through its nearest existing folder), and the key is case- and
+ * normalization-folded, since `Book.ods` and `book.ods` are one file on a case-insensitive volume
+ * (macOS, Windows, most SMB shares). On a case-sensitive volume that only serializes two distinct
+ * files' saves, which costs nothing.
+ */
+async function queueKey(full: string): Promise<string> {
+  let probe = full;
+  const tail: string[] = [];
+  for (;;) {
+    const real = await realpath(probe).catch(() => null);
+    if (real !== null)
+      return path
+        .join(real, ...tail)
+        .normalize('NFC')
+        .toLowerCase();
+    const parent = path.dirname(probe);
+    if (parent === probe) return full.normalize('NFC').toLowerCase();
+    tail.unshift(path.basename(probe));
+    probe = parent;
+  }
+}
+
 export function etagOf(bytes: Uint8Array): string {
   return '"' + createHash('sha256').update(bytes).digest('base64url').slice(0, 27) + '"';
 }
@@ -263,5 +296,6 @@ function fsError(e: unknown): Error {
   if (code === 'ENOENT') return new ApiError(404, 'Not found');
   if (code === 'EACCES' || code === 'EPERM') return new ApiError(403, 'Permission denied');
   if (code === 'ENOTDIR') return new ApiError(400, 'Not a folder');
+  if (code === 'EISDIR') return new ApiError(400, 'Not a file');
   return e instanceof Error ? e : new Error(String(e));
 }

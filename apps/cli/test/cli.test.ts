@@ -1,4 +1,15 @@
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  linkSync,
+  lstatSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -13,6 +24,7 @@ import {
 } from '@cellestra/core';
 import { runCli } from '../src/cli.ts';
 import { buildRoot } from '../src/index.ts';
+import { isExpectedError } from '../src/infra/errors.ts';
 import type { CliIo } from '../src/infra/io.ts';
 
 /**
@@ -1220,5 +1232,93 @@ describe('cellestra <file> — the launcher', () => {
     run('new', ods);
     expect(run(ods).exit).toBe(0);
     expect(launched).toEqual([ods]);
+  });
+});
+
+describe('review fixes', () => {
+  it('--in-place keeps the mode, a symlink, and a hard link', () => {
+    const real = path2('real.ods');
+    const alias = path2('alias.ods');
+    const twin = path2('twin.ods');
+    run('new', real);
+    chmodSync(real, 0o600);
+    symlinkSync(real, alias);
+    linkSync(real, twin);
+    expect(run('set', alias, 'A1', '7', '--in-place').exit).toBe(0);
+    expect(lstatSync(alias).isSymbolicLink()).toBe(true);
+    expect(statSync(real).mode & 0o777).toBe(0o600);
+    expect(statSync(real).nlink).toBe(2);
+    expect(sheet1(twin).getValue(0, 0)).toEqual(CellValue.number(7));
+    expect(readdirSync(dir).filter((n) => n.endsWith('.tmp'))).toEqual([]);
+  });
+
+  it('a new file written with -o gets the usual mode', () => {
+    const out = path2('fresh.ods');
+    run('new', out);
+    expect(statSync(out).mode & 0o777).toBe(0o644 & ~process.umask());
+  });
+
+  it('handles ranges with more values than the stack holds arguments', () => {
+    const ods = path2('big.ods');
+    const book = Workbook.createNew();
+    for (let r = 0; r < 200_000; r++) book.activeSheet.setValue(r, 0, CellValue.number(r - 5));
+    writeFileSync(ods, writeOds(book));
+    const r = run('stats', ods, 'A1:A200000', '--json');
+    expect(r.exit).toBe(0);
+    const stats = json(r.out);
+    expect(stats.min).toBe(-5);
+    expect(stats.max).toBe(199_994);
+    expect(run('clear', ods, 'A1:A200000', '--in-place').exit).toBe(0);
+  });
+
+  it('refuses inserts that would push data off the sheet or reach past it', () => {
+    const ods = path2('edge.ods');
+    run('new', ods);
+    run('set', ods, 'A1=1', 'A1048576=2', '--in-place');
+    const ops = (o: object) => {
+      const file = path2('ops.json');
+      writeFileSync(file, JSON.stringify([o]));
+      return run('apply', ods, file, '--in-place');
+    };
+    const pushed = ops({ op: 'insert-rows', at: 1, count: 5 });
+    expect(pushed.exit).toBe(1);
+    expect(pushed.err).toContain('off the sheet');
+    expect(sheet1(ods).getValue(1048575, 0)).toEqual(CellValue.number(2));
+    const huge = ops({ op: 'insert-rows', at: 1, count: 100000000 });
+    expect(huge.exit).toBe(1);
+    expect(huge.err).toContain('past the sheet');
+    expect(run('insert-cols', ods, 'B', '--count', '20000', '--in-place').exit).toBe(1);
+    expect(run('insert-rows', ods, '2', '--count', '3', '--in-place').exit).toBe(1);
+    run('clear', ods, 'A1048576', '--in-place');
+    expect(run('insert-rows', ods, '1', '--count', '3', '--in-place').exit).toBe(0);
+    expect(sheet1(ods).getValue(3, 0)).toEqual(CellValue.number(1));
+  });
+
+  it('reads --json the way the parser does', () => {
+    const ods = path2('j.ods');
+    run('new', ods);
+    run('set', ods, 'A1', '3', '--in-place');
+    expect(() => json(run('get', ods, 'A1', '--json=true').out)).not.toThrow();
+    expect(run('get', ods, 'A1', '--json', 'false').out.trim()).toBe('3');
+    expect(run('get', ods, 'A1', '--json=false').out.trim()).toBe('3');
+    const bad = run('get', ods, 'A1', '--json=true', '--nope');
+    expect(json(bad.out).ok).toBe(false);
+  });
+});
+
+describe('isExpectedError', () => {
+  it('treats user and file-system errors as expected, and runtime bugs as bugs', () => {
+    const fsError = Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' });
+    const nodeError = Object.assign(new TypeError('bad arg'), { code: 'ERR_INVALID_ARG_TYPE' });
+    const internal = Object.assign(new Error('internal'), { code: 'ERR_INTERNAL_ASSERTION' });
+    expect(isExpectedError(fsError)).toBe(true);
+    expect(isExpectedError(new RangeError("Sheet name can't be empty"))).toBe(true);
+    expect(isExpectedError(new SyntaxError("'Q' is not a valid cell reference."))).toBe(true);
+    expect(isExpectedError(new Error('duplicate sheet'))).toBe(true);
+    expect(isExpectedError(nodeError)).toBe(false);
+    expect(isExpectedError(internal)).toBe(false);
+    expect(isExpectedError(new TypeError('x is undefined'))).toBe(false);
+    expect(isExpectedError(new RangeError('Maximum call stack size exceeded'))).toBe(false);
+    expect(isExpectedError(new RangeError('Invalid array length'))).toBe(false);
   });
 });

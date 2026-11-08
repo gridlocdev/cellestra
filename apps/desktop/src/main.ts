@@ -11,7 +11,15 @@ import {
   type NativeMenuItem,
   type SavedFile,
 } from './bridge.ts';
-import { isAppUrl, isSpreadsheetPath, PathGrants, spreadsheetArgs, watchFile, writeAtomic } from './files.ts';
+import {
+  isAppUrl,
+  isSpreadsheetPath,
+  PathGrants,
+  spreadsheetArgs,
+  watchFile,
+  withFileLock,
+  writeAtomic,
+} from './files.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.join(here, 'web');
@@ -41,6 +49,15 @@ interface WindowState {
 const windows = new Map<number, WindowState>();
 /** Files the renderer may touch: picked in a dialog, opened by the OS, or opened before. */
 const grants = new PathGrants(path.join(app.getPath('userData'), 'granted-files.json'));
+/**
+ * Another instance is already running: it gets our argv (second-instance) and owns
+ * granted-files.json, so this one must not write it on its way out.
+ */
+const single = app.requestSingleInstanceLock();
+if (!single) {
+  grants.disablePersist();
+  app.quit();
+}
 /** mtime we last read or wrote per path, so the watcher can ignore our own saves. */
 const knownMtime = new Map<string, number>();
 /** Set by Cmd+Q / app.quit() so the last window closing ends the app on macOS too. */
@@ -205,17 +222,20 @@ async function writeNative(
   expectedModified: number | null,
   force: boolean,
 ): Promise<SavedFile> {
-  if (!force && expectedModified !== null) {
-    const s = await stat(p).catch(() => null);
-    if (s && Math.abs(s.mtimeMs - expectedModified) > 1)
-      throw new Error(`${CONFLICT}: the file changed on disk`);
-  }
-  await writeAtomic(p, bytes);
-  const s = await stat(p);
-  grants.grant(p);
-  knownMtime.set(p, s.mtimeMs);
-  app.addRecentDocument(p);
-  return { path: p, name: path.basename(p), modified: s.mtimeMs };
+  // One save per file at a time, so the mtime check and the write can't interleave with another save.
+  return withFileLock(p, async () => {
+    if (!force && expectedModified !== null) {
+      const s = await stat(p).catch(() => null);
+      if (s && Math.abs(s.mtimeMs - expectedModified) > 1)
+        throw new Error(`${CONFLICT}: the file changed on disk`);
+    }
+    await writeAtomic(p, bytes);
+    const s = await stat(p);
+    grants.grant(p);
+    knownMtime.set(p, s.mtimeMs);
+    app.addRecentDocument(p);
+    return { path: p, name: path.basename(p), modified: s.mtimeMs };
+  });
 }
 
 function toTemplate(items: readonly NativeMenuItem[], win: BrowserWindow): MenuItemConstructorOptions[] {
@@ -344,8 +364,6 @@ app.on('open-file', (e, p) => {
   openInWindow(grantAll([path.resolve(p)]));
 });
 
-const single = app.requestSingleInstanceLock();
-if (!single) app.quit();
 app.on('second-instance', (_e, argv, workingDirectory) => {
   const files = grantAll(spreadsheetArgs(argv.slice(1), workingDirectory));
   const win = BrowserWindow.getAllWindows()[0];
@@ -361,6 +379,7 @@ app.on('before-quit', () => {
 });
 
 void app.whenReady().then(async () => {
+  if (!single) return; // quitting: the running instance has the files
   protocol.handle('app', (req) => {
     const { pathname } = new URL(req.url);
     const file = path.normalize(path.join(webRoot, decodeURIComponent(pathname)));

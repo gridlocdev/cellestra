@@ -54,12 +54,36 @@ function runOnce(argv: readonly string[], io: CliIo, version: string): number {
 }
 
 /**
+ * Whether this invocation asked for `--json`, read the way the parser reads it — so `--json=true`
+ * and `--json true` count and `--json false` doesn't. When the command line doesn't parse, the last
+ * `--json` token decides, so the parse error still comes back as JSON.
+ */
+function jsonRequested(argv: readonly string[], version: string): boolean {
+  try {
+    const invocation = parseArgs(buildRoot(version), argv);
+    if (invocation.kind === 'run') return invocation.parsed.flag('--json');
+  } catch (e) {
+    if (!(e instanceof ParseError)) throw e;
+  }
+  let json = false;
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i]!;
+    if (token === '--') break;
+    if (token === '--json') {
+      const next = argv[i + 1];
+      json = next === undefined || next.toLowerCase() !== 'false';
+    } else if (token.startsWith('--json=')) json = token.slice('--json='.length).toLowerCase() !== 'false';
+  }
+  return json;
+}
+
+/**
  * The whole tool, in-process: tests call this with a capturing `CliIo`. Under `--json` a user error
  * is a JSON document on stdout too — the same `ok: false` shape every report uses — as well as the
  * one-line stderr message. Both streams are captured, since a parse error prints help to stdout.
  */
 export function runCli(argv: readonly string[], io: CliIo, version = '0.0.0'): number {
-  if (!argv.includes('--json')) return runOnce(argv, io, version);
+  if (!jsonRequested(argv, version)) return runOnce(argv, io, version);
 
   const out: (string | Uint8Array)[] = [];
   let err = '';

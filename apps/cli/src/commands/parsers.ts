@@ -86,3 +86,37 @@ export function nextTableName(sheet: Worksheet): string {
     if (!taken.has(candidate.toLowerCase())) return candidate;
   }
 }
+
+/**
+ * Refuse an insert or delete the sheet can't hold: a count past the sheet's edge, or an insert that
+ * would push stored cells off the last row or column (the engine would drop them silently).
+ */
+export function checkStructuralEdit(
+  sheet: Worksheet,
+  axis: 'row' | 'column',
+  operation: 'insert' | 'delete',
+  index: number,
+  count: number,
+): void {
+  const isRow = axis === 'row';
+  const size = isRow ? SheetDimensions.maxRows : SheetDimensions.maxColumns;
+  const noun = isRow ? 'row' : 'column';
+  const label = (i: number): string => (isRow ? String(i + 1) : SheetDimensions.columnToLetters(i));
+  if (index >= size)
+    throw new CliError(`${noun} ${index + 1} is past the sheet's last ${noun} (${label(size - 1)}).`);
+  const room = size - index;
+  if (count > room) {
+    throw new CliError(
+      `count ${count} reaches past the sheet's last ${noun} (${label(size - 1)}); at most ${room} fit from ${noun} ${label(index)}.`,
+    );
+  }
+  if (operation !== 'insert') return;
+  const extent = sheet.cellExtent();
+  const last = extent === null ? -1 : isRow ? extent.lastRow : extent.lastColumn;
+  if (last >= index && last + count >= size) {
+    throw new CliError(
+      `inserting ${count} ${noun}(s) at ${label(index)} would push data in ${noun} ${label(last)} off the sheet ` +
+        `(the last ${noun} is ${label(size - 1)}); clear or move it first.`,
+    );
+  }
+}

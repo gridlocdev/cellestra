@@ -31,7 +31,8 @@ export class EditSession {
 
   apply(edit: EditCommand): void {
     const result = edit.apply(this.workbook);
-    this.#changed.push(...result.changedCells.map((c) => CellRef.of(c.sheet, c.row, c.column)));
+    // A loop, not push(...cells): a whole-column edit changes more cells than the stack holds arguments.
+    for (const c of result.changedCells) this.#changed.push(CellRef.of(c.sheet, c.row, c.column));
   }
 
   touched(sheet: string, row: number, column: number): void {

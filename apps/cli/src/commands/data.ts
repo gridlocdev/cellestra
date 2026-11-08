@@ -20,6 +20,7 @@ import type { CommandSpec, OptionSpec, Parsed } from '../spec.ts';
 import { dispatch } from './apply.ts';
 import { editTarget, fileArg, inPlaceOpt, jsonOpt, localeOpt, outputOpt, sheetOpt } from './options.ts';
 import {
+  checkStructuralEdit,
   parseColumn,
   parseColumnSpan,
   parseRow,
@@ -408,6 +409,7 @@ function structuralCommand(
         const index = isRow ? parseRow(p.arg('at')) : parseColumn(p.arg('at'));
         const n = p.num('--count') ?? 1;
         if (n < 1) throw new CliError('--count must be at least 1.');
+        checkStructuralEdit(worksheet, axis, operation, index, n);
         return [new StructuralEditCommand(worksheet.name, axis, operation, index, n)];
       }),
   };

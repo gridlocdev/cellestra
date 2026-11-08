@@ -156,6 +156,38 @@ describe('read and write rules', () => {
     expect(statuses).toEqual([200, 412, 412, 412, 412]);
   });
 
+  it('refuses to list dot folders', async () => {
+    const list = (p: string) => fetch(`${base}/api/list?root=docs&path=${p}`, { headers: auth });
+    expect((await list('.git')).status).toBe(403);
+    expect((await list('sub/../.git')).status).toBe(403);
+    expect((await list('sub')).status).toBe(200);
+  });
+
+  it('answers 400, not 500, for a folder named like a spreadsheet', async () => {
+    await mkdir(path.join(dir, 'folder.ods'), { recursive: true });
+    expect((await put('folder.ods', 'x')).status).toBe(400);
+    expect((await fetch(`${base}/api/file?root=docs&path=folder.ods`, { headers: auth })).status).toBe(400);
+    expect((await stat(path.join(dir, 'folder.ods'))).isDirectory()).toBe(true);
+  });
+
+  it('queues saves of one file under any spelling of its name', async () => {
+    await writeFile(path.join(dir, 'Case.ods'), 'v0');
+    const caseInsensitive = await stat(path.join(dir, 'CASE.ODS')).then(
+      () => true,
+      () => false,
+    );
+    const etag = (await fetch(`${base}/api/file?root=docs&path=Case.ods`, { headers: auth })).headers.get(
+      'etag',
+    )!;
+    const names = caseInsensitive ? ['Case.ods', 'case.ods', 'CASE.ods', 'cAsE.ods'] : ['Case.ods'];
+    const results = await Promise.all(
+      names.flatMap((n, i) => [put(n, `a${i}`, { 'If-Match': etag }), put(n, `b${i}`, { 'If-Match': etag })]),
+    );
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses.filter((s) => s === 200)).toHaveLength(1);
+    expect(statuses.filter((s) => s === 412)).toHaveLength(statuses.length - 1);
+  });
+
   it('answers If-Match on a missing file with 412', async () => {
     expect((await put('gone.ods', 'x', { 'If-Match': '"abc"' })).status).toBe(412);
   });
@@ -173,6 +205,40 @@ describe('read and write rules', () => {
     await link(linked, other);
     expect((await put('linked.ods', 'two')).status).toBe(200);
     expect(await readFile(other, 'utf8')).toBe('two');
+  });
+});
+
+describe('static files', () => {
+  let web: string;
+  let port = 0;
+  let stop = () => {};
+  beforeAll(async () => {
+    // The client lives under a folder that happens to be called "assets": only <root>/assets/ is immutable.
+    web = path.join(await mkdtemp(path.join(os.tmpdir(), 'cellestra-web-')), 'assets', 'dist');
+    await mkdir(path.join(web, 'assets'), { recursive: true });
+    await writeFile(path.join(web, 'index.html'), '<!doctype html>');
+    await writeFile(path.join(web, 'assets', 'app-123.js'), 'x');
+    const api = new FileApi(parseRoots(`Docs=${dir}`, '/'));
+    const server = createServer({ api, staticDir: web, token: null, maxBytes: 1024 });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    port = (server.address() as AddressInfo).port;
+    stop = () => server.close();
+  });
+  afterAll(async () => {
+    stop();
+    await rm(path.dirname(path.dirname(web)), { recursive: true, force: true });
+  });
+
+  it('marks only the hashed bundles immutable', async () => {
+    const index = await fetch(`http://127.0.0.1:${port}/`);
+    expect(index.status).toBe(200);
+    expect(index.headers.get('cache-control')).toBe('no-cache');
+    const bundle = await fetch(`http://127.0.0.1:${port}/assets/app-123.js`);
+    expect(bundle.headers.get('cache-control')).toContain('immutable');
+  });
+
+  it('answers a malformed percent-escape with 400', async () => {
+    expect((await fetch(`http://127.0.0.1:${port}/%E0%A4%A`)).status).toBe(400);
   });
 });
 

@@ -160,7 +160,8 @@ export const put: CommandSpec = {
             written++;
           });
         });
-        const width = rows.length === 0 ? 0 : Math.max(...rows.map((row) => row.length));
+        let width = 0;
+        for (const row of rows) width = Math.max(width, row.length);
         const covered =
           rows.length === 0
             ? null
@@ -263,8 +264,13 @@ export const stats: CommandSpec = {
     const any = numbers.length > 0;
     const sum = any ? numbers.reduce((a, b) => a + b, 0) : null;
     const average = any ? sum! / numbers.length : null;
-    const min = any ? Math.min(...numbers) : null;
-    const max = any ? Math.max(...numbers) : null;
+    // Loops, not Math.min(...numbers): a big range has more values than the stack holds arguments.
+    let min: number | null = null;
+    let max: number | null = null;
+    for (const n of numbers) {
+      if (min === null || n < min) min = n;
+      if (max === null || n > max) max = n;
+    }
     const med = median(numbers);
     const stdev = sampleStdev(numbers);
     if (p.flag('--json')) {
