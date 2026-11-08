@@ -167,6 +167,51 @@ describe('DataEditCommands', () => {
     expect(text(sheet.getValue(2, 0))).toBe('a');
   });
 
+  it('remove duplicates moves formulas with their rows', () => {
+    const { history, sheet } = setup();
+    sheet.setValue(0, 0, CellValue.text('H'));
+    ['a', 'a', 'b'].forEach((v, i) => {
+      sheet.setValue(i + 1, 0, CellValue.text(v));
+      sheet.setFormula(i + 1, 1, `A${i + 2}`);
+    });
+    history.execute(DataEditCommands.removeDuplicates(sheet.name, R('A1:B4'), [0], true).command);
+    expect(sheet.find(2, 1)!.formula).toBe('A3');
+    expect(sheet.find(3, 1)).toBeUndefined();
+    history.undo();
+    expect(sheet.find(3, 1)!.formula).toBe('A4');
+  });
+
+  it('remove duplicates over whole columns only touches the used rows', () => {
+    const { history, sheet } = setup();
+    sheet.setValue(0, 0, CellValue.text('H'));
+    sheet.setValue(1, 0, CellValue.text('a'));
+    sheet.setValue(2, 0, CellValue.text('a'));
+    const whole = CellRange.fromBounds(0, 0, 1_048_575, 0);
+    const { command, removedCount } = DataEditCommands.removeDuplicates(sheet.name, whole, [0], true);
+    history.execute(command);
+    expect(removedCount()).toBe(1);
+    expect(sheet.find(2, 0)).toBeUndefined();
+    history.undo();
+    expect(text(sheet.getValue(2, 0))).toBe('a');
+  });
+
+  it('undoing a sort over a filter shows the rows it showed before', () => {
+    const { history, sheet } = setup();
+    sheet.setValue(0, 0, CellValue.text('H'));
+    [5, 50, 30].forEach((n, i) => sheet.setValue(i + 1, 0, CellValue.number(n)));
+    const spec = filterSpec(new Map([[0, { condition: '>40' }]]));
+    history.execute(DataEditCommands.applySortAndFilter(sheet.name, R('A1:A4'), null, spec, 'en-US'));
+    const hidden = () => [1, 2, 3].map((r) => sheet.isRowHidden(r));
+    expect(hidden()).toEqual([true, false, true]);
+
+    history.execute(DataEditCommands.sortByColumn(sheet.name, R('A1:A4'), 0, false, true, 'en-US'));
+    expect(hidden()).toEqual([false, true, true]);
+
+    history.undo();
+    expect(sheet.getValue(1, 0)).toEqual(CellValue.number(5));
+    expect(hidden()).toEqual([true, false, true]);
+  });
+
   it('text to columns is undoable', () => {
     const { history, sheet } = setup();
     sheet.setValue(0, 0, CellValue.text('a,b,c'));

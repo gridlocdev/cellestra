@@ -13,7 +13,13 @@ import type { CellStyle } from '../styling/cellStyle.ts';
 import { StylePool } from '../styling/stylePool.ts';
 import { CellValue } from '../values/cellValue.ts';
 import { CellSnapshotCommand } from './cellSnapshotCommand.ts';
-import { ActionCommand, EditResult, requireSheet, type EditCommand } from './editCommand.ts';
+import {
+  ActionCommand,
+  CompositeEditCommand,
+  EditResult,
+  requireSheet,
+  type EditCommand,
+} from './editCommand.ts';
 import { clampedPositions, clampToUsed, EditCommands } from './editCommands.ts';
 
 type LineState = [index: number, styleId: number, hidden: boolean];
@@ -24,12 +30,17 @@ export const DataEditCommands = {
 
   /** Sort the range (clamped to the used range) as one undo step. */
   sort: (sheet: string, range: CellRange, spec: SortSpec, locale?: string): EditCommand =>
-    new CellSnapshotCommand(
-      'Sort',
-      sheet,
-      (ws) => clampedPositions(ws, range),
-      (ws) => SortEngine.sort(ws, clampToUsed(ws, range) ?? range, spec, locale),
-    ),
+    // Sorting re-applies a filter over the range, which changes which rows are hidden; the first
+    // step keeps those flags so undo shows the same rows again.
+    new CompositeEditCommand('Sort', [
+      filteredRowsCommand(sheet, range),
+      new CellSnapshotCommand(
+        'Sort',
+        sheet,
+        (ws) => clampedPositions(ws, range),
+        (ws) => SortEngine.sort(ws, clampToUsed(ws, range) ?? range, spec, locale),
+      ),
+    ]),
 
   sortByColumn: (
     sheet: string,
@@ -51,9 +62,26 @@ export const DataEditCommands = {
     hasHeader: boolean,
   ): { readonly command: EditCommand; readonly removedCount: () => number } {
     let removed = 0;
-    const command = new CellSnapshotCommand('Remove Duplicates', sheet, [...range.positions()], (ws) => {
-      removed = DuplicateRemover.remove(ws, range, keyColumns, hasHeader);
-    });
+    // Cut off below and right of the used range, so a whole-column selection doesn't snapshot a
+    // million rows. The top row stays: it may be the header.
+    const trimmed = (ws: Worksheet): CellRange | null => {
+      const used = ws.getUsedRange();
+      if (!used) return null;
+      const bottom = Math.min(range.bottom, used.bottom);
+      const right = Math.min(range.right, used.right);
+      return bottom < range.top || right < range.left
+        ? null
+        : CellRange.fromBounds(range.top, range.left, bottom, right);
+    };
+    const command = new CellSnapshotCommand(
+      'Remove Duplicates',
+      sheet,
+      (ws) => [...(trimmed(ws)?.positions() ?? [])],
+      (ws) => {
+        const r = trimmed(ws);
+        removed = r ? DuplicateRemover.remove(ws, r, keyColumns, hasHeader) : 0;
+      },
+    );
     return { command, removedCount: () => removed };
   },
 
@@ -445,6 +473,35 @@ function setSheetFilterState(
       ws.activeFilter = oldFilter;
       ws.activeFilterSpec = oldSpec;
       ws.activeSort = oldSort;
+      return EditResult.none;
+    },
+  );
+}
+
+/**
+ * Changes nothing; keeps the hidden flag of each row of every filter that overlaps `range` (the
+ * sheet's filter and table filters, cut off at the used range) and puts them back on undo.
+ */
+function filteredRowsCommand(sheet: string, range: CellRange): EditCommand {
+  let before: (readonly [row: number, hidden: boolean])[] = [];
+  return new ActionCommand(
+    'Sort',
+    (wb) => {
+      const ws = requireSheet(wb, sheet);
+      const filtered: CellRange[] = [];
+      if (ws.activeFilter && ws.activeFilterSpec && ws.activeFilter.intersects(range))
+        filtered.push(ws.activeFilter);
+      for (const t of ws.tables) if (t.filter && t.range.intersects(range)) filtered.push(t.range);
+      const last = ws.getUsedRange()?.bottom ?? -1;
+      const rows = new Set<number>();
+      for (const r of filtered) for (let row = r.top; row <= Math.min(r.bottom, last); row++) rows.add(row);
+      before = [...rows].map((row) => [row, ws.isRowHidden(row)] as const);
+      return EditResult.none;
+    },
+    (wb) => {
+      const ws = requireSheet(wb, sheet);
+      for (const [row, hidden] of before)
+        if (ws.isRowHidden(row) !== hidden) ws.getOrCreateRow(row).hidden = hidden;
       return EditResult.none;
     },
   );

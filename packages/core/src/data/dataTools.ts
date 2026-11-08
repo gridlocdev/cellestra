@@ -1,3 +1,5 @@
+import { rewriteFormula } from '../editing/formulaRewrite.ts';
+import { ReferenceAdjuster } from '../formulas/references/referenceAdjuster.ts';
 import type { Cell } from '../model/cell.ts';
 import type { CellRange } from '../model/cellRange.ts';
 import type { Worksheet } from '../model/worksheet.ts';
@@ -8,7 +10,8 @@ import { CellValue } from '../values/cellValue.ts';
 export const DuplicateRemover = {
   /**
    * Drop data rows whose key columns (all columns when `keyColumns` is empty) repeat an earlier row,
-   * compacting survivors upward within the range. Returns how many rows went.
+   * compacting survivors upward within the range. A moved row's relative references into the range
+   * follow it, as they do when sorting. Returns how many rows went.
    */
   remove(sheet: Worksheet, range: CellRange, keyColumns: readonly number[], hasHeader: boolean): number {
     const first = range.top + (hasHeader ? 1 : 0);
@@ -18,7 +21,7 @@ export const DuplicateRemover = {
         ? keyColumns
         : Array.from({ length: range.columnCount }, (_, i) => range.left + i);
     const seen = new Set<string>();
-    const survivors: (Cell | null)[][] = [];
+    const survivors: { originalRow: number; cells: (Cell | null)[] }[] = [];
     let removed = 0;
     for (let row = first; row <= range.bottom; row++) {
       const key = keys.map((c) => CellValue.toInvariantString(sheet.getValue(row, c))).join('\u001f');
@@ -30,11 +33,19 @@ export const DuplicateRemover = {
       const cells: (Cell | null)[] = [];
       for (let c = 0; c < range.columnCount; c++)
         cells.push(sheet.find(row, range.left + c)?.clone() ?? null);
-      survivors.push(cells);
+      survivors.push({ originalRow: row, cells });
     }
     let writeRow = first;
-    for (const cells of survivors) {
-      cells.forEach((cell, c) => sheet.putCell(writeRow, range.left + c, cell));
+    for (const { originalRow, cells } of survivors) {
+      const rowDelta = writeRow - originalRow;
+      cells.forEach((cell, c) => {
+        if (cell && cell.formula !== null && rowDelta !== 0) {
+          cell.formula = rewriteFormula(cell.formula, (expr) =>
+            ReferenceAdjuster.forSortMove(expr, rowDelta, first, range.bottom),
+          );
+        }
+        sheet.putCell(writeRow, range.left + c, cell);
+      });
       writeRow++;
     }
     for (; writeRow <= range.bottom; writeRow++) {
