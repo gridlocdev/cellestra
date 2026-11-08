@@ -148,7 +148,10 @@ function claimRecoverySlot(): void {
     .catch(() => {});
 }
 
-/** Keep the latest unsaved state so a crash or closed tab loses at most a few seconds. */
+/**
+ * Keep the latest unsaved state so a crash or closed tab loses at most a few seconds: the app
+ * snapshots a few seconds after editing pauses, when the tab is hidden, and every 30 s.
+ */
 export async function saveRecovery(name: string, ref: DocumentRef | null, bytes: Uint8Array): Promise<void> {
   claimRecoverySlot();
   const snap: RecoverySnapshot = { key: recoveryKey, name, ref, bytes, saved: Date.now() };

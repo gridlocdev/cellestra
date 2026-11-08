@@ -14,6 +14,11 @@ export interface DocumentRef {
   readonly version: string | null;
   /** Browser-only: the File System Access handle, when the browser granted one. */
   readonly handle?: FileSystemFileHandle;
+  /**
+   * Browser-only: the bytes went out as a download. The browser doesn't say whether the user
+   * kept the file, so this is a copy, not a save: the document stays modified.
+   */
+  readonly downloaded?: boolean;
 }
 
 export interface OpenedDocument {

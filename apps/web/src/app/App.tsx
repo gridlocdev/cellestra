@@ -93,6 +93,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
         return s.workbook.value.styles;
       },
       version: s.version,
+      cellsChangedSince: (sheet, version) => s.cellsChangedSince(sheet, version),
       display: (value: CellValue, style) => ({ text: s.display(value, style) }),
       editText: (row, column) => s.editText(row, column),
       draft: (text) => (draft.value = text),

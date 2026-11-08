@@ -1269,7 +1269,8 @@ describe('review fixes', () => {
     expect(stats.min).toBe(-5);
     expect(stats.max).toBe(199_994);
     expect(run('clear', ods, 'A1:A200000', '--in-place').exit).toBe(0);
-  });
+    // Writing, reading and clearing 200,000 rows takes about 5 s on its own.
+  }, 30_000);
 
   it('refuses inserts that would push data off the sheet or reach past it', () => {
     const ods = path2('edge.ods');

@@ -43,6 +43,7 @@ export function chromeButtons(
       if (!onScreen(cell)) continue;
       const size = Math.min(14, cell.h - 2);
       const rect = { x: cell.x + cell.w - size - 2, y: cell.y + (cell.h - size) / 2, w: size, h: size };
+      if (!inPane(v, range.top, column, rect)) continue;
       const cf = spec?.columns.get(column);
       const isActive = !!cf && (cf.allowedValues != null || (cf.condition ?? '') !== '');
       out.push({ kind: 'filter', rect, column, range, hasHeader, active: isActive });
@@ -55,11 +56,8 @@ export function chromeButtons(
     if (onScreen(cell)) {
       // Inside the cell (clicks on the next column must select it) and clear of the fill handle.
       const size = Math.min(14, cell.h - 2);
-      out.push({
-        kind: 'validation',
-        rect: { x: cell.x + cell.w - size - 5, y: cell.y + (cell.h - size) / 2, w: size, h: size },
-        rule,
-      });
+      const rect = { x: cell.x + cell.w - size - 5, y: cell.y + (cell.h - size) / 2, w: size, h: size };
+      if (inPane(v, active.row, active.column, rect)) out.push({ kind: 'validation', rect, rule });
     }
   }
   return out;
@@ -111,4 +109,14 @@ export function drawChrome(
 
 function onScreen(r: Rect): boolean {
   return r.x + r.w > HEADER_WIDTH && r.y + r.h > HEADER_HEIGHT;
+}
+
+/**
+ * Whether a button sits wholly inside its cell's pane. A scrolled cell partly under the frozen
+ * rows or columns would otherwise draw its button over the frozen cells and take their clicks.
+ */
+function inPane(v: Viewport, row: number, column: number, r: Rect): boolean {
+  const left = column < v.frozenColumns ? HEADER_WIDTH : v.paneX;
+  const top = row < v.frozenRows ? HEADER_HEIGHT : v.paneY;
+  return r.x >= left && r.y >= top;
 }

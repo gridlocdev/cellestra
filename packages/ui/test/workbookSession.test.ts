@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EditRefusedError, type EditCommand } from '@cellestra/core';
+import { CellRange, CellValue, EditCommands, EditRefusedError, type EditCommand } from '@cellestra/core';
 import { WorkbookSession } from '../src/session/workbookSession.ts';
 
 const refusing: EditCommand = {
@@ -32,5 +32,34 @@ describe('WorkbookSession.execute', () => {
       },
     };
     expect(() => session.execute(broken)).toThrow('bug');
+  });
+});
+
+describe('WorkbookSession.cellsChangedSince', () => {
+  it('lists edited and recalculated cells, and is null after an edit it cannot follow', () => {
+    const session = new WorkbookSession();
+    const sheet = session.activeSheet.peek();
+    sheet.setFormula(0, 1, 'A1*2');
+    session.recalculateAll();
+    const start = session.version.peek();
+    session.execute(EditCommands.setInput(sheet.name, 0, 0, '5', 'en-US'));
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(10));
+    expect(session.cellsChangedSince(sheet.name, start)).toEqual([
+      { row: 0, column: 0 },
+      { row: 0, column: 1 },
+    ]);
+    expect(session.cellsChangedSince('Other', start)).toEqual([]);
+    const wb = session.workbook.peek();
+    const bold = (range: string) =>
+      EditCommands.applyStyle(wb, sheet.name, CellRange.parse(range), (s) => ({
+        ...s,
+        font: { ...s.font, bold: true },
+      }));
+    const before = session.version.peek();
+    session.execute(bold('C3'));
+    expect(session.cellsChangedSince(sheet.name, before)).toEqual([{ row: 2, column: 2 }]);
+    // A whole-column style reports no cells: the grid has to measure everything again.
+    session.execute(bold('D1:D1048576'));
+    expect(session.cellsChangedSince(sheet.name, start)).toBeNull();
   });
 });

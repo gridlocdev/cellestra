@@ -13,6 +13,7 @@ import {
   Workbook,
   readCsv,
   writeCsv,
+  type CellRef,
   type CellStyle,
   type CellValue,
   type EditCommand,
@@ -22,6 +23,15 @@ import {
 } from '@cellestra/core';
 import type { DocumentRef } from '../platform/fileStore.ts';
 import type { SelectionState } from './selection.ts';
+
+/** A cell's position within its sheet. */
+export interface CellPosition {
+  readonly row: number;
+  readonly column: number;
+}
+/** How many versions back `cellsChangedSince` can answer, and the most cells one version logs. */
+const CELL_LOG_VERSIONS = 64;
+const CELL_LOG_MAX_CELLS = 50_000;
 
 export type DocumentFormat = 'ods' | 'csv';
 
@@ -236,8 +246,9 @@ export class WorkbookSession {
   /** Recalculate TODAY/NOW/RAND cells (on focus or a timer). */
   recalculateVolatile(): void {
     if (this.#engine.volatileCells.length === 0) return;
-    this.#engine.recalculateVolatile();
+    const recalc = this.#engine.recalculateVolatile();
     this.#version.value++;
+    this.#logCells([recalc.evaluatedCells]);
   }
 
   /** A change made outside the history (resizing columns isn't worth an undo step in some flows). */
@@ -252,11 +263,14 @@ export class WorkbookSession {
 
   #apply(result: EditResult): void {
     let circular = this.#circular.peek();
+    let evaluated: readonly CellRef[] = [];
     if (result.structural) {
       this.#engine.rebuildGraph();
       circular = this.#engine.recalculateAll().hasCircularReference;
     } else if (result.changedCells.length > 0) {
-      circular = this.#engine.recordEdits(result.changedCells).hasCircularReference;
+      const recalc = this.#engine.recordEdits(result.changedCells);
+      circular = recalc.hasCircularReference;
+      evaluated = recalc.evaluatedCells;
     }
     batch(() => {
       this.#modified.value = true;
@@ -265,6 +279,53 @@ export class WorkbookSession {
       if (result.structural) this.#structure.value++;
       this.#version.value++;
     });
+    // A style edit reports no cells: what it changed is unknown here, so it is logged as such.
+    this.#logCells(
+      result.structural || result.changedCells.length === 0 ? null : [result.changedCells, evaluated],
+    );
+  }
+
+  /** Cells each recent version changed, per lower-cased sheet name; null when that isn't known. */
+  readonly #cellLog = new Map<number, Map<string, CellPosition[]> | null>();
+
+  #logCells(groups: (readonly (CellPosition & { readonly sheet: string })[])[] | null): void {
+    const version = this.#version.peek();
+    if (this.#cellLog.size >= CELL_LOG_VERSIONS)
+      for (const v of this.#cellLog.keys()) if (v <= version - CELL_LOG_VERSIONS) this.#cellLog.delete(v);
+    let total = 0;
+    for (const g of groups ?? []) total += g.length;
+    if (!groups || total > CELL_LOG_MAX_CELLS) {
+      this.#cellLog.set(version, null);
+      return;
+    }
+    const bySheet = new Map<string, CellPosition[]>();
+    for (const g of groups)
+      for (const c of g) {
+        const key = c.sheet.toLowerCase();
+        let list = bySheet.get(key);
+        if (!list) bySheet.set(key, (list = []));
+        list.push({ row: c.row, column: c.column });
+      }
+    this.#cellLog.set(version, bySheet);
+  }
+
+  /**
+   * The cells of `sheet` changed (edited or recalculated) since `version`, so a view can update
+   * only what moved. Null when that can't be told (a structural or style edit, a load, or too long
+   * ago): the view then rebuilds from scratch.
+   */
+  cellsChangedSince(sheet: string, version: number): CellPosition[] | null {
+    const now = this.#version.peek();
+    if (version > now || now - version >= CELL_LOG_VERSIONS) return null;
+    const key = sheet.toLowerCase();
+    const out: CellPosition[] = [];
+    for (let v = version + 1; v <= now; v++) {
+      const entry = this.#cellLog.get(v);
+      if (!entry) return null;
+      const cells = entry.get(key);
+      if (cells) for (const c of cells) out.push(c);
+    }
+    return out;
   }
 
   #entry(): HistoryEntry {

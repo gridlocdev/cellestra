@@ -211,6 +211,23 @@ describe('saving', () => {
     expect(browserSave).not.toHaveBeenCalled();
     expect(browserSaveAs).toHaveBeenCalledOnce();
   });
+
+  it('keeps a document downloaded as a copy marked unsaved', async () => {
+    const app = await makeApp();
+    app.session.load(csvBytes, { store: 'browser', name: 'up.csv', id: 'up.csv', version: '1' });
+    app.session.touch();
+    vi.spyOn(app.browser, 'saveAs').mockResolvedValue({
+      store: 'browser',
+      name: 'up.csv',
+      id: 'up.csv',
+      version: null,
+      downloaded: true,
+    });
+    vi.spyOn(app, 'askCsvLoss').mockResolvedValue('csv');
+    expect(await app.save()).toBe(true);
+    expect(app.session.modified.peek()).toBe(true);
+    expect(app.toast.peek()?.text).toMatch(/^Downloaded up\.csv/);
+  });
 });
 
 describe('recovery and reloads', () => {

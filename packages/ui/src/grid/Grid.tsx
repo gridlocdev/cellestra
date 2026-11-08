@@ -33,7 +33,7 @@ import {
   type DisplayText,
   type GridOverlay,
 } from './render.ts';
-import { contentRowHeights } from './rowHeights.ts';
+import { ContentHeights } from './rowHeights.ts';
 import { insertLineBreak } from '../components/lineBreak.ts';
 import { Viewport, HEADER_HEIGHT, HEADER_WIDTH, type Rect } from './viewport.ts';
 import type { GridPalette } from './palette.ts';
@@ -45,6 +45,11 @@ export interface GridHost {
   readonly styles: StylePool;
   /** Bumped on every model change; the grid redraws when it moves. */
   readonly version: ReadonlySignal<number>;
+  /**
+   * The cells of `sheet` changed since `version` (edited or recalculated), or null when that is
+   * unknown. Lets the grid re-measure row heights for just those cells.
+   */
+  cellsChangedSince?(sheet: string, version: number): readonly { row: number; column: number }[] | null;
   display(value: CellValue, style: CellStyle): DisplayText;
   /** What the inline editor starts with (`=SUM(A1:A3)` for formulas, the raw input otherwise). */
   editText(row: number, column: number): string;
@@ -199,6 +204,8 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     chrome: [] as ChromeButton[],
     /** Rows their content makes taller, for `contentVersion`. */
     content: new Map<number, number>(),
+    /** What `content` is kept up to date by, edit by edit. */
+    heights: null as ContentHeights | null,
     contentVersion: -1,
     contentStamp: -1,
     /** A fill-handle drag's target, outlined while dragging. */
@@ -239,13 +246,17 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   /** Recompute the rows content makes taller; true when that changed. */
   const refreshContentHeights = (sheet: Worksheet, version: number): boolean => {
     const s = state.current;
-    if (s.contentVersion === version && s.contentStamp === sheet.layoutStamp && s.axesSheet === sheet)
-      return false;
+    const same = s.heights?.sheet === sheet && s.contentStamp === sheet.layoutStamp;
+    if (same && s.contentVersion === version) return false;
+    const since = s.contentVersion;
     s.contentVersion = version;
     s.contentStamp = sheet.layoutStamp;
+    // Same sheet and layout: re-measure only the cells edited or recalculated since.
+    const changed = same ? host.cellsChangedSince?.(sheet.name, since) : null;
+    if (changed && s.heights) return s.heights.update(changed);
     measureCtx.current ??= document.createElement('canvas').getContext('2d');
     const ctx = measureCtx.current;
-    const next = contentRowHeights(sheet, host.styles, {
+    s.heights = new ContentHeights(sheet, host.styles, {
       display: (value, style) => host.display(value, style).text,
       wrappedLines: (text, style, width) => {
         if (!ctx) return text.split('\n').length;
@@ -255,6 +266,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       columnWidth: (c) => sheet.columns.get(c)?.width ?? Defaults.columnWidth,
     });
     const prev = s.content;
+    const next = s.heights.rows;
     s.content = next;
     if (prev.size !== next.size) return true;
     for (const [k, h] of next) if (prev.get(k) !== h) return true;

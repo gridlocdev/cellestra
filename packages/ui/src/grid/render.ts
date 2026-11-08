@@ -251,17 +251,52 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
     ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
   }
 
-  drawSelection(input);
-  if (input.overlay) drawOverlay(input, input.overlay);
+  // Selection and overlays only for the lines this pane holds: a scrolled cell partly under the
+  // frozen lines would otherwise be outlined over the frozen cells.
+  const pane: Range = {
+    top: rows[0]!.frozen ? 0 : v.frozenRows,
+    bottom: rows[0]!.frozen ? v.frozenRows - 1 : Number.MAX_SAFE_INTEGER,
+    left: cols[0]!.frozen ? 0 : v.frozenColumns,
+    right: cols[0]!.frozen ? v.frozenColumns - 1 : Number.MAX_SAFE_INTEGER,
+  };
+  drawSelection(input, pane);
+  if (input.overlay) drawOverlay(input, input.overlay, pane);
   ctx.restore();
+}
+
+/**
+ * Where `r` shows inside `pane`: the rect of its part in the pane, with any side where it runs on
+ * into the next pane pushed past the clip so no outline is drawn at the divider. Null when none of
+ * it is in the pane.
+ */
+function paneRect(v: Viewport, r: Range, pane: Range): Rect | null {
+  const top = Math.max(r.top, pane.top);
+  const left = Math.max(r.left, pane.left);
+  const bottom = Math.min(r.bottom, pane.bottom, v.rows.count - 1);
+  const right = Math.min(r.right, pane.right, v.columns.count - 1);
+  if (top > bottom || left > right) return null;
+  let { x, y, w, h } = v.rangeRect(top, left, bottom, right);
+  const out = 4;
+  if (top > r.top) {
+    y -= out;
+    h += out;
+  }
+  if (left > r.left) {
+    x -= out;
+    w += out;
+  }
+  if (bottom < r.bottom) h += out;
+  if (right < r.right) w += out;
+  return { x, y, w, h };
 }
 
 /** Marching-ants dash lengths. */
 export const MARQUEE_DASH = [4, 3] as const;
 
-function drawOverlay(input: RenderInput, o: GridOverlay): void {
+function drawOverlay(input: RenderInput, o: GridOverlay, pane: Range): void {
   const { ctx, viewport: v, palette } = input;
-  const rectOf = (r: Range) => v.rangeRect(r.top, r.left, r.bottom, Math.min(r.right, v.columns.count - 1));
+  const none = { x: -100, y: -100, w: 0, h: 0 };
+  const rectOf = (r: Range) => paneRect(v, r, pane) ?? none;
   ctx.save();
   if (o.point) {
     const p = rectOf(o.point);
@@ -482,19 +517,19 @@ function spillRect(
   return { x: x0, y: rect.y, w: x1 - x0, h: rect.h };
 }
 
-function drawSelection(input: RenderInput): void {
+function drawSelection(input: RenderInput, pane: Range): void {
   const { ctx, viewport: v, palette, selection, sheet } = input;
   ctx.fillStyle = palette.selectionFill;
   for (const r of selection.ranges) {
     const single = r.top === r.bottom && r.left === r.right;
     // A lone cell shows only its outline; in a multi-range selection every piece is shaded.
     if (single && selection.ranges.length === 1) continue;
-    const rect = v.rangeRect(r.top, r.left, r.bottom, Math.min(r.right, v.columns.count - 1));
-    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    const rect = paneRect(v, r, pane);
+    if (rect) ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
   }
   const last = selection.ranges[selection.ranges.length - 1];
-  if (last) {
-    const rr = v.rangeRect(last.top, last.left, last.bottom, last.right);
+  const rr = last && paneRect(v, last, pane);
+  if (rr) {
     ctx.strokeStyle = palette.activeOutline;
     ctx.lineWidth = 1;
     ctx.strokeRect(rr.x + 0.5, rr.y + 0.5, rr.w - 1, rr.h - 1);
@@ -509,13 +544,20 @@ function drawSelection(input: RenderInput): void {
         last.left === active.left &&
         last.bottom === active.bottom &&
         last.right === active.right));
-  if (onlyActive) {
-    const a = v.rangeRect(active.top, active.left, active.bottom, active.right);
+  const a = onlyActive ? paneRect(v, active, pane) : null;
+  if (a) {
     ctx.strokeStyle = palette.activeOutline;
     ctx.lineWidth = 2;
     ctx.strokeRect(a.x + 1, a.y + 1, a.w - 2, a.h - 2);
   }
-  const handle = input.overlay?.fill ? null : fillHandleRect(v, selection);
+  // The handle sits on the last range's bottom-right cell: drawn in that cell's pane only.
+  const inPane =
+    !!last &&
+    last.bottom >= pane.top &&
+    last.bottom <= pane.bottom &&
+    last.right >= pane.left &&
+    last.right <= pane.right;
+  const handle = input.overlay?.fill || !inPane ? null : fillHandleRect(v, selection);
   if (handle) {
     ctx.fillStyle = palette.activeOutline;
     ctx.fillRect(handle.x, handle.y, handle.w, handle.h);
@@ -532,39 +574,64 @@ function drawHeaders(input: RenderInput): void {
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
 
+  // A scrolled band partly under the frozen lines is clipped to its own pane, so its label, fill
+  // and divider never draw over the frozen headers. The frozen pane keeps 1px more for its last divider.
+  const clipped = (x: number, y: number, w: number, h: number, draw: () => void) => {
+    if (w <= 0 || h <= 0) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    draw();
+    ctx.restore();
+  };
+  const columnPane = (frozen: boolean, draw: () => void) =>
+    frozen
+      ? clipped(HEADER_WIDTH, 0, v.paneX - HEADER_WIDTH + 1, HEADER_HEIGHT, draw)
+      : clipped(v.paneX, 0, v.width - v.paneX, HEADER_HEIGHT, draw);
+  const rowPane = (frozen: boolean, draw: () => void) =>
+    frozen
+      ? clipped(0, HEADER_HEIGHT, HEADER_WIDTH, v.paneY - HEADER_HEIGHT + 1, draw)
+      : clipped(0, v.paneY, HEADER_WIDTH, v.height - v.paneY, draw);
+
   ctx.fillStyle = palette.headerFill;
   ctx.fillRect(0, 0, v.width, HEADER_HEIGHT);
-  for (const cb of v.visibleColumns) {
-    if (!cb.frozen && cb.start + cb.size < v.paneX) continue;
-    const active = inSel((r) => cb.index >= r.left && cb.index <= r.right);
-    if (active) {
-      ctx.fillStyle = palette.activeHeaderFill;
-      ctx.fillRect(cb.start, 0, cb.size, HEADER_HEIGHT);
-    }
-    ctx.fillStyle = palette.headerText;
-    ctx.fillText(SheetDimensions.columnToLetters(cb.index), cb.start + cb.size / 2, HEADER_HEIGHT / 2);
-  }
-  ctx.fillStyle = palette.headerFill;
   ctx.fillRect(0, HEADER_HEIGHT, HEADER_WIDTH, v.height);
-  for (const rb of v.visibleRows) {
-    if (!rb.frozen && rb.start + rb.size < v.paneY) continue;
-    const active = inSel((r) => rb.index >= r.top && rb.index <= r.bottom);
-    if (active) {
-      ctx.fillStyle = palette.activeHeaderFill;
-      ctx.fillRect(0, rb.start, HEADER_WIDTH, rb.size);
-    }
-    ctx.fillStyle = palette.headerText;
-    ctx.fillText(String(rb.index + 1), HEADER_WIDTH / 2, rb.start + rb.size / 2);
+  ctx.strokeStyle = palette.gridLine;
+  ctx.lineWidth = 1;
+  for (const frozen of [false, true]) {
+    columnPane(frozen, () => {
+      ctx.beginPath();
+      for (const cb of v.visibleColumns) {
+        if (cb.frozen !== frozen) continue;
+        if (inSel((r) => cb.index >= r.left && cb.index <= r.right)) {
+          ctx.fillStyle = palette.activeHeaderFill;
+          ctx.fillRect(cb.start, 0, cb.size, HEADER_HEIGHT);
+        }
+        ctx.fillStyle = palette.headerText;
+        ctx.fillText(SheetDimensions.columnToLetters(cb.index), cb.start + cb.size / 2, HEADER_HEIGHT / 2);
+        line(ctx, crisp(cb.start + cb.size), 0, crisp(cb.start + cb.size), HEADER_HEIGHT);
+      }
+      ctx.stroke();
+    });
+    rowPane(frozen, () => {
+      ctx.beginPath();
+      for (const rb of v.visibleRows) {
+        if (rb.frozen !== frozen) continue;
+        if (inSel((r) => rb.index >= r.top && rb.index <= r.bottom)) {
+          ctx.fillStyle = palette.activeHeaderFill;
+          ctx.fillRect(0, rb.start, HEADER_WIDTH, rb.size);
+        }
+        ctx.fillStyle = palette.headerText;
+        ctx.fillText(String(rb.index + 1), HEADER_WIDTH / 2, rb.start + rb.size / 2);
+        line(ctx, 0, crisp(rb.start + rb.size), HEADER_WIDTH, crisp(rb.start + rb.size));
+      }
+      ctx.stroke();
+    });
   }
   ctx.fillStyle = palette.headerFill;
   ctx.fillRect(0, 0, HEADER_WIDTH, HEADER_HEIGHT);
-  ctx.strokeStyle = palette.gridLine;
-  ctx.lineWidth = 1;
   ctx.beginPath();
-  for (const cb of v.visibleColumns)
-    line(ctx, crisp(cb.start + cb.size), 0, crisp(cb.start + cb.size), HEADER_HEIGHT);
-  for (const rb of v.visibleRows)
-    line(ctx, 0, crisp(rb.start + rb.size), HEADER_WIDTH, crisp(rb.start + rb.size));
   line(ctx, 0, crisp(HEADER_HEIGHT), v.width, crisp(HEADER_HEIGHT));
   line(ctx, crisp(HEADER_WIDTH), 0, crisp(HEADER_WIDTH), v.height);
   ctx.stroke();

@@ -89,7 +89,7 @@ export class BrowserStore implements FileStore {
     }
     // No handle (an uploaded or dropped file): the controller sends these through Save As.
     download(ref.name, bytes);
-    return ref;
+    return { ...ref, downloaded: true };
   }
 
   async saveAs(suggestedName: string, bytes: Uint8Array): Promise<DocumentRef | null> {
@@ -110,7 +110,7 @@ export class BrowserStore implements FileStore {
       }
     }
     download(suggestedName, bytes);
-    return { store: 'browser', name: suggestedName, id: suggestedName, version: null };
+    return { store: 'browser', name: suggestedName, id: suggestedName, version: null, downloaded: true };
   }
 
   private async fromHandle(handle: FileSystemFileHandle): Promise<OpenedDocument> {

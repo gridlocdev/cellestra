@@ -129,6 +129,8 @@ export interface DataTarget {
 }
 
 const RECOVERY_INTERVAL_MS = 30_000;
+/** A recovery snapshot is also taken this long after the last edit, so a pause in typing is safe. */
+const RECOVERY_IDLE_MS = 3_000;
 const THEME_KEY = 'cellestra.theme';
 const LAYOUT_KEY = 'cellestra.layout';
 const RIBBON_COLLAPSED_KEY = 'cellestra.ribbonCollapsed';
@@ -282,6 +284,18 @@ export class AppController {
       }
       void this.refreshRecents();
       setInterval(() => void this.snapshot(), RECOVERY_INTERVAL_MS);
+      // Snapshot once editing pauses, and when the tab is hidden or closed (the last moment a
+      // write to IndexedDB still reliably lands), so a crash loses seconds, not half a minute.
+      let idle: ReturnType<typeof setTimeout> | null = null;
+      effect(() => {
+        void this.session.version.value;
+        if (idle) clearTimeout(idle);
+        idle = setTimeout(() => void this.snapshot(), RECOVERY_IDLE_MS);
+      });
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') void this.snapshot();
+      });
+      addEventListener('pagehide', () => void this.snapshot());
       addEventListener('focus', () => {
         this.session.recalculateVolatile();
         this.focusGridIfIdle();
@@ -549,7 +563,8 @@ export class AppController {
     const bytes = this.session.serialize();
     try {
       const saved = await store.save(ref, bytes, { force });
-      this.saved(saved, edits, generation);
+      if (saved.downloaded) this.info(`Downloaded ${saved.name}`);
+      else this.saved(saved, edits, generation);
       return true;
     } catch (e) {
       if (!(e instanceof ConflictError)) {
@@ -586,6 +601,12 @@ export class AppController {
       if (!saved) return false;
       if (isExport) {
         this.info(`Exported ${saved.name}`);
+        return true;
+      }
+      if (saved.downloaded) {
+        // The browser can't confirm the download was kept: keep the changes marked unsaved and
+        // the recovery snapshot, so closing the tab still warns and nothing is lost.
+        this.info(`Downloaded ${saved.name}. This browser can't save in place, so it stays marked unsaved.`);
         return true;
       }
       this.saved(saved, edits, generation);
@@ -1042,9 +1063,24 @@ export class AppController {
     };
     if (at) visit(at.row, at.column);
     else {
+      // Walk whichever is smaller: the selected cells, or the cells the sheet stores.
       const ranges = this.ranges;
-      for (const [row, column] of sheet.enumerateCells())
-        if (ranges.some((r) => r.contains(row, column))) visit(row, column);
+      const area = ranges.reduce((n, r) => n + r.cellCount, 0);
+      if (area <= sheet.cellCount) {
+        const seen = ranges.length > 1 ? new Set<number>() : null;
+        for (const r of ranges)
+          for (let row = r.top; row <= r.bottom; row++)
+            for (let column = r.left; column <= r.right; column++) {
+              if (seen) {
+                const key = row * 16384 + column;
+                if (seen.has(key)) continue;
+                seen.add(key);
+              }
+              visit(row, column);
+            }
+      } else
+        for (const [row, column] of sheet.enumerateCells())
+          if (ranges.some((r) => r.contains(row, column))) visit(row, column);
     }
     if (positions.length === 0) return false;
     this.run(EditCommands.setChecked(this.sheetName, positions, anyClear));

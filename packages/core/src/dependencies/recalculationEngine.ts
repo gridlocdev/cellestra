@@ -18,15 +18,22 @@ export interface RecalculationResult {
   readonly evaluated: number;
   readonly circularCells: readonly CellRef[];
   readonly hasCircularReference: boolean;
+  /** The formula cells this pass wrote a result to (circular ones included). */
+  readonly evaluatedCells: readonly CellRef[];
 }
 
 /** The parse cache is dropped when it grows past this many distinct formula texts. */
 const MAX_PARSE_CACHE = 50_000;
 
-const result = (evaluated: number, circularCells: readonly CellRef[]): RecalculationResult => ({
+const result = (
+  evaluated: number,
+  circularCells: readonly CellRef[],
+  evaluatedCells: readonly CellRef[] = [],
+): RecalculationResult => ({
   evaluated,
   circularCells,
   hasCircularReference: circularCells.length > 0,
+  evaluatedCells,
 });
 
 /**
@@ -231,7 +238,12 @@ export class RecalculationEngine {
       circularCells.push(ref);
       this.#writeResult(ref, CellValue.error(CellError.circular()));
     }
-    return result(ordered.length, circularCells);
+    const evaluatedCells: CellRef[] = [...circularCells];
+    for (const key of ordered) {
+      const ref = this.#refOf(key);
+      if (ref) evaluatedCells.push(ref);
+    }
+    return result(ordered.length, circularCells, evaluatedCells);
   }
 
   #refOf(key: string): CellRef | null {

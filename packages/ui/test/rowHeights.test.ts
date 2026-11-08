@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CellRange, CellValue, Defaults, MergedRegion, Workbook, type CellStyle } from '@cellestra/core';
-import { contentRowHeights, textHeight, type RowMeasure } from '../src/grid/rowHeights.ts';
+import { ContentHeights, contentRowHeights, textHeight, type RowMeasure } from '../src/grid/rowHeights.ts';
 
 /** Every character is 6px wide; wrapping is by character count. */
 const measure: RowMeasure = {
@@ -54,5 +54,38 @@ describe('contentRowHeights', () => {
     const heights = contentRowHeights(sheet, wb.styles, measure);
     expect(heights.get(0)).toBe(textHeight(10, 3));
     expect(heights.has(4)).toBe(false);
+  });
+});
+
+describe('ContentHeights.update', () => {
+  it('re-measures only the edited cells and matches a full pass', () => {
+    const big = styled((s) => ({ ...s, font: { ...s.font, sizePoints: 24 } }));
+    big.put(2, 0, 'Title');
+    big.put(2, 3, 'Other');
+    const heights = new ContentHeights(big.sheet, big.wb.styles, measure);
+    const tall = heights.rows.get(2)!;
+    expect(tall).toBeGreaterThan(Defaults.rowHeight);
+
+    // Clearing one of two tall cells keeps the row tall; clearing both shrinks it.
+    big.sheet.remove(2, 0);
+    expect(heights.update([{ row: 2, column: 0 }])).toBe(false);
+    expect(heights.rows.get(2)).toBe(tall);
+    big.sheet.remove(2, 3);
+    expect(heights.update([{ row: 2, column: 3 }])).toBe(true);
+    expect(heights.rows.has(2)).toBe(false);
+
+    // A new tall cell grows its row, and the result equals measuring from scratch.
+    big.put(7, 1, 'New');
+    expect(heights.update([{ row: 7, column: 1 }])).toBe(true);
+    expect([...heights.rows]).toEqual([...contentRowHeights(big.sheet, big.wb.styles, measure)]);
+  });
+
+  it('grows a row when typed text gets a line break', () => {
+    const wb = Workbook.createNew();
+    const sheet = wb.worksheets[0]!;
+    const heights = new ContentHeights(sheet, wb.styles, measure);
+    sheet.setValue(4, 0, CellValue.text('one\ntwo\nthree'));
+    expect(heights.update([{ row: 4, column: 0 }])).toBe(true);
+    expect(heights.rows.get(4)).toBe(textHeight(Defaults.fontSizePoints, 3));
   });
 });
