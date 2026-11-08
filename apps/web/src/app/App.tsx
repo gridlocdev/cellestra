@@ -1,4 +1,4 @@
-import { useComputed, useSignal, useSignalEffect } from '@preact/signals';
+import { useComputed, useSignal, useSignalEffect, type ReadonlySignal } from '@preact/signals';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { SheetDimensions, type CellValue } from '@cellestra/core';
 import {
@@ -75,6 +75,8 @@ const TOOLBAR: readonly (string | '|')[] = [
 export function App({ app, catalog }: { readonly app: AppController; readonly catalog: CommandCatalog }) {
   const s = app.session;
   const dragging = useSignal(false);
+  /** The cell editor's text while editing: the formula bar shows it as it is typed. */
+  const draft = useSignal<string | null>(null);
 
   const host = useMemo<GridHost>(
     () => ({
@@ -85,6 +87,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       version: s.version,
       display: (value: CellValue, style) => ({ text: s.display(value, style) }),
       editText: (row, column) => s.editText(row, column),
+      draft: (text) => (draft.value = text),
       commit: (row, column, text) => app.commit(row, column, text),
       clearSelection: () => app.clearContents(),
       edge: (row, column, dr, dc) => app.edge(row, column, dr, dc),
@@ -113,7 +116,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       },
       openLink: (row, column) => app.openLink(row, column),
     }),
-    [app, catalog, s],
+    [app, catalog, s, draft],
   );
 
   // Shortcuts that fire anywhere (outside the grid too): ⌘K, ⌘S, ⌘O…
@@ -207,7 +210,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
     <div class={`cs-app ${isMacNative ? 'cs-native-mac' : ''}`}>
       {isMacNative && <TitleBar app={app} />}
       <Toolbar app={app} catalog={catalog} titleInline={!isMacNative} />
-      <FormulaBarConnected app={app} />
+      <FormulaBarConnected app={app} draft={draft} />
       <div class="cs-main" onPointerUp={() => app.selectionDone()}>
         {s.activeSheet.value.isChartSheet ? (
           <ChartPane app={app} />
@@ -320,7 +323,13 @@ function Toolbar({
   );
 }
 
-function FormulaBarConnected({ app }: { readonly app: AppController }) {
+function FormulaBarConnected({
+  app,
+  draft,
+}: {
+  readonly app: AppController;
+  readonly draft: ReadonlySignal<string | null>;
+}) {
   const s = app.session;
   const address = useComputed(() => {
     const st = app.selection.state.value;
@@ -332,6 +341,8 @@ function FormulaBarConnected({ app }: { readonly app: AppController }) {
   const content = useComputed(() => {
     void s.version.value;
     void s.activeSheet.value;
+    const typing = draft.value;
+    if (typing !== null) return typing;
     const { row, column } = app.selection.active.value;
     return s.editText(row, column);
   });

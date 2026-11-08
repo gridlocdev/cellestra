@@ -17,6 +17,11 @@ export interface GridHost {
   display(value: CellValue, style: CellStyle): DisplayText;
   /** What the inline editor starts with (`=SUM(A1:A3)` for formulas, the raw input otherwise). */
   editText(row: number, column: number): string;
+  /**
+   * The inline editor's text as it is typed (so the formula bar can mirror it), and null once
+   * the edit ends.
+   */
+  draft?(text: string | null): void;
   /** Return false to reject the entry (validation): the editor stays open. */
   commit(row: number, column: number, text: string): boolean | void;
   clearSelection(): void;
@@ -266,6 +271,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const editor = editorRef.current!;
     editor.value = initial ?? host.editText(row, column);
     setEditing({ row, column });
+    host.draft?.(editor.value);
     // Show and focus synchronously, inside the key event: the next keystrokes (and an IME
     // composition) must land in the editor, not the grid.
     reveal(row, column);
@@ -285,6 +291,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       return false;
     }
     setEditing(null);
+    host.draft?.(null);
     if (refocus) rootRef.current?.focus();
     if (move[0] || move[1]) moveActive(move[0], move[1], false, true);
     return true;
@@ -665,6 +672,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         spellcheck={false}
         autocomplete="off"
         onKeyDown={onEditorKeyDown}
+        onInput={(e) => host.draft?.((e.currentTarget as HTMLTextAreaElement).value)}
         onBlur={(e) => {
           // Grid clicks are handled (and any rejection reported) by onPointerDown.
           if (rootRef.current?.contains(e.relatedTarget as Node | null)) return;
