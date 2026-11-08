@@ -461,6 +461,24 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     } else if (e.key === 'Tab') {
       e.preventDefault();
       endEdit(true, [0, e.shiftKey ? -1 : 1]);
+    } else if (
+      (e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey
+    ) {
+      // ↑/↓ commit and move a cell, like Enter. In multi-line text they move between lines
+      // first, and only leave the cell from the first or last line.
+      const editor = e.currentTarget as HTMLTextAreaElement;
+      const up = e.key === 'ArrowUp';
+      const caret = editor.selectionStart;
+      const onEdgeLine = up
+        ? !editor.value.slice(0, caret).includes('\n')
+        : !editor.value.slice(caret).includes('\n');
+      if (!onEdgeLine) return;
+      e.preventDefault();
+      endEdit(true, [up ? -1 : 1, 0]);
     }
   };
 
