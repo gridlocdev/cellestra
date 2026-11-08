@@ -3,31 +3,41 @@ import type { CellRange } from '../model/cellRange.ts';
 import type { BinaryExpr, Expr, UnaryExpr } from './ast/expr.ts';
 import {
   BINARY_SYMBOL,
-  binaryPrecedence,
   FormulaWriter,
   literalText,
   wholeLinesText,
+  writtenPrecedence,
 } from './formulaWriter.ts';
 import { Parser } from './parsing/parser.ts';
 
 const PREFIX = 'of:=';
 const ERROR_REFS = new Set(['#REF!', '#NAME?', '#N/A', '#VALUE!', '#DIV/0!']);
 
+/**
+ * Excel 2010+ functions LibreOffice Calc stores under the `COM.MICROSOFT.` namespace in OpenFormula
+ * (unprefixed, Calc reads them as #NAME?). Written with the prefix, read back without it.
+ */
+const MICROSOFT_PREFIX = 'COM.MICROSOFT.';
+const MICROSOFT_FUNCTIONS = new Set([
+  'CONCAT',
+  'TEXTJOIN',
+  'IFS',
+  'SWITCH',
+  'MAXIFS',
+  'MINIFS',
+  'XLOOKUP',
+  'XMATCH',
+]);
+const MICROSOFT_CALL = /^COM\.MICROSOFT\.([A-Z][A-Z0-9.]*)(?=\s*\()/i;
+
 // ---- A1 AST → OpenFormula --------------------------------------------------
 
-// Readers disagree on whether unary minus binds tighter than ^ (OpenFormula and Calc: yes; Cellestra,
-// PRD §8: no, so -2^2 = -4). The writer never leaves that to the reader: a sign on a power is written
-// `-(2^2)` and a power of a signed value `(-2)^2`, which every reader evaluates the same way.
-
-function precedence(expr: Expr): number {
-  if (expr.kind === 'binary') return binaryPrecedence(expr.operator, 5);
-  if (expr.kind === 'unary') return expr.operator === 'percent' ? 7 : 6;
-  return 8;
-}
+// OpenFormula, LibreOffice Calc and Cellestra all bind a prefix sign tighter than ^ (-2^2 = 4). The
+// writer still spells a signed base `(-2)^2`, so no reader is left to guess.
 
 function withParens(expr: Expr, minPrecedence: number): string {
   const rendered = render(expr);
-  return precedence(expr) < minPrecedence ? `(${rendered})` : rendered;
+  return writtenPrecedence(expr) < minPrecedence ? `(${rendered})` : rendered;
 }
 
 function renderUnary(u: UnaryExpr): string {
@@ -42,7 +52,7 @@ function renderUnary(u: UnaryExpr): string {
 }
 
 function renderBinary(b: BinaryExpr): string {
-  const p = precedence(b);
+  const p = writtenPrecedence(b);
   const signedBase = b.operator === 'power' && b.left.kind === 'unary' && b.left.operator !== 'percent';
   const left = signedBase ? `(${render(b.left)})` : withParens(b.left, p);
   return `${left}${BINARY_SYMBOL[b.operator]}${withParens(b.right, p + 1)}`;
@@ -74,8 +84,10 @@ function render(expr: Expr): string {
       return renderUnary(expr);
     case 'binary':
       return renderBinary(expr);
-    case 'call':
-      return `${expr.name}(${expr.args.map(render).join(';')})`; // OpenFormula argument separator
+    case 'call': {
+      const name = MICROSOFT_FUNCTIONS.has(expr.name) ? MICROSOFT_PREFIX + expr.name : expr.name;
+      return `${name}(${expr.args.map(render).join(';')})`; // OpenFormula argument separator
+    }
   }
 }
 
@@ -113,11 +125,23 @@ function convertReferencesAndSeparators(body: string): string {
         out += c;
         continue;
       }
-      const inner = body.slice(i + 1, close); // ".A1", ".A1:.A3", "Sheet2.A1", "#REF!"
-      out += ERROR_REFS.has(inner) ? '#REF!' : inner.split(':').map(convertCorner).join(':');
+      const inner = body.slice(i + 1, close); // ".A1", ".A1:.A3", "Sheet2.A1", "#REF!", ".#REF!"
+      // Calc writes a reference broken by a deletion as [#REF!], [.#REF!], [.A1:.#REF!] or
+      // [$#REF!.A1]: any of them is one broken reference.
+      out +=
+        ERROR_REFS.has(inner) || inner.toUpperCase().includes('#REF!')
+          ? '#REF!'
+          : inner.split(':').map(convertCorner).join(':');
       i = close;
     } else if (c === ';') {
       out += ','; // OpenFormula → internal argument separator
+    } else if ((c === 'C' || c === 'c') && !/[\p{L}\p{Nd}_.$]/u.test(body[i - 1] ?? '')) {
+      const call = MICROSOFT_CALL.exec(body.slice(i, i + 64));
+      const name = call?.[1]?.toUpperCase();
+      if (call && name && MICROSOFT_FUNCTIONS.has(name)) {
+        out += name;
+        i += call[0].length - 1;
+      } else out += c;
     } else {
       out += c;
     }

@@ -57,10 +57,16 @@ describe('Functions', () => {
     expect(errorToken(formula)).toBe('#VALUE!');
   });
 
-  // Number→text coercion keeps fixed-point across Calc's wide band.
+  // Number→text coercion keeps fixed-point across Calc's wide band; integers a double holds
+  // exactly print in full, larger ones in scientific notation like Calc.
   it.each([
     ['0.000001&""', '0.000001'],
-    ['100000000000000000&""', '100000000000000000'],
+    ['1000000000000000&""', '1000000000000000'],
+    ['1234567890123456&""', '1234567890123456'],
+    ['100000000000000000&""', '1E+17'],
+    ['2^60&""', '1.15292150460685E+18'],
+    ['-(2^60)&""', '-1.15292150460685E+18'],
+    ['2^53&""', '9.00719925474099E+15'],
   ])('number to text avoids scientific notation: %s', (formula, expected) => {
     expect(text(formula)).toBe(expected);
   });

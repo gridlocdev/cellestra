@@ -64,9 +64,11 @@ describe('OpenFormulaTranslator round-trips what it cannot rewrite', () => {
 describe('unary minus and ^ mean the same in both directions', () => {
   it.each([
     ['(-2)^2', 4],
-    ['-2^2', -4],
+    ['-2^2', 4],
     ['-(2^2)', -4],
     ['2^-1', 0.5],
+    ['-2^-2', 0.25],
+    ['2*-3^2', 18],
   ])('%s keeps its value through OpenFormula', (formula, value) => {
     const back = OpenFormulaTranslator.fromOpenFormula(OpenFormulaTranslator.toOpenFormula(formula));
     expect(evaluate(back)).toEqual(CellValue.number(value));
@@ -75,7 +77,17 @@ describe('unary minus and ^ mean the same in both directions', () => {
 
   it('writes the ambiguous forms with parentheses', () => {
     expect(OpenFormulaTranslator.toOpenFormula('(-2)^2')).toBe('of:=(-2)^2');
-    expect(OpenFormulaTranslator.toOpenFormula('-2^2')).toBe('of:=-(2^2)');
+    expect(OpenFormulaTranslator.toOpenFormula('-2^2')).toBe('of:=(-2)^2');
+    expect(OpenFormulaTranslator.toOpenFormula('-(2^2)')).toBe('of:=-(2^2)');
+  });
+
+  // Calc evaluates of:=-[.B2]^2 as (-B2)^2 (B2=3 gives 9): the import must keep that value.
+  it("an imported signed power keeps Calc's meaning", () => {
+    expect(OpenFormulaTranslator.fromOpenFormula('of:=-[.B2]^2')).toBe('-B2^2');
+    expect(OpenFormulaTranslator.fromOpenFormula('of:=-([.B2]^2)')).toBe('-(B2^2)');
+    expect(OpenFormulaTranslator.fromOpenFormula('of:=EXP(-[.B2]^2/2)')).toBe('EXP(-B2^2/2)');
+    const back = OpenFormulaTranslator.fromOpenFormula('of:=-[.B2]^2');
+    expect(OpenFormulaTranslator.toOpenFormula(back)).toBe('of:=(-[.B2])^2');
   });
 });
 
@@ -91,5 +103,31 @@ describe('sheet names that need quoting', () => {
     expect(Parser.tryParse(written).ok).toBe(true);
     expect(OpenFormulaTranslator.toOpenFormula(written)).toBe(openFormula);
     expect(OpenFormulaTranslator.fromOpenFormula(openFormula)).toBe(a1);
+  });
+});
+
+describe('Excel 2010+ functions in the COM.MICROSOFT namespace', () => {
+  it('CONCAT is written with the prefix LibreOffice needs and read back without it', () => {
+    expect(OpenFormulaTranslator.toOpenFormula('CONCAT("a",A1)')).toBe('of:=COM.MICROSOFT.CONCAT("a";[.A1])');
+    expect(OpenFormulaTranslator.fromOpenFormula('of:=COM.MICROSOFT.CONCAT("a";[.A1])')).toBe(
+      'CONCAT("a", A1)',
+    );
+    expect(OpenFormulaTranslator.fromOpenFormula('of:=com.microsoft.concat("a")')).toBe('CONCAT("a")');
+    expect(evaluate(OpenFormulaTranslator.fromOpenFormula('of:=COM.MICROSOFT.CONCAT("a";"b")'))).toEqual(
+      CellValue.text('ab'),
+    );
+  });
+
+  it.each(['TEXTJOIN', 'IFS', 'SWITCH', 'MAXIFS', 'MINIFS', 'XLOOKUP'])('%s round-trips', (name) => {
+    const openFormula = OpenFormulaTranslator.toOpenFormula(`${name}(1,2)`);
+    expect(openFormula).toBe(`of:=COM.MICROSOFT.${name}(1;2)`);
+    expect(OpenFormulaTranslator.fromOpenFormula(openFormula)).toBe(`${name}(1, 2)`);
+  });
+
+  it('leaves the prefix alone inside strings and on other functions', () => {
+    expect(OpenFormulaTranslator.fromOpenFormula('of:="COM.MICROSOFT.CONCAT("')).toBe(
+      '"COM.MICROSOFT.CONCAT("',
+    );
+    expect(OpenFormulaTranslator.toOpenFormula('SUM(1)')).toBe('of:=SUM(1)');
   });
 });

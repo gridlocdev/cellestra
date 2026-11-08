@@ -61,6 +61,70 @@ describe('large ranges', () => {
   });
 });
 
+describe('large ranges over formulas', () => {
+  // Formulas inside each other's large ranges used to cost one ordering edge (and one index scan)
+  // per formula per range: quadratic, seconds for a few thousand rows.
+  it('8000 running totals over a formula column rebuild, recalculate and edit quickly', () => {
+    const workbook = Workbook.createNew();
+    const sheet = workbook.activeSheet;
+    const rows = 8000;
+    sheet.setValue(0, 0, CellValue.number(1));
+    for (let r = 1; r < rows; r++) sheet.setFormula(r, 0, `A${r}+1`);
+    // IFERROR never reads its fallback, so this times the dependency tracking, not 32M cell reads.
+    for (let r = 0; r < rows; r++) sheet.setFormula(r, 1, `IFERROR(A${r + 1},SUM($A$1:A${r + 1}))`);
+    const started = performance.now();
+    const engine = new RecalculationEngine(workbook);
+    engine.rebuildGraph();
+    engine.recalculateAll();
+    sheet.setValue(0, 0, CellValue.number(2));
+    const edit = engine.recordEdits([CellRef.of(sheet.name, 0, 0)]);
+    const elapsed = performance.now() - started;
+    expect(edit.evaluated).toBe(2 * rows - 1);
+    expect(CellValue.asNumber(sheet.getValue(rows - 1, 1))).toBe(rows + 1);
+    expect(elapsed).toBeLessThan(3000); // ~0.3s here; it was several seconds
+  });
+
+  it('a large range waits for every formula inside it, wherever the range starts', () => {
+    const workbook = Workbook.createNew();
+    const sheet = workbook.activeSheet;
+    const rows = 3000;
+    // Column A: a chain; columns C/D: sums over windows of A that start part-way down.
+    sheet.setValue(0, 0, CellValue.number(1));
+    for (let r = 1; r < rows; r++) sheet.setFormula(r, 0, `A${r}+1`);
+    sheet.setFormula(0, 2, `SUM(A1001:A${rows})`);
+    sheet.setFormula(1, 2, `SUM(A1:A${rows})`);
+    sheet.setFormula(2, 2, `SUM(A1500:B2700)`);
+    sheet.setFormula(0, 3, `C1+C2`);
+    const engine = new RecalculationEngine(workbook);
+    engine.rebuildGraph();
+    const sum = (from: number, to: number): number => ((from + to) * (to - from + 1)) / 2;
+    engine.recalculateAll();
+    expect(CellValue.asNumber(sheet.getValue(0, 2))).toBe(sum(1001, rows));
+    expect(CellValue.asNumber(sheet.getValue(1, 2))).toBe(sum(1, rows));
+    expect(CellValue.asNumber(sheet.getValue(2, 2))).toBe(sum(1500, 2700));
+    sheet.setValue(0, 0, CellValue.number(2));
+    engine.recordEdits([CellRef.of(sheet.name, 0, 0)]);
+    expect(CellValue.asNumber(sheet.getValue(0, 3))).toBe(sum(1002, rows + 1) + sum(2, rows + 1));
+    expect(CellValue.asNumber(sheet.getValue(2, 2))).toBe(sum(1501, 2701));
+  });
+
+  it('a large range over its own cell is still circular', () => {
+    const workbook = Workbook.createNew();
+    const sheet = workbook.activeSheet;
+    for (let r = 0; r < 2000; r++) sheet.setFormula(r, 0, '1');
+    sheet.setFormula(1500, 0, 'SUM(A1:A2000)');
+    sheet.setFormula(0, 1, 'A1501+1');
+    const engine = new RecalculationEngine(workbook);
+    engine.rebuildGraph();
+    const result = engine.recalculateAll();
+    expect(result.circularCells.map((c) => [c.row, c.column]).sort()).toEqual([
+      [0, 1],
+      [1500, 0],
+    ]);
+    expect(CellValue.asNumber(sheet.getValue(1999, 0))).toBe(1);
+  });
+});
+
 describe('sheet-local names in the dependency graph', () => {
   it('a local name shadows the global one and its edits recalculate', () => {
     const workbook = Workbook.createNew();

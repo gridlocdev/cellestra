@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RecalculationEngine } from '../../src/dependencies/recalculationEngine.ts';
 import { Workbook } from '../../src/model/workbook.ts';
 import { CellValue } from '../../src/values/cellValue.ts';
+import { errorToken, num } from './formulaHarness.ts';
 
 function bookWith(fill: (set: (row: number, column: number, v: number | string) => void) => void) {
   const workbook = Workbook.createNew();
@@ -68,5 +69,24 @@ describe('whole-column references', () => {
     expect(sheet.cellExtent()).toEqual({ lastRow: 4, lastColumn: 2 });
     sheet.remove(4, 2);
     expect(sheet.cellExtent()).toBeNull();
+  });
+});
+
+describe('a range on a sheet that does not exist', () => {
+  it.each([
+    'COUNTA(Gone.A:A)',
+    'COUNT(Gone.A:C)',
+    'SUM(Gone.A1:B9)',
+    'COUNTIF(Gone.A:A,"x")',
+    'MATCH(1,Gone.A:A,0)',
+    'Gone.A1:A3',
+    'Gone.A1',
+  ])('%s is one #REF!', (formula) => {
+    expect(errorToken(formula)).toBe('#REF!');
+  });
+
+  it('IFERROR still catches it', () => {
+    expect(num('IFERROR(COUNTA(Gone.A:A),7)')).toBe(7);
+    expect(num('IFERROR(Gone.A1,7)')).toBe(7);
   });
 });

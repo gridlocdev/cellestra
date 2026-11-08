@@ -20,8 +20,8 @@ export const BINARY_SYMBOL: Readonly<Record<BinaryOperator, string>> = {
   greaterEqual: '>=',
 };
 
-/** Binary-operator precedence shared by the A1 writer and the OpenFormula translator (power differs). */
-export function binaryPrecedence(op: BinaryOperator, power: number): number {
+/** Binary-operator precedence shared by the A1 writer and the OpenFormula translator. */
+export function binaryPrecedence(op: BinaryOperator): number {
   switch (op) {
     case 'concat':
       return 2;
@@ -32,7 +32,7 @@ export function binaryPrecedence(op: BinaryOperator, power: number): number {
     case 'divide':
       return 4;
     case 'power':
-      return power;
+      return 5;
     default:
       return 1; // comparisons
   }
@@ -82,32 +82,34 @@ export function wholeLinesText(
 const a1SheetPrefix = (sheet: string | null): string =>
   sheet === null ? '' : `${quoteSheetIfNeeded(sheet)}.`;
 
-// Unary +/- binds looser than ^ (5 < power's 6) so -2^2 round-trips without spurious parens;
-// percent (postfix) binds tighter than everything.
-function precedence(expr: Expr): number {
-  if (expr.kind === 'binary') return binaryPrecedence(expr.operator, 6);
-  if (expr.kind === 'unary') return expr.operator === 'percent' ? 7 : 5;
+/**
+ * Precedence of a node as written: binary operators by `binaryPrecedence`, then a prefix sign (6,
+ * tighter than ^, so (-2)^2 is written -2^2 and -(2^2) keeps its parentheses), then postfix percent.
+ */
+export function writtenPrecedence(expr: Expr): number {
+  if (expr.kind === 'binary') return binaryPrecedence(expr.operator);
+  if (expr.kind === 'unary') return expr.operator === 'percent' ? 7 : 6;
   return 8;
 }
 
 function withParens(expr: Expr, minPrecedence: number): string {
   const rendered = render(expr);
-  return precedence(expr) < minPrecedence ? `(${rendered})` : rendered;
+  return writtenPrecedence(expr) < minPrecedence ? `(${rendered})` : rendered;
 }
 
 function renderUnary(u: UnaryExpr): string {
   switch (u.operator) {
     case 'negate':
-      return '-' + withParens(u.operand, 5);
+      return '-' + withParens(u.operand, 6);
     case 'plus':
-      return '+' + withParens(u.operand, 5);
+      return '+' + withParens(u.operand, 6);
     case 'percent':
       return withParens(u.operand, 7) + '%';
   }
 }
 
 function renderBinary(b: BinaryExpr): string {
-  const p = precedence(b);
+  const p = writtenPrecedence(b);
   return `${withParens(b.left, p)}${BINARY_SYMBOL[b.operator]}${withParens(b.right, p + 1)}`;
 }
 

@@ -25,7 +25,7 @@ A TypeScript spreadsheet editor. The `.ods` engine runs entirely in the browser;
 3. **One command catalog** (`packages/ui/src/commands`). The toolbar, the ⌘K menu, keyboard shortcuts and the Electron menu bar all read from it.
 4. **One function registry.** Evaluation, autocomplete and help all read from it.
 5. **`.ods` correctness.** The `mimetype` entry is first and stored uncompressed. Formulas go through `OpenFormulaTranslator`. Unknown content is kept verbatim.
-6. **Formula semantics follow LibreOffice Calc** (PRD §8 and §10). For example, `-2^2 = -4`, ROUND rounds half away from zero, and serial dates start at 1899-12-30. Dates never use the local time zone.
+6. **Formula semantics follow LibreOffice Calc** (PRD §8 and §10). For example, `-2^2 = 4` (the sign binds tighter than `^`), ROUND rounds half away from zero, and serial dates start at 1899-12-30. Dates never use the local time zone.
 7. **The UI only talks to files through `FileStore`.** It never knows whether bytes came from the browser, the NAS or Electron.
 8. **Security.** The Electron renderer runs sandboxed with context isolation, and the only native access it has is the `cellestraNative` bridge. The server confines every path to its root, including symlink escapes, writes atomically, honours If-Match, and respects LibreOffice lock files.
 

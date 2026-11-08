@@ -86,7 +86,7 @@ If I open a Cellestra-saved file in LibreOffice and notice nothing wrong, the ba
 - Cell and range references, including **absolute vs relative** (`$A$1` vs `A1`).
 - **References across sheets** (`Sheet2.A1`) and **named ranges** (e.g. `TaxRate`).
 - Automatic recalculation when inputs change, plus a manual "recalculate now" and an automatic/manual calculation toggle.
-- Clear error values (`#DIV/0!`, `#REF!`, `#VALUE!`, `#NAME?`, `#N/A`) with readable explanations.
+- Clear error values (`#DIV/0!`, `#REF!`, `#VALUE!`, `#NAME?`, `#N/A`, `#NUM!` for a result too large for a number, and `#NULL!` when typed or loaded) with readable explanations.
 - References update correctly when you copy/fill formulas or insert/delete rows and columns.
 
 ### Data
@@ -590,7 +590,13 @@ editing match spreadsheet muscle memory (§3 *Feel*). Each is implemented and te
 
 | Behavior | Decision |
 |---|---|
-| `-2^2` precedence | Unary minus binds **looser** than `^` (OpenFormula / LibreOffice Calc), so `-2^2 = -4`. Deliberately *not* Excel's `4`. This corrected an earlier parser bug. |
+| `-2^2` precedence | A prefix sign binds **tighter** than `^`, as in OpenFormula, LibreOffice Calc and Excel: `-2^2 = (-2)^2 = 4`, `2*-3^2 = 18`, `-2^-2 = 0.25`; write `-(2^2)` for `-4`. A postfix `%` binds tighter still (`-2%^2 = (-0.02)^2`). An earlier parser bound the sign looser (`-4`), which changed the value of every signed power imported from Calc (`of:=-[.B2]^2`). OpenFormula export still spells a signed base `(-2)^2` so no reader has to guess. |
+| Formula size limits | At most 8,192 tokens (Calc's limit), 256 nested parentheses, calls or signs, and a tree 1,024 levels deep (a chain of `+` counts one level per operator). Past a limit the formula is a parse error, never a stack overflow. |
+| Error literals | `#REF!`, `#DIV/0!`, `#N/A`, `#NAME?`, `#NULL!`, `#NUM!` and `#VALUE!` can be typed in a formula; `#REF!` is the broken-reference node a deleted row or column leaves behind, so a formula written with one parses back. OpenFormula `[#REF!]`, `[.#REF!]`, `[.A1:.#REF!]` and `[$#REF!.A1]` all import as `#REF!`. |
+| Excel 2010+ functions in `.ods` | `CONCAT` (and `TEXTJOIN`, `IFS`, `SWITCH`, `MAXIFS`, `MINIFS`, `XLOOKUP`, `XMATCH`) are written `COM.MICROSOFT.CONCAT` — Calc reads the bare name as `#NAME?` — and read back without the prefix. |
+| Criteria text ordering | In COUNTIF/SUMIF a text ordering (`"<b"`, `">"`) matches **text cells only**, never numbers or blanks; an empty criteria cell means `0` (matches zeros, not blanks) — both as in Calc. |
+| A range on a missing sheet | Is a single `#REF!` for the function reading it (IFERROR still catches it), not a scan of a million empty cells. |
+| Numbers as text | Integers a double holds exactly (below 2^53) print in full; beyond that, and from 1E+15 up for non-integers, scientific with 15 significant digits (`2^60` → `1.15292150460685E+18`), as in Calc. A literal or result that overflows a double is `#NUM!`. |
 | Leading apostrophe | Forces the rest to literal text (`'007`, `'=x`); the apostrophe is an input flag, stripped before storage and never displayed. |
 | Date entry | A typed slash date (`6/7/2026`, locale day/month order) or ISO date (`2026-06-07`) coerces to a serial and stamps a date format on a still-General cell. Bounded to slash/ISO so month names and hyphenated codes stay text. **Bare times are left as text** (the number-format mapper treats `mm` as month) — a known limitation for a later number-format pass. |
 | Cut vs copy | Cut is a deferred **move** consumed by its first paste (an unused cut leaves the data); copy pastes repeatedly until Esc. Both show a marching-ants marquee (green=copy, gray=cut) that an edit or Esc clears. Return pastes once and consumes the clipboard. |

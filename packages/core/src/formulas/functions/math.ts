@@ -20,7 +20,11 @@ function aggregate(
     (args, ev) => {
       const nums: number[] = [];
       const error = collectNumbers(ev, args, nums);
-      return error ?? CellValue.number(reduce(nums));
+      if (error) return error;
+      const total = reduce(nums);
+      return Number.isFinite(total)
+        ? CellValue.number(total)
+        : CellValue.error(CellError.number('The result is not a finite number.'));
     },
   );
 }
@@ -61,10 +65,10 @@ function rounding(
         digits = d;
       }
       const rounded = round(value, digits);
-      // Cellestra has no #NUM!: a non-finite result surfaces as #VALUE! like the evaluator's.
+      // A non-finite result surfaces as #NUM!, like the evaluator's.
       return Number.isFinite(rounded)
         ? CellValue.number(rounded)
-        : CellValue.error(CellError.value('The result is not a finite number.'));
+        : CellValue.error(CellError.number('The result is not a finite number.'));
     },
   );
 }
@@ -221,7 +225,7 @@ export function mathFunctions(): FormulaFunction[] {
         const result = Math.pow(a, b);
         return Number.isFinite(result)
           ? CellValue.number(result)
-          : CellValue.error(CellError.value('POWER result is not a finite number.'));
+          : CellValue.error(CellError.number('POWER result is not a finite number.'));
       },
     ),
     defineFunction(
@@ -240,8 +244,11 @@ export function mathFunctions(): FormulaFunction[] {
         const d = readNumber(ev, args[1]!);
         if (isFailure(d)) return d.failed;
         if (d === 0) return CellValue.error(CellError.divideByZero('MOD by zero.'));
-        // Excel/Calc MOD: the result takes the sign of the divisor.
-        return CellValue.number(n - d * Math.floor(n / d));
+        // Excel/Calc MOD: the result takes the sign of the divisor. When precision runs out the
+        // remainder can land on the divisor itself (MOD(-1E-20, 1) = 1); Calc reports #VALUE! there.
+        const result = n - d * Math.floor(n / d);
+        if (d > 0 ? result >= 0 && result < d : result <= 0 && result > d) return CellValue.number(result);
+        return CellValue.error(CellError.value('MOD has no exact remainder at this precision.'));
       },
     ),
     rounding(

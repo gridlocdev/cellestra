@@ -34,8 +34,10 @@ function compareNumeric(value: CellValue, op: Operator, operand: number): boolea
   }
 }
 
+/** A text ordering criterion (`"<b"`) compares text cells only: numbers, booleans and blanks never match (Calc). */
 function compareText(value: CellValue, op: Operator, operand: string): boolean {
-  const cmp = compareOrdinalIgnoreCase(asText(value), operand);
+  if (value.kind !== 'text') return false;
+  const cmp = compareOrdinalIgnoreCase(value.value, operand);
   switch (op) {
     case '>':
       return cmp > 0;
@@ -99,8 +101,9 @@ export class CriteriaMatcher {
   }
 
   static build(criteria: CellValue, locale: string): CriteriaMatcher {
-    if (criteria.kind === 'number') {
-      const target = criteria.value;
+    // An empty criteria cell means 0, as in Calc: it matches zeros, not blanks.
+    if (criteria.kind === 'number' || criteria.kind === 'empty') {
+      const target = criteria.kind === 'number' ? criteria.value : 0;
       return new CriteriaMatcher((v) => v.kind === 'number' && approxEqual(v.value, target));
     }
     if (criteria.kind === 'boolean') {

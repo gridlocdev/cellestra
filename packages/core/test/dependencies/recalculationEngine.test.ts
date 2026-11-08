@@ -172,4 +172,30 @@ describe('RecalculationEngine', () => {
 
     expect(numberAt(sheet, 0, 1)).toBe(before + 1);
   });
+
+  it('an unrelated edit recomputes volatile cells and what reads them', () => {
+    const { workbook, sheet } = newBook();
+    sheet.setFormula(0, 0, 'NOW()');
+    sheet.setFormula(0, 1, 'A1*1440');
+    sheet.setFormula(0, 2, 'B1+1');
+    let minute = 0;
+    const engine = new RecalculationEngine(workbook, undefined, () => ({
+      year: 2026,
+      month: 1,
+      day: 1,
+      hour: 0,
+      minute,
+      second: 0,
+      millisecond: 0,
+    }));
+    engine.rebuildGraph();
+    engine.recalculateAll();
+    const before = numberAt(sheet, 0, 2);
+
+    minute = 5;
+    sheet.setValue(4, 4, CellValue.number(3));
+    engine.recordEdits([CellRef.of(sheet.name, 4, 4)]);
+
+    expect(numberAt(sheet, 0, 2)).toBeCloseTo(before + 5, 6);
+  });
 });

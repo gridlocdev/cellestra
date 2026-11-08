@@ -79,8 +79,8 @@ describe('rounding', () => {
     expect(num('ROUND(123.456, -400)')).toBe(0);
     expect(num('ROUNDDOWN(123.456, -400)')).toBe(0);
     expect(num('ROUNDUP(1.5, -308)')).toBe(1e308);
-    // Cellestra has no #NUM!; non-finite results are #VALUE! throughout.
-    expect(errorToken('ROUNDUP(1.5, -400)')).toBe('#VALUE!');
+    // A non-finite result is #NUM!, as in Calc.
+    expect(errorToken('ROUNDUP(1.5, -400)')).toBe('#NUM!');
   });
 });
 
@@ -111,5 +111,58 @@ describe('booleans compare as numbers', () => {
     expect(bool('0=FALSE()')).toBe(true);
     expect(bool('TRUE()>0')).toBe(true);
     expect(bool('2=TRUE()')).toBe(false);
+  });
+});
+
+describe('criteria against text and blanks (as in Calc)', () => {
+  // A1:A5 = "a", 5, blank, "c", 0
+  const setup = column([t('a'), n(5), CellValue.empty, t('c'), n(0)]);
+
+  it.each([
+    ['"<b"', 1], // only the text "a": not the number, not the blank
+    ['">=a"', 2],
+    ['">"', 2], // a text ordering with nothing after it still compares text cells only
+    ['"<"', 0],
+    ['"<="', 0],
+    ['""', 1], // the blank
+    ['"="', 1],
+    ['"<>"', 4],
+    ['"<>b"', 5],
+    ['">=0"', 2], // numbers only; the blank is not 0 here
+    ['"<1"', 1],
+    ['C1', 1], // an empty criteria cell means 0
+  ])('COUNTIF(A1:A5, %s) = %d', (criteria, expected) => {
+    expect(num(`COUNTIF(A1:A5,${criteria})`, setup)).toBe(expected);
+  });
+
+  it('SUMIF with a text inequality skips the numbers', () => {
+    const rows = (sheet: Worksheet): void => {
+      setup(sheet);
+      column([n(1), n(2), n(4), n(8), n(16)], 1)(sheet);
+    };
+    expect(num('SUMIF(A1:A5,"<b",B1:B5)', rows)).toBe(1);
+    expect(num('SUMIF(A1:A5,C1,B1:B5)', rows)).toBe(16);
+  });
+});
+
+describe('numbers at the edges of a double (as in Calc)', () => {
+  it('a literal too large for a double is #NUM!', () => {
+    expect(errorToken('1E400')).toBe('#NUM!');
+    expect(errorToken('1E400-1E400')).toBe('#NUM!');
+  });
+
+  it('overflow is #NUM!', () => {
+    expect(errorToken('10^308*10')).toBe('#NUM!');
+    expect(errorToken('SUM(1E308,1E308)')).toBe('#NUM!');
+    expect(errorToken('POWER(10,400)')).toBe('#NUM!');
+  });
+
+  it('MOD with no representable remainder is #VALUE!, like Calc', () => {
+    expect(errorToken('MOD(-1E-20,1)')).toBe('#VALUE!');
+    expect(num('MOD(1E-20,1)')).toBe(1e-20);
+    expect(num('MOD(-0.5,1)')).toBe(0.5);
+    expect(num('MOD(5,-3)')).toBe(-1);
+    expect(num('MOD(-3,1)')).toBe(0);
+    expect(num('MOD(6,-3)')).toBe(0);
   });
 });

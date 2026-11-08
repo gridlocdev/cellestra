@@ -17,9 +17,12 @@ describe('Evaluator', () => {
     ['2^10', 1024],
     ['2^3^2', 64], // left-associative
     ['-5', -5],
-    ['-2^2', -4], // unary minus binds looser than ^ (Excel/Calc: -(2^2))
-    ['(-2)^2', 4], // explicit parens flip it back
-    ['-2^2*2', -8], // = -((2^2)*2)
+    ['-2^2', 4], // a sign binds tighter than ^, as in Calc and Excel: (-2)^2
+    ['-(2^2)', -4], // explicit parens flip it back
+    ['-2^2*2', 8], // = ((-2)^2)*2
+    ['2*-3^2', 18], // = 2*((-3)^2), as in Calc
+    ['-2^-2', 0.25], // = (-2)^(-2)
+    ['-2%^2', 0.0004], // % binds tighter still: (-(2%))^2
     ['50%', 0.5],
     ['(1+2)*3', 9],
     ['"5"+3', 8], // text coerces in arithmetic

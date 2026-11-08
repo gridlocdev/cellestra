@@ -16,6 +16,11 @@ export interface EvaluationContext {
   now(): CivilDateTime;
   /** The displayed value of a cell. `sheet` null means `currentSheet`. */
   getCell(sheet: string | null, row: number, column: number): CellValue;
+  /**
+   * Whether a sheet exists (`null`: the current sheet). Leaving it out means every sheet does; a
+   * reference to a sheet that does not is #REF!.
+   */
+  hasSheet?(sheet: string | null): boolean;
   /** Resolve a defined name to its range; null for an unknown name. */
   resolveName(name: string): CellRange | null;
   /**

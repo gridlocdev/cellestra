@@ -10,12 +10,15 @@ import { Coercion } from './coercion.ts';
 import type { EvaluationContext } from './evaluationContext.ts';
 import { ValueComparer } from './valueComparer.ts';
 
-/** Guard against non-finite results; Cellestra has no #NUM!, so these surface as #VALUE!. */
+/** Guard against non-finite results, which surface as #NUM! (as in LibreOffice Calc). */
 function finite(value: number): CellValue {
   return Number.isFinite(value)
     ? CellValue.number(value)
-    : CellValue.error(CellError.value('The result is not a finite number.'));
+    : CellValue.error(CellError.number('The result is not a finite number.'));
 }
+
+/** Functions that receive error arguments as values to inspect, rather than failing on them. */
+const TRAPS_ERRORS = new Set(['IFERROR']);
 
 /** Both operands as numbers, or the error value to return. */
 function numbers(left: CellValue, right: CellValue): [number, number] | CellValue {
@@ -68,7 +71,10 @@ export class Evaluator implements FunctionEvaluator {
       case 'reference':
         return this.context.getCell(expr.address.sheet, expr.address.row, expr.address.column);
       case 'range':
-        return CellValue.error(CellError.value('A range is not valid in this position.'));
+        return (
+          this.#missingSheet(expr) ??
+          CellValue.error(CellError.value('A range is not valid in this position.'))
+        );
       case 'name':
         return this.#name(expr);
       case 'refError':
@@ -143,7 +149,25 @@ export class Evaluator implements FunctionEvaluator {
         CellError.value(`${node.name} does not accept ${node.args.length} argument(s).`),
       );
     }
+    // A range on a sheet that no longer exists is one #REF!, not a million empty cells to scan.
+    if (!TRAPS_ERRORS.has(node.name)) {
+      for (const arg of node.args) {
+        const missing = this.#missingSheet(arg);
+        if (missing) return missing;
+      }
+    }
     return fn.invoke(node.args, this);
+  }
+
+  /** #REF! when `expr` is a reference, range or name on a sheet that does not exist; else null. */
+  #missingSheet(expr: Expr): CellValue | null {
+    let sheet: string | null;
+    if (expr.kind === 'range') sheet = expr.range.sheet;
+    else if (expr.kind === 'reference') sheet = expr.address.sheet;
+    else if (expr.kind === 'name') sheet = this.context.resolveName(expr.name)?.sheet ?? null;
+    else return null;
+    if (sheet === null || this.context.hasSheet?.(sheet) !== false) return null;
+    return CellValue.error(CellError.reference(`Unknown sheet '${sheet}'.`));
   }
 
   // ---- FunctionEvaluator ----------------------------------------------

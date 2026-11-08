@@ -1,6 +1,7 @@
 import type { CellRange } from '../../model/cellRange.ts';
 import { SheetDimensions } from '../../model/sheetDimensions.ts';
 import type { Workbook } from '../../model/workbook.ts';
+import type { Worksheet } from '../../model/worksheet.ts';
 import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import { systemClock, type CivilDateTime } from './dateConversion.ts';
@@ -15,6 +16,8 @@ export class WorkbookEvaluationContext implements EvaluationContext {
   readonly locale: string;
   readonly #workbook: Workbook;
   readonly #clock: () => CivilDateTime;
+  /** Sheets by the name a reference used, so reading a large range looks each sheet up once. */
+  readonly #sheets = new Map<string, Worksheet | undefined>();
 
   constructor(workbook: Workbook, currentSheet: string, locale?: string, clock?: () => CivilDateTime) {
     this.#workbook = workbook;
@@ -27,8 +30,20 @@ export class WorkbookEvaluationContext implements EvaluationContext {
     return this.#clock();
   }
 
+  #sheet(name: string): Worksheet | undefined {
+    if (this.#sheets.has(name)) return this.#sheets.get(name);
+    const found = this.#workbook.findSheet(name);
+    this.#sheets.set(name, found);
+    return found;
+  }
+
+  /** Whether `sheet` (null: the current sheet) exists. */
+  hasSheet(sheet: string | null): boolean {
+    return this.#sheet(sheet ?? this.currentSheet) !== undefined;
+  }
+
   getCell(sheet: string | null, row: number, column: number): CellValue {
-    const worksheet = this.#workbook.findSheet(sheet ?? this.currentSheet);
+    const worksheet = this.#sheet(sheet ?? this.currentSheet);
     if (!worksheet) return CellValue.error(CellError.reference(`Unknown sheet '${sheet ?? ''}'.`));
     if (!SheetDimensions.isValidRow(row) || !SheetDimensions.isValidColumn(column)) {
       return CellValue.error(CellError.reference('Reference is outside the sheet.'));
@@ -39,7 +54,7 @@ export class WorkbookEvaluationContext implements EvaluationContext {
   cellExtent(
     sheet: string | null,
   ): { readonly lastRow: number; readonly lastColumn: number } | null | undefined {
-    return this.#workbook.findSheet(sheet ?? this.currentSheet)?.cellExtent();
+    return this.#sheet(sheet ?? this.currentSheet)?.cellExtent();
   }
 
   resolveName(name: string): CellRange | null {

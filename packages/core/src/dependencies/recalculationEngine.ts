@@ -8,8 +8,9 @@ import { Evaluator } from '../formulas/evaluation/evaluator.ts';
 import { WorkbookEvaluationContext } from '../formulas/evaluation/workbookEvaluationContext.ts';
 import { FunctionRegistry } from '../formulas/functions/functionRegistry.ts';
 import { Parser } from '../formulas/parsing/parser.ts';
-import { CellRef, rangeRefContains, type RangeRef } from './cellRef.ts';
+import { CellRef, type RangeRef } from './cellRef.ts';
 import { DependencyGraph } from './dependencyGraph.ts';
+import { LargeRangeIndex, type RangeSearchSession } from './largeRangeIndex.ts';
 import { ReferenceCollector } from './referenceCollector.ts';
 
 /** The outcome of a recalculation pass. */
@@ -19,17 +20,8 @@ export interface RecalculationResult {
   readonly hasCircularReference: boolean;
 }
 
-/** Large ranges wider than this many columns are indexed under `WIDE` rather than per column. */
-const WIDE_RANGE_COLUMNS = 64;
-const WIDE = -1;
-
-/** The index buckets a large range sits in: each of its columns, or `WIDE`. */
-function indexColumns(r: RangeRef): number[] {
-  if (r.right - r.left + 1 > WIDE_RANGE_COLUMNS) return [WIDE];
-  const out: number[] = [];
-  for (let c = r.left; c <= r.right; c++) out.push(c);
-  return out;
-}
+/** The parse cache is dropped when it grows past this many distinct formula texts. */
+const MAX_PARSE_CACHE = 50_000;
 
 const result = (evaluated: number, circularCells: readonly CellRef[]): RecalculationResult => ({
   evaluated,
@@ -50,14 +42,8 @@ export class RecalculationEngine {
   /** Formula cells by key: their ref and parsed AST (null when unparseable). */
   readonly #formulas = new Map<string, { ref: CellRef; ast: Expr | null }>();
   readonly #volatile = new Map<string, CellRef>();
-  /** Formula cells whose precedents include a range too large to expand into the graph. */
-  readonly #largeRangePrecedents = new Map<string, RangeRef[]>();
-  /**
-   * The same formulas indexed by sheet, then by each column their large ranges cover (ranges wider
-   * than `WIDE_RANGE_COLUMNS` sit under `WIDE` instead), so finding the ranges over one cell reads
-   * only that column's bucket instead of every large-range formula.
-   */
-  readonly #largeRangeIndex = new Map<string, Map<number, Set<string>>>();
+  /** The precedent ranges too large to expand into the graph, indexed by sheet, column and row. */
+  readonly #largeRanges = new LargeRangeIndex();
   readonly #parseCache = new Map<string, Expr | null>();
 
   constructor(workbook: Workbook, functions?: FunctionRegistry, clock?: () => CivilDateTime) {
@@ -85,8 +71,8 @@ export class RecalculationEngine {
     this.#graph.clear();
     this.#formulas.clear();
     this.#volatile.clear();
-    this.#largeRangePrecedents.clear();
-    this.#largeRangeIndex.clear();
+    this.#largeRanges.clear();
+    this.#parseCache.clear();
     for (const sheet of this.#workbook.worksheets) {
       for (const [row, column, cell] of sheet.enumerateCells()) {
         if (cell.isFormula) this.#registerFormula(CellRef.of(sheet.name, row, column), cell.formula!);
@@ -111,9 +97,9 @@ export class RecalculationEngine {
       seeds.set(CellRef.key(cell), cell);
     }
     if (this.#workbook.settings.calculationMode === 'manual') return result(0, []);
-    const affected = this.#collectAffected(seeds.entries());
-    for (const k of this.#volatile.keys()) affected.add(k);
-    return this.#evaluate(affected);
+    // Volatile cells recompute on every edit, so whatever reads them does too.
+    for (const [k, cell] of this.#volatile) seeds.set(k, cell);
+    return this.#evaluate(this.#collectAffected(seeds.entries()));
   }
 
   /**
@@ -124,16 +110,14 @@ export class RecalculationEngine {
     const found = new Map<string, CellRef>();
     for (const cell of cells) {
       for (const [k, dependent] of this.#graph.dependentEntries(CellRef.key(cell))) found.set(k, dependent);
-      this.#forLargeRangesOver(cell, (k) => found.set(k, this.#formulas.get(k)!.ref));
+      this.#largeRanges.forEachOver(cell, (k) => found.set(k, this.#formulas.get(k)!.ref));
     }
     return [...found.values()];
   }
 
   /** Recompute volatile cells and their dependents. */
   recalculateVolatile(): RecalculationResult {
-    const affected = this.#collectAffected(this.#volatile.entries());
-    for (const k of this.#volatile.keys()) affected.add(k);
-    return this.#evaluate(affected);
+    return this.#evaluate(this.#collectAffected(this.#volatile.entries()));
   }
 
   // ---- graph maintenance ------------------------------------------------
@@ -175,6 +159,7 @@ export class RecalculationEngine {
     if (this.#parseCache.has(formula)) return this.#parseCache.get(formula)!;
     const parsed = Parser.tryParse(formula);
     const ast = parsed.ok ? parsed.expr : null;
+    if (this.#parseCache.size >= MAX_PARSE_CACHE) this.#parseCache.clear();
     this.#parseCache.set(formula, ast);
     return ast;
   }
@@ -184,44 +169,9 @@ export class RecalculationEngine {
     return this.#workbook.findNamedRange(name, sheet)?.target ?? null;
   }
 
-  /** Replace a formula's large precedent ranges, keeping the column index in step. */
+  /** Replace a formula's large precedent ranges, keeping the index in step. */
   #setLargeRanges(key: string, ranges: RangeRef[]): void {
-    for (const r of this.#largeRangePrecedents.get(key) ?? []) {
-      const columns = this.#largeRangeIndex.get(r.sheet.toLowerCase());
-      if (!columns) continue;
-      for (const column of indexColumns(r)) {
-        const bucket = columns.get(column);
-        bucket?.delete(key);
-        if (bucket?.size === 0) columns.delete(column);
-      }
-    }
-    if (ranges.length === 0) {
-      this.#largeRangePrecedents.delete(key);
-      return;
-    }
-    this.#largeRangePrecedents.set(key, ranges);
-    for (const r of ranges) {
-      const sheet = r.sheet.toLowerCase();
-      let columns = this.#largeRangeIndex.get(sheet);
-      if (!columns) this.#largeRangeIndex.set(sheet, (columns = new Map()));
-      for (const column of indexColumns(r)) {
-        let bucket = columns.get(column);
-        if (!bucket) columns.set(column, (bucket = new Set()));
-        bucket.add(key);
-      }
-    }
-  }
-
-  /** Call `visit` with the key of every formula that has a large precedent range containing `cell`. */
-  #forLargeRangesOver(cell: CellRef, visit: (formulaKey: string) => void): void {
-    const columns = this.#largeRangeIndex.get(cell.sheet.toLowerCase());
-    if (!columns) return;
-    for (const bucket of [columns.get(cell.column), columns.get(WIDE)]) {
-      if (!bucket) continue;
-      for (const fk of bucket) {
-        if (this.#largeRangePrecedents.get(fk)?.some((r) => rangeRefContains(r, cell))) visit(fk);
-      }
-    }
+    this.#largeRanges.set(key, ranges);
   }
 
   // ---- evaluation -------------------------------------------------------
@@ -229,33 +179,45 @@ export class RecalculationEngine {
   #collectAffected(seeds: Iterable<[string, CellRef]>): Set<string> {
     const affected = new Set<string>();
     const queue: [string, CellRef][] = [];
+    // One search session for the whole walk, so each large range is reported at most once.
+    const session = LargeRangeIndex.session();
     for (const [key, seed] of seeds) {
       if (this.#formulas.has(key) && !affected.has(key)) {
         affected.add(key);
         queue.push([key, seed]);
       }
-      this.#addDependents(key, seed, affected, queue);
+      this.#addDependents(key, seed, affected, queue, session);
     }
     for (let i = 0; i < queue.length; i++) {
       const [key, cell] = queue[i]!;
-      this.#addDependents(key, cell, affected, queue);
+      this.#addDependents(key, cell, affected, queue, session);
     }
     return affected;
   }
 
   /** Enqueue every formula reading `cell`: via a stored edge, or a large range containing it. */
-  #addDependents(key: string, cell: CellRef, affected: Set<string>, queue: [string, CellRef][]): void {
+  #addDependents(
+    key: string,
+    cell: CellRef,
+    affected: Set<string>,
+    queue: [string, CellRef][],
+    session: RangeSearchSession,
+  ): void {
     for (const [dk, dependent] of this.#graph.dependentEntries(key)) {
       if (!affected.has(dk)) {
         affected.add(dk);
         queue.push([dk, dependent]);
       }
     }
-    this.#forLargeRangesOver(cell, (fk) => {
-      if (affected.has(fk)) return;
-      affected.add(fk);
-      queue.push([fk, this.#formulas.get(fk)!.ref]);
-    });
+    this.#largeRanges.forEachOver(
+      cell,
+      (fk) => {
+        if (affected.has(fk)) return;
+        affected.add(fk);
+        queue.push([fk, this.#formulas.get(fk)!.ref]);
+      },
+      session,
+    );
   }
 
   #evaluate(nodes: Set<string>): RecalculationResult {
@@ -297,22 +259,38 @@ export class RecalculationEngine {
     if (model?.isFormula) model.value = value;
   }
 
-  /** The nodes grouped by sheet, then column, for finding the formulas inside a large range. */
-  #nodesBySheetAndColumn(nodes: Set<string>): Map<string, Map<number, [string, number][]>> {
-    const out = new Map<string, Map<number, [string, number][]>>();
+  /** The nodes grouped by sheet, then column, each column's list sorted by row. */
+  #nodesBySheetAndColumn(nodes: Set<string>): Map<string, Map<number, ColumnNodes>> {
+    const out = new Map<string, Map<number, ColumnNodes>>();
     for (const node of nodes) {
       const ref = this.#refOf(node);
       if (!ref) continue;
       let columns = out.get(ref.sheet.toLowerCase());
       if (!columns) out.set(ref.sheet.toLowerCase(), (columns = new Map()));
       let list = columns.get(ref.column);
-      if (!list) columns.set(ref.column, (list = []));
-      list.push([node, ref.row]);
+      if (!list) columns.set(ref.column, (list = { keys: [], rows: [], segments: new Map() }));
+      list.keys.push(node);
+      list.rows.push(ref.row);
+    }
+    for (const columns of out.values()) {
+      for (const list of columns.values()) {
+        const order = list.rows.map((_, i) => i).sort((a, b) => list.rows[a]! - list.rows[b]!);
+        list.keys = order.map((i) => list.keys[i]!);
+        list.rows = order.map((i) => list.rows[i]!);
+      }
     }
     return out;
   }
 
-  /** Kahn's algorithm over the node set; nodes left in a cycle come back as `circular`. */
+  /**
+   * Kahn's algorithm over the node set; nodes left in a cycle come back as `circular`.
+   *
+   * A range too large for the graph keeps only its corners there, so the formulas inside it are
+   * ordered here instead. Rather than one edge from every formula inside to the range's reader
+   * (quadratic for running totals), each column's formulas, sorted by row, get a segment tree of
+   * virtual nodes: a segment is done when both halves are, and a range waits on the O(log n)
+   * segments that tile the rows it covers.
+   */
   #topologicalSort(nodes: Set<string>): { ordered: string[]; circular: string[] } {
     const inDegree = new Map<string, number>();
     for (const node of nodes) {
@@ -320,30 +298,62 @@ export class RecalculationEngine {
       for (const p of this.#graph.precedentKeys(node)) if (nodes.has(p)) degree++;
       inDegree.set(node, degree);
     }
-    // A range too large for the graph keeps only its corners there; add the edges from the
-    // formulas inside it, so a SUM over a whole column runs after the formulas in that column.
+    /** Extra edges: from a node (real or a segment) to the nodes waiting on it. */
     const rangeDependents = new Map<string, string[]>();
-    let bySheet: Map<string, Map<number, [key: string, row: number][]>> | null = null;
-    for (const [lk, ranges] of this.#largeRangePrecedents) {
+    const addEdge = (from: string, to: string): void => {
+      let list = rangeDependents.get(from);
+      if (!list) rangeDependents.set(from, (list = []));
+      list.push(to);
+      inDegree.set(to, inDegree.get(to)! + 1);
+    };
+    const virtual = new Set<string>();
+    let nextVirtual = 0;
+    /** The node standing for sorted entries [lo, hi) of a column: the formula itself, or a segment. */
+    const segment = (list: ColumnNodes, treeIndex: number, lo: number, hi: number): string => {
+      if (hi - lo === 1) return list.keys[lo]!;
+      const existing = list.segments.get(treeIndex);
+      if (existing !== undefined) return existing;
+      const key = `\u0001segment${nextVirtual++}`;
+      virtual.add(key);
+      inDegree.set(key, 0);
+      list.segments.set(treeIndex, key);
+      const mid = (lo + hi) >>> 1;
+      addEdge(segment(list, 2 * treeIndex, lo, mid), key);
+      addEdge(segment(list, 2 * treeIndex + 1, mid, hi), key);
+      return key;
+    };
+    /** Make `reader` wait on the sorted entries [from, to) of a column. */
+    const waitOn = (list: ColumnNodes, reader: string, from: number, to: number): void => {
+      const descend = (treeIndex: number, lo: number, hi: number): void => {
+        if (to <= lo || hi <= from) return;
+        if (from <= lo && hi <= to) {
+          addEdge(segment(list, treeIndex, lo, hi), reader);
+          return;
+        }
+        const mid = (lo + hi) >>> 1;
+        descend(2 * treeIndex, lo, mid);
+        descend(2 * treeIndex + 1, mid, hi);
+      };
+      descend(1, 0, list.keys.length);
+    };
+
+    let bySheet: Map<string, Map<number, ColumnNodes>> | null = null;
+    for (const [lk, ranges] of this.#largeRanges.entries()) {
       if (!nodes.has(lk)) continue;
       bySheet ??= this.#nodesBySheetAndColumn(nodes);
-      const direct = new Set(this.#graph.precedentKeys(lk));
-      const seen = new Set<string>();
+      const columns = bySheet;
       for (const r of ranges) {
-        const columns = bySheet.get(r.sheet.toLowerCase());
-        if (!columns) continue;
+        const sheetColumns = columns.get(r.sheet.toLowerCase());
+        if (!sheetColumns) continue;
         const visit = (column: number): void => {
-          for (const [node, row] of columns.get(column) ?? []) {
-            if (row < r.top || row > r.bottom || direct.has(node) || seen.has(node)) continue;
-            seen.add(node);
-            let list = rangeDependents.get(node);
-            if (!list) rangeDependents.set(node, (list = []));
-            list.push(lk);
-            inDegree.set(lk, inDegree.get(lk)! + 1);
-          }
+          const list = sheetColumns.get(column);
+          if (!list) return;
+          const from = lowerBound(list.rows, r.top);
+          const to = lowerBound(list.rows, r.bottom + 1);
+          if (from < to) waitOn(list, lk, from, to);
         };
-        if (r.right - r.left + 1 > columns.size) {
-          for (const column of columns.keys()) if (column >= r.left && column <= r.right) visit(column);
+        if (r.right - r.left + 1 > sheetColumns.size) {
+          for (const column of sheetColumns.keys()) if (column >= r.left && column <= r.right) visit(column);
         } else {
           for (let column = r.left; column <= r.right; column++) visit(column);
         }
@@ -360,8 +370,10 @@ export class RecalculationEngine {
     };
     for (let i = 0; i < ready.length; i++) {
       const node = ready[i]!;
-      ordered.push(node);
-      for (const [dk] of this.#graph.dependentEntries(node)) release(dk);
+      if (!virtual.has(node)) {
+        ordered.push(node);
+        for (const [dk] of this.#graph.dependentEntries(node)) release(dk);
+      }
       for (const dk of rangeDependents.get(node) ?? []) release(dk);
     }
     const circular: string[] = [];
@@ -371,4 +383,23 @@ export class RecalculationEngine {
     }
     return { ordered, circular };
   }
+}
+
+/** One column's nodes sorted by row, and the segment nodes built over them (by tree index). */
+interface ColumnNodes {
+  keys: string[];
+  rows: number[];
+  readonly segments: Map<number, string>;
+}
+
+/** The first index whose value is >= `target` in an ascending list. */
+function lowerBound(values: readonly number[], target: number): number {
+  let lo = 0;
+  let hi = values.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (values[mid]! < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }

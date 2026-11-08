@@ -25,6 +25,8 @@ export type TokenType =
   | 'comma'
   /** The range operator `:`. */
   | 'colon'
+  /** An error literal such as `#REF!` or `#N/A`. */
+  | 'error'
   | 'endOfInput';
 
 /** One token: `text` is the source slice (decoded for strings); `position` its zero-based start offset. */
@@ -48,6 +50,9 @@ const SINGLE: Readonly<Record<string, TokenType>> = {
   ':': 'colon',
   '=': 'equal',
 };
+
+/** The error literals a formula may contain, longest first where one is a prefix of another. */
+const ERROR_LITERALS = ['#DIV/0!', '#VALUE!', '#NAME?', '#NULL!', '#NUM!', '#REF!', '#N/A'];
 
 const isAsciiDigit = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '9';
 const isLetter = (c: string): boolean => /^\p{L}$/u.test(c);
@@ -87,6 +92,7 @@ export class Lexer {
     if (c === '<') return this.lessOrCompound();
     if (c === '>') return this.greaterOrCompound();
     if (c === '"') return this.readString();
+    if (c === '#') return this.readError();
     const single = SINGLE[c];
     if (single) {
       this.pos++;
@@ -141,6 +147,15 @@ export class Lexer {
       this.pos++;
     }
     throw new FormulaParseException('Unterminated string literal.', start);
+  }
+
+  private readError(): Token {
+    const start = this.pos;
+    const rest = this.source.slice(start, start + 8).toUpperCase();
+    const literal = ERROR_LITERALS.find((e) => rest.startsWith(e));
+    if (!literal) throw new FormulaParseException("Unexpected character '#'.", start);
+    this.pos += literal.length;
+    return { type: 'error', text: literal, position: start };
   }
 
   private readNumber(): Token {

@@ -94,9 +94,12 @@ describe('FormulaWriter', () => {
     ['1-(2-3)', '1-(2-3)'],
     ['1-2+3', '1-2+3'],
     ['-A1%', '-A1%'],
-    ['-2^2', '-2^2'], // unary minus looser than ^; no parens needed
-    ['(-2)^2', '(-2)^2'], // parens preserved — changes meaning
-    ['2^-3', '2^(-3)'], // sign on the exponent (writer parenthesizes uniformly)
+    ['-2^2', '-2^2'], // a sign binds tighter than ^: this is (-2)^2
+    ['(-2)^2', '-2^2'], // the same tree, so the parentheses are redundant
+    ['-(2^2)', '-(2^2)'], // parens preserved — changes meaning
+    ['2^-3', '2^-3'], // sign on the exponent
+    ['-A1%^2', '-A1%^2'],
+    ['(-A1)%', '(-A1)%'],
     ['-2*3', '-2*3'],
   ])('round-trips %s with minimal parens', (formula, expected) => {
     expect(write(parse(formula))).toBe(expected);

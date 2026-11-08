@@ -1,5 +1,6 @@
 /** The canonical spreadsheet error codes (PRD §8, Formulas). */
-export type CellErrorCode = 'divideByZero' | 'reference' | 'value' | 'name' | 'notAvailable';
+export type CellErrorCode =
+  'divideByZero' | 'reference' | 'value' | 'name' | 'notAvailable' | 'number' | 'null';
 
 const TOKENS: Record<CellErrorCode, string> = {
   divideByZero: '#DIV/0!',
@@ -7,6 +8,8 @@ const TOKENS: Record<CellErrorCode, string> = {
   value: '#VALUE!',
   name: '#NAME?',
   notAvailable: '#N/A',
+  number: '#NUM!',
+  null: '#NULL!',
 };
 
 /**
@@ -53,6 +56,14 @@ export class CellError {
   }
   static notAvailable(reason = 'Value not available.'): CellError {
     return new CellError('notAvailable', reason);
+  }
+  /** A number that cannot be represented, or an argument outside a function's domain (#NUM!). */
+  static number(reason = 'The result is not a valid number.'): CellError {
+    return new CellError('number', reason);
+  }
+  /** An empty intersection of ranges (#NULL!); only ever typed or loaded, never computed here. */
+  static null(reason = 'The ranges do not intersect.'): CellError {
+    return new CellError('null', reason);
   }
 
   /** Parse a token back to a code (`#N/A` → notAvailable); null if not an error token. */

@@ -1,6 +1,7 @@
 import { CellAddress, findSheetSeparator, unquoteSheet } from '../../model/cellAddress.ts';
 import { SheetDimensions } from '../../model/sheetDimensions.ts';
 import { CellRange } from '../../model/cellRange.ts';
+import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import { Expr, type BinaryOperator } from '../ast/expr.ts';
 import { Lexer, type Token, type TokenType } from '../lexing/lexer.ts';
@@ -26,6 +27,7 @@ const DESCRIBE: Partial<Record<TokenType, string>> = {
   number: 'a number',
   text: 'a string',
   name: 'a name',
+  error: 'an error value',
 };
 
 function describe(type: TokenType): string {
@@ -34,13 +36,26 @@ function describe(type: TokenType): string {
 
 const NUMBER = /^(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
+/** Most tokens in one formula (LibreOffice Calc's limit, `MAXCODE`). */
+export const MAX_FORMULA_TOKENS = 8192;
+/** Most parentheses, function calls and signs one formula may nest inside each other. */
+export const MAX_FORMULA_NESTING = 256;
+/**
+ * Deepest a parsed formula's tree may be, counting operator chains too (`1+1+…+1` nests one level
+ * per `+`). The evaluator, writers and reference walkers recurse over the tree; this keeps them
+ * well inside the call stack.
+ */
+export const MAX_FORMULA_DEPTH = 1024;
+
 /**
  * A recursive-descent parser for Cellestra formulas. Precedence (lowest → highest): comparison,
- * concatenation (`&`), add/subtract, multiply/divide, unary +/-, power, percent, then reference/range.
+ * concatenation (`&`), add/subtract, multiply/divide, power, unary +/-, percent, then reference/range.
+ * As in OpenFormula and LibreOffice Calc (and Excel) a sign binds tighter than `^`, so `-2^2 = 4`.
  */
 export class Parser {
   private readonly tokens: readonly Token[];
   private index = 0;
+  private depth = 0;
 
   constructor(tokens: readonly Token[]) {
     this.tokens = tokens;
@@ -50,19 +65,41 @@ export class Parser {
   static parse(formula: string): Expr {
     let body = formula.trimStart();
     if (body.startsWith('=')) body = body.slice(1);
-    const parser = new Parser(Lexer.tokenize(body));
+    const tokens = Lexer.tokenize(body);
+    if (tokens.length - 1 > MAX_FORMULA_TOKENS)
+      throw new FormulaParseException(
+        `The formula is too long (more than ${MAX_FORMULA_TOKENS} parts).`,
+        tokens[MAX_FORMULA_TOKENS]!.position,
+      );
+    const parser = new Parser(tokens);
     const expr = parser.parseExpression();
     parser.expect('endOfInput');
+    if (treeDepth(expr) > MAX_FORMULA_DEPTH)
+      throw new FormulaParseException('The formula is nested too deeply.', 0);
     return expr;
   }
 
+  /** Parse without throwing: a formula that cannot be read comes back as its `ParseError`. */
   static tryParse(formula: string): ParseResult {
     try {
       return { ok: true, expr: Parser.parse(formula) };
     } catch (e) {
       if (e instanceof FormulaParseException) return { ok: false, error: e.error };
+      // The depth limits should make this unreachable; never let a hostile formula crash a caller.
+      if (e instanceof RangeError)
+        return { ok: false, error: { reason: 'The formula is nested too deeply.', position: 0 } };
       throw e;
     }
+  }
+
+  /** Enter one level of nesting (a parenthesis, call or sign); throws past `MAX_FORMULA_NESTING`. */
+  private enter(): void {
+    if (++this.depth > MAX_FORMULA_NESTING)
+      throw new FormulaParseException('The formula is nested too deeply.', this.current.position);
+  }
+
+  private leave(): void {
+    this.depth--;
   }
 
   private get current(): Token {
@@ -123,46 +160,34 @@ export class Parser {
   }
 
   private parseMulDiv(): Expr {
-    let left = this.parseUnary();
+    let left = this.parsePower();
     while (this.current.type === 'star' || this.current.type === 'slash') {
       const op = this.advance().type === 'star' ? 'multiply' : 'divide';
-      left = Expr.binary(op, left, this.parseUnary());
+      left = Expr.binary(op, left, this.parsePower());
+    }
+    return left;
+  }
+
+  private parsePower(): Expr {
+    // Left-associative (2^3^2 = 64). Both operands may carry a sign: -2^2 = (-2)^2 = 4 and
+    // 2^-2 = 0.25, as in LibreOffice Calc.
+    let left = this.parseUnary();
+    while (this.current.type === 'caret') {
+      this.advance();
+      left = Expr.binary('power', left, this.parseUnary());
     }
     return left;
   }
 
   private parseUnary(): Expr {
-    // Unary +/- binds looser than ^ but tighter than * and / (OpenFormula / LibreOffice Calc order),
-    // so -2^2 = -(2^2) = -4. Deliberately differs from Excel, which gives 4.
-    if (this.current.type === 'minus') {
-      this.advance();
-      return Expr.unary('negate', this.parseUnary());
-    }
-    if (this.current.type === 'plus') {
-      this.advance();
-      return Expr.unary('plus', this.parseUnary());
-    }
-    return this.parsePower();
-  }
-
-  private parsePower(): Expr {
-    // Left-associative (2^3^2 = 64). A sign right after ^ (2^-3) binds only to the following postfix.
-    let left = this.parsePostfix();
-    while (this.current.type === 'caret') {
-      this.advance();
-      left = Expr.binary('power', left, this.parsePowerOperand());
-    }
-    return left;
-  }
-
-  private parsePowerOperand(): Expr {
-    if (this.current.type === 'minus') {
-      this.advance();
-      return Expr.unary('negate', this.parsePowerOperand());
-    }
-    if (this.current.type === 'plus') {
-      this.advance();
-      return Expr.unary('plus', this.parsePowerOperand());
+    // A prefix sign binds tighter than every binary operator, ^ included (OpenFormula / Calc order),
+    // but looser than a postfix % (-5% = -(5%)).
+    if (this.current.type === 'minus' || this.current.type === 'plus') {
+      const op = this.advance().type === 'minus' ? 'negate' : 'plus';
+      this.enter();
+      const operand = this.parseUnary();
+      this.leave();
+      return Expr.unary(op, operand);
     }
     return this.parsePostfix();
   }
@@ -186,15 +211,27 @@ export class Parser {
           const rows = this.tryWholeLines(token.text);
           if (rows) return rows;
         }
-        return Expr.literal(CellValue.number(parseNumber(token)));
+        const value = parseNumber(token);
+        // Too large for a double (1E400): Calc keeps the formula and shows an error, so does this.
+        if (!Number.isFinite(value))
+          return Expr.literal(CellValue.error(CellError.number(`${token.text} is too large a number.`)));
+        return Expr.literal(CellValue.number(value));
       }
       case 'text':
         this.advance();
         return Expr.literal(CellValue.text(token.text));
+      case 'error': {
+        this.advance();
+        const code = CellError.codeFromToken(token.text)!;
+        if (code === 'reference') return Expr.refError;
+        return Expr.literal(CellValue.error(new CellError(code, `The formula contains ${token.text}.`)));
+      }
       case 'leftParen': {
         this.advance();
+        this.enter();
         const inner = this.parseExpression();
         this.expect('rightParen');
+        this.leave();
         return inner;
       }
       case 'name':
@@ -282,6 +319,7 @@ export class Parser {
 
   private parseFunctionCall(nameToken: Token): Expr {
     this.expect('leftParen');
+    this.enter();
     const args: Expr[] = [];
     if (this.current.type !== 'rightParen') {
       // An omitted argument (`IF(A1>0,,1)`) is an empty value, as in LibreOffice.
@@ -293,8 +331,23 @@ export class Parser {
       while (this.match('comma')) args.push(argument());
     }
     this.expect('rightParen');
+    this.leave();
     return Expr.call(nameToken.text.toUpperCase(), args);
   }
+}
+
+/** How deep `expr` nests, counted without recursion (long operator chains build deep trees). */
+function treeDepth(expr: Expr): number {
+  let deepest = 0;
+  const stack: [Expr, number][] = [[expr, 1]];
+  for (let item = stack.pop(); item; item = stack.pop()) {
+    const [node, depth] = item;
+    if (depth > deepest) deepest = depth;
+    if (node.kind === 'unary') stack.push([node.operand, depth + 1]);
+    else if (node.kind === 'binary') stack.push([node.left, depth + 1], [node.right, depth + 1]);
+    else if (node.kind === 'call') for (const a of node.args) stack.push([a, depth + 1]);
+  }
+  return deepest;
 }
 
 interface Line {

@@ -71,8 +71,8 @@ export const Coercion = {
 
   /**
    * Render a number for text contexts without float noise or thousands separators (Calc-style):
-   * integers in full decimal below 1e21, 15 significant digits fixed-point inside ~1e-10 … 1e15,
-   * scientific (G15) outside that band.
+   * integers a double holds exactly (below 2^53) in full decimal, 15 significant digits fixed-point
+   * inside ~1e-10 … 1e15, scientific (G15) outside that band — so 2^60 is 1.15292150460685E+18.
    */
   numberToText(value: number): string {
     if (Number.isNaN(value)) return 'NaN';
@@ -80,7 +80,7 @@ export const Coercion = {
     if (value === 0) return '0';
     const abs = Math.abs(value);
     const sign = value < 0 ? '-' : '';
-    if (value === Math.floor(value) && abs < 1e21) return sign + fixedDigits(abs, 0).integer;
+    if (Number.isSafeInteger(abs)) return sign + String(abs);
     const exponent = Math.floor(Math.log10(abs));
     if (exponent >= 15 || exponent <= -11) return scientificG15(value);
     const decimals = Math.max(0, 15 - 1 - exponent);
