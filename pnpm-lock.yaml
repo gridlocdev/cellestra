@@ -30,6 +30,15 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(jiti@2.7.0))
 
+  apps/cli:
+    dependencies:
+      '@cellestra/charts':
+        specifier: workspace:*
+        version: link:../../packages/charts
+      '@cellestra/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+
   apps/desktop:
     devDependencies:
       '@cellestra/web':

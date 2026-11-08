@@ -33,6 +33,13 @@ preview-web: build-web
     mkdir -p "{{ nas_data }}"
     CELLESTRA_ROOTS="Sample={{ nas_data }}" CELLESTRA_STATIC="{{ justfile_directory() }}/apps/web/dist" node apps/server/src/main.ts
 
+# Run the cellestra CLI from source (paths resolve from where you run it; quoting is kept).
+[group('run')]
+[no-cd]
+[positional-arguments]
+cli *args:
+    node "{{ justfile_directory() }}/apps/cli/src/main.ts" "$@"
+
 # ── Build and package ─────────────────────────────────────────────────────
 
 # Build everything: the web client and the desktop app.

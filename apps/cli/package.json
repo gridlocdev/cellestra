@@ -1,0 +1,19 @@
+{
+  "name": "@cellestra/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "cellestra — the command-line toolkit for .ods workbooks (scripts, CI, and agents).",
+  "bin": {
+    "cellestra": "./bin/cellestra.mjs"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "build": "echo 'cli runs from source (node type stripping)'"
+  },
+  "dependencies": {
+    "@cellestra/charts": "workspace:*",
+    "@cellestra/core": "workspace:*"
+  }
+}
