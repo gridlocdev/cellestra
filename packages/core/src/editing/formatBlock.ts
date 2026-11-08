@@ -5,12 +5,20 @@ import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import type { CellStyle } from '../styling/cellStyle.ts';
 import {
+  CompositeEditCommand,
   EditResult,
   requireSheet,
   type ChangedCell,
   type EditCommand,
   type Position,
 } from './editCommand.ts';
+import {
+  clampToUsed,
+  coversWholeColumns,
+  coversWholeRows,
+  lineStyleCommand,
+  OVERSIZED_CELL_CAP,
+} from './editCommands.ts';
 
 /** A captured pattern of formats (and merges anchored inside it) for the Format Painter. */
 export class FormatBlock {
@@ -57,9 +65,41 @@ export class FormatBlock {
     return new FormatBlock(range.rowCount, range.columnCount, styles, anchors, spans);
   }
 
-  /** Paint the pattern over `target`, tiling it, as one "Format Painter" undo step. */
+  /**
+   * Paint the pattern over `target`, tiling it, as one "Format Painter" undo step. Whole columns or
+   * rows painted with a one-line pattern take it as line styles; any other oversized target is
+   * painted only where the sheet is used.
+   */
   applyTo(sheet: string, target: CellRange): EditCommand {
-    return new PaintCommand(this, sheet, target);
+    return this.lineCommand(sheet, target) ?? new PaintCommand(this, sheet, target);
+  }
+
+  private lineCommand(sheet: string, target: CellRange): EditCommand | null {
+    const columns = coversWholeColumns(target);
+    const rows = coversWholeRows(target);
+    if ((!columns && !rows) || this.mergeAnchors.length > 0) return null;
+    const paint = (range: CellRange, style: CellStyle) =>
+      lineStyleCommand(sheet, range, () => style, 'Format Painter');
+    if (this.rows === 1 && this.columns === 1) return paint(target, this.styles[0]![0]!);
+    const steps: EditCommand[] = [];
+    if (columns && !rows && this.rows === 1 && target.columnCount <= MAX_LINE_STEPS) {
+      for (let c = target.left; c <= target.right; c++)
+        steps.push(
+          paint(
+            CellRange.fromBounds(target.top, c, target.bottom, c),
+            this.styles[0]![(c - target.left) % this.columns]!,
+          ),
+        );
+    } else if (rows && !columns && this.columns === 1 && target.rowCount <= MAX_LINE_STEPS) {
+      for (let r = target.top; r <= target.bottom; r++)
+        steps.push(
+          paint(
+            CellRange.fromBounds(r, target.left, r, target.right),
+            this.styles[(r - target.top) % this.rows]![0]!,
+          ),
+        );
+    } else return null;
+    return new CompositeEditCommand('Format Painter', steps);
   }
 
   /** The rectangle a painter drag from the anchor to (row, column) covers. */
@@ -72,6 +112,9 @@ export class FormatBlock {
     );
   }
 }
+
+/** The most lines a painter pattern is laid onto one by one, before it paints the used area only. */
+const MAX_LINE_STEPS = 1024;
 
 class PaintCommand implements EditCommand {
   readonly label = 'Format Painter';
@@ -90,21 +133,21 @@ class PaintCommand implements EditCommand {
   apply(workbook: Workbook): EditResult {
     const sheet = requireSheet(workbook, this.sheetName);
     const t = this.target;
-    this.cellSnapshot = [...t.positions()].map(([r, c]) => [r, c, sheet.find(r, c)?.clone() ?? null]);
+    // The tiling stays anchored on the target; only the painted area shrinks to the used range.
+    const area =
+      t.cellCount < OVERSIZED_CELL_CAP ? t : (clampToUsed(sheet, t) ?? new CellRange(t.topLeft.relative()));
+    this.cellSnapshot = [...area.positions()].map(([r, c]) => [r, c, sheet.find(r, c)?.clone() ?? null]);
     this.mergeSnapshot = [...sheet.merges];
     const changed: ChangedCell[] = [];
-    for (let r = 0; r < t.rowCount; r++) {
-      for (let c = 0; c < t.columnCount; c++) {
-        const row = t.top + r;
-        const column = t.left + c;
-        const style = this.block.styles[r % this.block.rows]![c % this.block.columns]!;
-        const cell = sheet.getOrCreate(row, column);
-        cell.styleId = workbook.styles.intern(style);
-        sheet.pruneIfBlank(row, column, cell);
-        changed.push({ sheet: this.sheetName, row, column });
-      }
+    for (const [row, column] of area.positions()) {
+      const style =
+        this.block.styles[(row - t.top) % this.block.rows]![(column - t.left) % this.block.columns]!;
+      const cell = sheet.getOrCreate(row, column);
+      cell.styleId = workbook.styles.intern(style);
+      sheet.pruneIfBlank(row, column, cell);
+      changed.push({ sheet: this.sheetName, row, column });
     }
-    this.applyMerges(sheet);
+    this.applyMerges(sheet, area);
     return EditResult.cells(changed);
   }
 
@@ -119,23 +162,27 @@ class PaintCommand implements EditCommand {
     );
   }
 
-  private applyMerges(sheet: Worksheet): void {
+  private applyMerges(sheet: Worksheet, area: CellRange): void {
     const b = this.block;
-    const t = this.target;
+    const t = area;
+    const origin = this.target;
     if (b.mergeAnchors.length === 0) return;
     // Clear merges overlapping the target so the painted pattern wins (mirrors paste).
     for (const region of [...sheet.merges]) {
       if (region.range.intersects(t)) sheet.removeMerge(region.range.top, region.range.left);
     }
-    // Recreate the source merges tiled with the style pattern, clamped to the target.
+    // Recreate the source merges tiled with the style pattern (anchored on the target), clamped to
+    // the painted area.
     const placed: CellRange[] = [];
-    for (let tileRow = 0; tileRow < t.rowCount; tileRow += b.rows) {
-      for (let tileCol = 0; tileCol < t.columnCount; tileCol += b.columns) {
+    const firstRow = t.top - ((t.top - origin.top) % b.rows);
+    const firstColumn = t.left - ((t.left - origin.left) % b.columns);
+    for (let tileRow = firstRow - t.top; tileRow < t.rowCount; tileRow += b.rows) {
+      for (let tileCol = firstColumn - t.left; tileCol < t.columnCount; tileCol += b.columns) {
         b.mergeAnchors.forEach(([ar, ac], i) => {
           const [sr, sc] = b.mergeSpans[i]!;
           const top = t.top + tileRow + ar;
           const left = t.left + tileCol + ac;
-          if (top > t.bottom || left > t.right) return;
+          if (top < t.top || left < t.left || top > t.bottom || left > t.right) return;
           const bottom = Math.min(top + sr - 1, t.bottom);
           const right = Math.min(left + sc - 1, t.right);
           if (bottom === top && right === left) return; // clamped to one cell: nothing to merge

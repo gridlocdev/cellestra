@@ -2,6 +2,7 @@ import { batch, computed, signal, type ReadonlySignal } from '@preact/signals';
 import {
   CsvOptions,
   EditHistory,
+  EditRefusedError,
   NumberFormatter,
   NumberFormats,
   OdsReader,
@@ -191,11 +192,21 @@ export class WorkbookSession {
 
   // ── Edits ────────────────────────────────────────────────────────────────
 
+  /** Told when an edit is refused (a sort over merged cells, an insert that would push data off the sheet). */
+  onRefused: (message: string) => void = () => {};
+
   execute(command: EditCommand): void {
     const entry = this.#entry();
     // A command that throws (a refused edit) leaves the history as it was, so the selection
     // stacks only move once it has run.
-    const result = this.#history.execute(command);
+    let result: EditResult;
+    try {
+      result = this.#history.execute(command);
+    } catch (e) {
+      if (!(e instanceof EditRefusedError)) throw e;
+      this.onRefused(e.message);
+      return;
+    }
     this.#undoSelections.push(entry);
     if (this.#undoSelections.length > EditHistory.maxDepth) this.#undoSelections.shift();
     this.#redoSelections.length = 0;

@@ -35,6 +35,19 @@ describe('CellRange', () => {
     expect(CellRange.tryParse('Sheet1.A1:Sheet1.B2')?.sheet).toBe('Sheet1');
   });
 
+  it.each([
+    ['Sheet1.$B$2:.$B$7', 'Sheet1.$B$2:$B$7'], // ODF: empty sheet part on the end corner
+    ['$Sheet1.$B$2:$Sheet1.$B$7', 'Sheet1.$B$2:$B$7'], // ODF: absolute sheet marker
+    ['$Sheet1.$B$2:.$B$7', 'Sheet1.$B$2:$B$7'],
+    ["$'My Sheet'.A1:.B2", "'My Sheet'.A1:B2"],
+  ])('ODF range forms parse: %s', (text, expected) => {
+    expect(CellRange.tryParse(text)?.toString()).toBe(expected);
+  });
+
+  it('a sheet name that starts with $ is read when quoted', () => {
+    expect(CellRange.tryParse("'$Cash'.A1:B2")?.sheet).toBe('$Cash');
+  });
+
   it('contains and intersects', () => {
     const a = CellRange.parse('B2:D4');
     expect(a.contains(2, 2)).toBe(true);

@@ -160,10 +160,11 @@ function transformChart(
  * sort keys, and chart ranges. A validation whose target was deleted goes, and so does a name whose
  * target was deleted (as a chart series whose values were).
  */
-export function transformReferences(workbook: Workbook, transform: ReferenceTransform): void {
-  // A chart's unqualified reference means the first data sheet (ChartDataResolver's rule).
-  const chartHome = workbook.worksheets.find((s) => !s.isChartSheet)?.name ?? workbook.worksheets[0]?.name;
-
+export function transformReferences(
+  workbook: Workbook,
+  transform: ReferenceTransform,
+  chartHome: string | undefined = defaultChartHome(workbook),
+): void {
   const names: NamedRange[] = [];
   for (const n of workbook.namedRanges) {
     // A name's unqualified target means its scope's sheet; a global one has no home to resolve.
@@ -178,6 +179,11 @@ export function transformReferences(workbook: Workbook, transform: ReferenceTran
   workbook.replaceNamedRanges(names);
 
   for (const s of workbook.worksheets) transformSheetReferences(s, transform, chartHome ?? s.name);
+}
+
+/** A chart's unqualified reference means the first data sheet (ChartDataResolver's rule). */
+export function defaultChartHome(workbook: Workbook): string | undefined {
+  return workbook.worksheets.find((s) => !s.isChartSheet)?.name ?? workbook.worksheets[0]?.name;
 }
 
 function transformSheetReferences(s: Worksheet, transform: ReferenceTransform, chartHome: string): void {

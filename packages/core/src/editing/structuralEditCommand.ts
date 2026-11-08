@@ -6,9 +6,15 @@ import { Column, Row } from '../model/lines.ts';
 import { MergedRegion } from '../model/mergedRegion.ts';
 import { cellKey, keyColumn, keyRow, SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
-import type { WorksheetState } from '../model/worksheet.ts';
+import type { Worksheet, WorksheetState } from '../model/worksheet.ts';
 import { captureFormulas, restoreFormulas } from './deleteSheetCommand.ts';
-import { EditResult, requireSheet, type ChangedCell, type EditCommand } from './editCommand.ts';
+import {
+  EditRefusedError,
+  EditResult,
+  requireSheet,
+  type ChangedCell,
+  type EditCommand,
+} from './editCommand.ts';
 import { rewriteFormula } from './formulaRewrite.ts';
 import {
   captureReferences,
@@ -56,6 +62,7 @@ export class StructuralEditCommand implements EditCommand {
 
   apply(workbook: Workbook): EditResult {
     const sheet = requireSheet(workbook, this.sheetName);
+    this.refuseDataLoss(sheet);
     this.editedBefore = sheet.capture();
     this.otherFormulasBefore = captureFormulas(workbook, sheet);
     this.referencesBefore = captureReferences(workbook);
@@ -71,6 +78,32 @@ export class StructuralEditCommand implements EditCommand {
     restoreFormulas(workbook, this.otherFormulasBefore);
     restoreReferences(workbook, this.referencesBefore);
     return EditResult.structuralChange;
+  }
+
+  /**
+   * An insert pushes the last lines off the sheet. Refuse when that would lose a value or formula,
+   * or cut a merge or table short, rather than drop them silently (formatting alone may go).
+   */
+  private refuseDataLoss(sheet: Worksheet): void {
+    if (this.operation !== 'insert') return;
+    const rows = this.axis === 'row';
+    const firstLost = Math.max(this.at, this.limit - this.count);
+    const extent = sheet.cellExtent();
+    if (extent && (rows ? extent.lastRow : extent.lastColumn) >= firstLost) {
+      for (const [row, column, cell] of sheet.enumerateCells()) {
+        if ((rows ? row : column) < firstLost) continue;
+        if (cell.formula !== null || cell.value.kind !== 'empty')
+          throw new EditRefusedError(this.lossMessage);
+      }
+    }
+    const reaches = (range: CellRange) => (rows ? range.bottom : range.right) >= firstLost;
+    if (sheet.merges.some((m) => reaches(m.range)) || sheet.tables.some((t) => reaches(t.range)))
+      throw new EditRefusedError(this.lossMessage);
+  }
+
+  private get lossMessage(): string {
+    const lines = this.axis === 'row' ? 'rows' : 'columns';
+    return `Can't insert ${lines}: it would push data off the end of the sheet. Delete or move the data in the last ${lines} first.`;
   }
 
   // ---- The post-shift sheet state -------------------------------------------
@@ -104,15 +137,33 @@ export class StructuralEditCommand implements EditCommand {
 
   /**
    * Tables overlapping the edit resize along its axis; one wholly inside a deleted span goes. Their
-   * filter and sort keys (absolute columns) follow their columns.
+   * filter and sort keys (absolute columns) follow their columns. Deleting a table's header row (or
+   * header column) leaves it without one, rather than promoting its first data row.
    */
   private shiftTables(source: readonly Table[], rows: boolean): Table[] {
     const out: Table[] = [];
     for (const t of source) {
       const range = this.shiftRange(t.range, rows);
-      if (range) out.push(transformTableKeys({ ...t, range }, this.sheetName, this.transform));
+      if (!range) continue;
+      let shifted: Table = { ...t, range };
+      if (this.deletes(rows ? t.range.top : t.range.left)) {
+        if (rows && t.hasHeader) {
+          shifted = {
+            ...shifted,
+            hasHeader: false,
+            filter: t.filter ? { ...t.filter, hasHeader: false } : t.filter,
+            sort: t.sort ? { ...t.sort, hasHeader: false } : t.sort,
+          };
+        }
+        if (!rows && t.hasHeaderColumn) shifted = { ...shifted, hasHeaderColumn: false };
+      }
+      out.push(transformTableKeys(shifted, this.sheetName, this.transform));
     }
     return out;
+  }
+
+  private deletes(line: number): boolean {
+    return this.operation === 'delete' && line >= this.at && line < this.at + this.count;
   }
 
   private shiftMerges(source: readonly MergedRegion[], rows: boolean): MergedRegion[] {

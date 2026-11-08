@@ -3,7 +3,12 @@ import { ReferenceAdjuster } from '../formulas/references/referenceAdjuster.ts';
 import type { Cell } from '../model/cell.ts';
 import type { CellRange } from '../model/cellRange.ts';
 import type { Worksheet } from '../model/worksheet.ts';
+import { InputParser } from '../editing/inputParser.ts';
+import { getHostLocale } from '../model/documentSettings.ts';
+import { SheetDimensions } from '../model/sheetDimensions.ts';
 import { parseCsv } from '../serialization/csv/csvReader.ts';
+import { NumberFormats } from '../styling/cellStyle.ts';
+import type { StylePool } from '../styling/stylePool.ts';
 import { CellValue } from '../values/cellValue.ts';
 
 /** Remove Duplicates (PRD §8.11). */
@@ -59,19 +64,28 @@ export const DuplicateRemover = {
 export const TextToColumns = {
   /**
    * Split each text cell of the source column on `delimiter` (CSV quoting rules) into the cells to its
-   * right; an empty field clears its cell. Returns the widest field count (at least 1).
+   * right; an empty field clears its cell. Each field is read as typed input in `locale` (a number,
+   * a date, TRUE/FALSE, else text; never a formula), and with `styles` a date also gets its date
+   * format where the cell's format is General. Returns the widest field count (at least 1).
    */
-  split(sheet: Worksheet, sourceColumn: CellRange, delimiter: string): number {
+  split(
+    sheet: Worksheet,
+    sourceColumn: CellRange,
+    delimiter: string,
+    options: { readonly locale?: string; readonly styles?: StylePool | null } = {},
+  ): number {
     const column = sourceColumn.left;
+    const locale = options.locale ?? getHostLocale();
     let maxColumns = 1;
     for (let row = sourceColumn.top; row <= sourceColumn.bottom; row++) {
       const value = sheet.getValue(row, column);
       if (value.kind !== 'text') continue;
       const fields = splitFields(value.value, delimiter);
       maxColumns = Math.max(maxColumns, fields.length);
-      fields.forEach((f, i) =>
-        sheet.setValue(row, column + i, f.length === 0 ? CellValue.empty : CellValue.text(f)),
-      );
+      fields.forEach((f, i) => {
+        if (column + i >= SheetDimensions.maxColumns) return;
+        writeField(sheet, row, column + i, f, locale, options.styles ?? null);
+      });
     }
     return maxColumns;
   },
@@ -79,6 +93,34 @@ export const TextToColumns = {
   /** The fields one cell's text splits into (the first CSV record). */
   fields: (text: string, delimiter: string): string[] => splitFields(text, delimiter),
 } as const;
+
+function writeField(
+  sheet: Worksheet,
+  row: number,
+  column: number,
+  field: string,
+  locale: string,
+  styles: StylePool | null,
+): void {
+  if (field.length === 0) {
+    sheet.setValue(row, column, CellValue.empty);
+    return;
+  }
+  // A field that would read as a formula, or carries the text marker, stays the text it was.
+  const parsed = field[0] === '=' || field[0] === "'" ? null : InputParser.parse(field, locale);
+  if (!parsed || parsed.formula !== null) {
+    sheet.setValue(row, column, CellValue.text(field));
+    return;
+  }
+  sheet.setValue(row, column, parsed.value);
+  const format = parsed.suggestedFormat;
+  if (styles && format) {
+    const cell = sheet.getOrCreate(row, column);
+    const style = styles.get(cell.styleId);
+    if (NumberFormats.isGeneral(style.numberFormat))
+      cell.styleId = styles.intern({ ...style, numberFormat: format });
+  }
+}
 
 function splitFields(text: string, delimiter: string): string[] {
   return parseCsv(text, { delimiter })[0] ?? [];

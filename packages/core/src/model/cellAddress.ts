@@ -81,7 +81,7 @@ export class CellAddress {
     return this.sheet === null ? a1 : `${quoteSheetIfNeeded(this.sheet)}.${a1}`;
   }
 
-  /** Parse `B7`, `$B$7`, `Sheet1.B7`, or `'My Sheet'.B7`. Throws on bad input. */
+  /** Parse `B7`, `$B$7`, `Sheet1.B7`, `$Sheet1.B7` (ODF), or `'My Sheet'.B7`. Throws on bad input. */
   static parse(text: string): CellAddress {
     const a = CellAddress.tryParse(text);
     if (!a) throw new SyntaxError(`'${text}' is not a valid cell reference.`);
@@ -94,7 +94,10 @@ export class CellAddress {
     let sheet: string | null = null;
     const dot = findSheetSeparator(span);
     if (dot >= 0) {
-      sheet = unquoteSheet(span.slice(0, dot));
+      // ODF marks an absolute sheet with a leading `$` (`$Sheet1.A1`); a name that really starts
+      // with `$` is always written quoted.
+      const prefix = span.slice(0, dot);
+      sheet = unquoteSheet(prefix.startsWith('$') ? prefix.slice(1) : prefix);
       if (sheet === null) return null;
       span = span.slice(dot + 1);
     }

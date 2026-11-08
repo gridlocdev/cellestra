@@ -1,12 +1,24 @@
+import type { Expr } from '../formulas/ast/expr.ts';
 import { ReferenceAdjuster } from '../formulas/references/referenceAdjuster.ts';
+import type { NamedRange } from '../model/namedRange.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import { EditResult, requireSheet, type ChangedCell, type EditCommand } from './editCommand.ts';
 import { rewriteFormula } from './formulaRewrite.ts';
+import {
+  captureReferences,
+  defaultChartHome,
+  restoreReferences,
+  transformReferences,
+  type ReferenceSnapshot,
+} from './workbookReferences.ts';
 
 /**
- * Delete a sheet; references to it elsewhere become `#REF!`. Undo re-inserts the same sheet object
- * at its old index and restores every other sheet's formula text. Throws on the last sheet.
+ * Delete a sheet; references to it elsewhere become `#REF!`: in formulas, and in everything else that
+ * names cells (see `transformReferences`) — a named range on it (or scoped to it) goes, a validation
+ * list sourced from it accepts nothing, a chart series plotting it goes. Undo re-inserts the same
+ * sheet object at its old index and restores every other sheet's formula text and those references.
+ * Throws on the last sheet.
  */
 export class DeleteSheetCommand implements EditCommand {
   readonly label = 'Delete Sheet';
@@ -14,6 +26,7 @@ export class DeleteSheetCommand implements EditCommand {
   private index = 0;
   private removed: Worksheet | null = null;
   private otherFormulasBefore: [ChangedCell, string][] | null = null;
+  private referencesBefore: ReferenceSnapshot | null = null;
 
   constructor(sheetName: string) {
     this.sheetName = sheetName;
@@ -24,22 +37,33 @@ export class DeleteSheetCommand implements EditCommand {
     this.index = workbook.indexOf(sheet);
     this.removed = sheet;
     this.otherFormulasBefore = captureFormulas(workbook, sheet);
+    this.referencesBefore = captureReferences(workbook);
+    // Charts read unqualified references against the first data sheet, which may be this one.
+    const chartHome = defaultChartHome(workbook);
     workbook.removeSheet(sheet);
+    const deleted = this.sheetName;
+    const transform = (expr: Expr, home: string): Expr =>
+      ReferenceAdjuster.forDeleteSheet(expr, deleted, home);
     for (const other of workbook.worksheets) {
       for (const [, , cell] of other.enumerateCells()) {
         if (cell.formula === null) continue;
-        cell.formula = rewriteFormula(cell.formula, (expr) =>
-          ReferenceAdjuster.forDeleteSheet(expr, this.sheetName, other.name),
-        );
+        cell.formula = rewriteFormula(cell.formula, (expr) => transform(expr, other.name));
       }
     }
+    transformReferences(workbook, transform, chartHome);
+    // A name scoped to the deleted sheet has no scope left, wherever its target is.
+    const scopedHere = (n: NamedRange) =>
+      n.scope !== null && n.scope !== undefined && n.scope.toLowerCase() === deleted.toLowerCase();
+    if (workbook.namedRanges.some(scopedHere))
+      workbook.replaceNamedRanges(workbook.namedRanges.filter((n) => !scopedHere(n)));
     return EditResult.structuralChange;
   }
 
   undo(workbook: Workbook): EditResult {
-    if (!this.removed || !this.otherFormulasBefore) return EditResult.none;
+    if (!this.removed || !this.otherFormulasBefore || !this.referencesBefore) return EditResult.none;
     workbook.insertSheet(this.index, this.removed);
     restoreFormulas(workbook, this.otherFormulasBefore);
+    restoreReferences(workbook, this.referencesBefore);
     return EditResult.structuralChange;
   }
 }

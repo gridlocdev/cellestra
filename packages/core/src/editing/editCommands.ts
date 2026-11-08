@@ -1,7 +1,8 @@
 import { CellRange } from '../model/cellRange.ts';
 import type { Hyperlink } from '../model/hyperlink.ts';
 import { MergedRegion } from '../model/mergedRegion.ts';
-import { SheetDimensions } from '../model/sheetDimensions.ts';
+import type { Cell } from '../model/cell.ts';
+import { cellKey, SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import { CellStyles, NumberFormats, type CellStyle } from '../styling/cellStyle.ts';
@@ -47,8 +48,12 @@ function styleRange(sheet: Worksheet, range: CellRange): CellRange {
   return clampToUsed(sheet, range) ?? new CellRange(range.topLeft.relative());
 }
 
-function coversWholeColumns(range: CellRange): boolean {
+export function coversWholeColumns(range: CellRange): boolean {
   return range.top === 0 && range.bottom >= SheetDimensions.maxRows - 1;
+}
+
+export function coversWholeRows(range: CellRange): boolean {
+  return range.left === 0 && range.right >= SheetDimensions.maxColumns - 1;
 }
 
 /** Factories for the everyday undoable edits. Every command names its sheet. */
@@ -181,7 +186,7 @@ export const EditCommands = {
    */
   insertCheckboxes(workbook: Workbook, sheet: string, range: CellRange): EditCommand {
     const positions = (ws: Worksheet): Position[] =>
-      coversWholeColumns(range) || range.rowCount * range.columnCount > OVERSIZED_CELL_CAP
+      coversWholeColumns(range) || coversWholeRows(range) || range.cellCount > OVERSIZED_CELL_CAP
         ? clampedPositions(ws, range)
         : [...range.positions()];
     const style = EditCommands.applyStyle(
@@ -215,8 +220,9 @@ export const EditCommands = {
   // ---- Styling ----------------------------------------------------------
 
   /**
-   * Transform the style of every cell in the range. A whole-column range styles the column models
-   * (plus cells carrying a style of their own) instead of materializing a million cells.
+   * Transform the style of every cell in the range. A whole-column or whole-row range styles the
+   * line models (plus the cells that need a style of their own) instead of materializing a cell per
+   * position.
    */
   applyStyle(
     workbook: Workbook,
@@ -225,7 +231,8 @@ export const EditCommands = {
     change: (style: CellStyle) => CellStyle,
     label = 'Format Cells',
   ): EditCommand {
-    if (coversWholeColumns(range)) return applyColumnStyle(workbook, sheet, range, change, label);
+    if (coversWholeColumns(range) || coversWholeRows(range))
+      return lineStyleCommand(sheet, range, change, label);
     return new CellSnapshotCommand(
       label,
       sheet,
@@ -374,42 +381,105 @@ export const EditCommands = {
   },
 } as const;
 
-function applyColumnStyle(
-  workbook: Workbook,
+type StyleChange = (style: CellStyle) => CellStyle;
+
+/**
+ * Style whole columns and/or whole rows through their line models, never one cell per position.
+ * Every position in the range ends up looking like `change` of how it looked before: lines take the
+ * transform, cells with a style of their own take it directly, and where the crossing line's style
+ * used to win (a styled row under a column style: cell → row → column) the crossing gets a cell of
+ * its own, so the new style shows there too (as LibreOffice and Excel do).
+ */
+export function lineStyleCommand(
   sheet: string,
   range: CellRange,
-  change: (style: CellStyle) => CellStyle,
+  change: StyleChange,
   label: string,
 ): EditCommand {
-  let columnsBefore: [column: number, styleId: number][] = [];
-  let cellsBefore: [row: number, column: number, styleId: number][] = [];
+  const columns = coversWholeColumns(range);
+  const rows = coversWholeRows(range);
+  let rowsBefore: [index: number, styleId: number][] = [];
+  let columnsBefore: [index: number, styleId: number][] = [];
+  let cellsBefore: [row: number, column: number, before: Cell | null][] = [];
   return new ActionCommand(
     label,
     (wb) => {
       const ws = requireSheet(wb, sheet);
+      const memo = new Map<number, number>();
+      const restyled = (id: number): number => {
+        let out = memo.get(id);
+        if (out === undefined) {
+          out = wb.styles.intern(change(wb.styles.get(id)));
+          memo.set(id, out);
+        }
+        return out;
+      };
+      rowsBefore = [];
       columnsBefore = [];
       cellsBefore = [];
-      for (let column = range.left; column <= range.right; column++) {
-        const model = ws.getOrCreateColumn(column);
-        columnsBefore.push([column, model.styleId]);
-        model.styleId = workbook.styles.intern(change(workbook.styles.get(model.styleId)));
+
+      // Work out the cells first: they depend on the line styles as they were.
+      const cellStyles = new Map<number, [row: number, column: number, styleId: number]>();
+      const setCell = (row: number, column: number, styleId: number) =>
+        cellStyles.set(cellKey(row, column), [row, column, styleId]);
+      for (const [row, column, cell] of ws.enumerateCells()) {
+        if (range.contains(row, column) && cell.styleId !== StylePool.defaultId)
+          setCell(row, column, restyled(cell.styleId));
       }
-      // Cells with a style of their own aren't covered by the column default, so they take the
-      // transform directly; unstyled ones inherit it and are left alone.
-      for (const [row, column, cell] of [...ws.enumerateCells()]) {
-        if (column < range.left || column > range.right || cell.styleId === StylePool.defaultId) continue;
-        cellsBefore.push([row, column, cell.styleId]);
-        cell.styleId = workbook.styles.intern(change(workbook.styles.get(cell.styleId)));
+      const own = (row: number, column: number): number =>
+        ws.find(row, column)?.styleId ?? StylePool.defaultId;
+      if (columns && !rows) {
+        // A styled row beats the column: its crossings need the change as cells of their own.
+        for (const [row, model] of ws.rows) {
+          if (model.styleId === StylePool.defaultId) continue;
+          for (let column = range.left; column <= range.right; column++)
+            if (own(row, column) === StylePool.defaultId) setCell(row, column, restyled(model.styleId));
+        }
+      } else if (rows && !columns) {
+        // A row with no style of its own showed its columns' styles; the new row style would hide them.
+        for (const [column, model] of ws.columns) {
+          if (model.styleId === StylePool.defaultId || column < range.left || column > range.right) continue;
+          for (let row = range.top; row <= range.bottom; row++) {
+            if (ws.findRow(row)?.styleId ?? StylePool.defaultId) continue;
+            if (own(row, column) === StylePool.defaultId) setCell(row, column, restyled(model.styleId));
+          }
+        }
+      }
+
+      if (columns) {
+        for (let column = range.left; column <= range.right; column++) {
+          const model = ws.getOrCreateColumn(column);
+          columnsBefore.push([column, model.styleId]);
+          model.styleId = restyled(model.styleId);
+        }
+      }
+      if (rows && !columns) {
+        for (let row = range.top; row <= range.bottom; row++) {
+          const model = ws.getOrCreateRow(row);
+          rowsBefore.push([row, model.styleId]);
+          model.styleId = restyled(model.styleId);
+        }
+      } else if (rows) {
+        // The whole sheet: the columns cover unstyled rows; styled rows take the change themselves.
+        for (const [row, model] of ws.rows) {
+          if (model.styleId === StylePool.defaultId) continue;
+          rowsBefore.push([row, model.styleId]);
+          model.styleId = restyled(model.styleId);
+        }
+      }
+      for (const [row, column, styleId] of cellStyles.values()) {
+        cellsBefore.push([row, column, ws.find(row, column)?.clone() ?? null]);
+        const cell = ws.getOrCreate(row, column);
+        cell.styleId = styleId;
+        ws.pruneIfBlank(row, column, cell);
       }
       return EditResult.none; // a style change moves no values: nothing to recalc
     },
     (wb) => {
       const ws = requireSheet(wb, sheet);
       for (const [column, styleId] of columnsBefore) ws.getOrCreateColumn(column).styleId = styleId;
-      for (const [row, column, styleId] of cellsBefore) {
-        const cell = ws.find(row, column);
-        if (cell) cell.styleId = styleId;
-      }
+      for (const [row, styleId] of rowsBefore) ws.getOrCreateRow(row).styleId = styleId;
+      for (const [row, column, before] of cellsBefore) ws.putCell(row, column, before?.clone() ?? null);
       return EditResult.none;
     },
   );

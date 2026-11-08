@@ -1,8 +1,9 @@
 import { ValueComparer } from '../formulas/evaluation/valueComparer.ts';
 import { ReferenceAdjuster } from '../formulas/references/referenceAdjuster.ts';
+import { EditRefusedError } from '../editing/editCommand.ts';
 import { rewriteFormula } from '../editing/formulaRewrite.ts';
 import type { Cell } from '../model/cell.ts';
-import type { CellRange } from '../model/cellRange.ts';
+import { CellRange } from '../model/cellRange.ts';
 import { getHostLocale } from '../model/documentSettings.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import { CellValue } from '../values/cellValue.ts';
@@ -23,11 +24,16 @@ interface RowSnapshot {
  * Sort (PRD §8.11): a stable multi-level sort of a range's data rows (the header stays put). Empty
  * cells always sort last; values order as the comparison operators do. Relative references into the
  * sorted rows follow their row, and an active filter is re-applied so visibility tracks the values.
+ * A merge across the data rows refuses the sort (`EditRefusedError`) before anything moves.
  */
 export const SortEngine = {
   sort(sheet: Worksheet, range: CellRange, spec: SortSpec, locale?: string): void {
     const first = range.top + (spec.hasHeader ? 1 : 0);
     if (first > range.bottom) return;
+    const data = CellRange.fromBounds(first, range.left, range.bottom, range.right);
+    // Merges don't move with their rows, so sorting under one would scramble it: refuse instead.
+    if (sheet.merges.some((m) => m.range.intersects(data)))
+      throw new EditRefusedError("Merged cells can't be sorted. Unmerge them, then sort again.");
     const rows: RowSnapshot[] = [];
     for (let row = first; row <= range.bottom; row++) {
       const cells: (Cell | null)[] = [];

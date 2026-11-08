@@ -36,6 +36,18 @@ export interface EditCommand {
   undo(workbook: Workbook): EditResult;
 }
 
+/**
+ * Thrown by a command's `apply` when it refuses an edit it can't carry out faithfully (sorting
+ * across merged cells, inserting lines that would push data off the sheet). The workbook is left as
+ * it was and nothing goes on the undo stack; `message` is written for the user.
+ */
+export class EditRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EditRefusedError';
+  }
+}
+
 /** A command from a pair of closures; state shared between them lives in the closure scope. */
 export class ActionCommand implements EditCommand {
   readonly label: string;
@@ -72,7 +84,15 @@ export class CompositeEditCommand implements EditCommand {
   }
 
   apply(workbook: Workbook): EditResult {
-    return combineResults(this.commands.map((c) => c.apply(workbook)));
+    const results: EditResult[] = [];
+    try {
+      for (const c of this.commands) results.push(c.apply(workbook));
+    } catch (error) {
+      // A refused step: take back the ones before it, so the workbook is as it was.
+      for (let i = results.length - 1; i >= 0; i--) this.commands[i]!.undo(workbook);
+      throw error;
+    }
+    return combineResults(results);
   }
 
   undo(workbook: Workbook): EditResult {

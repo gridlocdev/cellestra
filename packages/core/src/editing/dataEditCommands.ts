@@ -87,22 +87,53 @@ export const DataEditCommands = {
 
   // ---- Text to columns --------------------------------------------------
 
-  /** Split a column's text; snapshots a block as wide as the widest split, so it fully undoes. */
-  textToColumns(worksheet: Worksheet, sourceColumn: CellRange, delimiter: string): EditCommand {
-    let maxFields = 1;
-    for (let row = sourceColumn.top; row <= sourceColumn.bottom; row++) {
-      const v = worksheet.getValue(row, sourceColumn.left);
-      if (v.kind === 'text') maxFields = Math.max(maxFields, TextToColumns.fields(v.value, delimiter).length);
-    }
-    const range = CellRange.fromBounds(
-      sourceColumn.top,
-      sourceColumn.left,
-      sourceColumn.bottom,
-      sourceColumn.left + maxFields - 1,
+  /**
+   * Split a column's text; snapshots a block as wide as the widest split, so it fully undoes. Only
+   * the used rows of a whole-column selection are read. Fields are read as typed input in `locale`
+   * (numbers, dates, TRUE/FALSE), and a date gets its date format.
+   */
+  textToColumns(
+    worksheet: Worksheet,
+    sourceColumn: CellRange,
+    delimiter: string,
+    locale: string = getHostLocale(),
+  ): EditCommand {
+    const source = (ws: Worksheet): CellRange | null => {
+      const bottom = Math.min(sourceColumn.bottom, ws.cellExtent()?.lastRow ?? -1);
+      return bottom < sourceColumn.top
+        ? null
+        : CellRange.fromBounds(sourceColumn.top, sourceColumn.left, bottom, sourceColumn.left);
+    };
+    const block = (ws: Worksheet): CellRange | null => {
+      const src = source(ws);
+      if (!src) return null;
+      let maxFields = 1;
+      for (let row = src.top; row <= src.bottom; row++) {
+        const v = ws.getValue(row, src.left);
+        if (v.kind === 'text')
+          maxFields = Math.max(maxFields, TextToColumns.fields(v.value, delimiter).length);
+      }
+      const right = Math.min(src.left + maxFields - 1, SheetDimensions.maxColumns - 1);
+      return CellRange.fromBounds(src.top, src.left, src.bottom, right);
+    };
+    let styles: StylePool | null = null;
+    const split = new CellSnapshotCommand(
+      'Text to Columns',
+      worksheet.name,
+      (ws) => [...(block(ws)?.positions() ?? [])],
+      (ws) => {
+        const src = source(ws);
+        if (src) TextToColumns.split(ws, src, delimiter, { locale, styles });
+      },
     );
-    return new CellSnapshotCommand('Text to Columns', worksheet.name, [...range.positions()], (ws) => {
-      TextToColumns.split(ws, sourceColumn, delimiter);
-    });
+    return new ActionCommand(
+      'Text to Columns',
+      (wb) => {
+        styles = wb.styles;
+        return split.apply(wb);
+      },
+      (wb) => split.undo(wb),
+    );
   },
 
   // ---- Filter -----------------------------------------------------------
@@ -479,58 +510,73 @@ function setSheetFilterState(
 }
 
 /**
- * Changes nothing; keeps the hidden flag of each row of every filter that overlaps `range` (the
- * sheet's filter and table filters, cut off at the used range) and puts them back on undo.
+ * Changes nothing; keeps which rows of every filter that overlaps `range` (the sheet's filter and
+ * table filters) are hidden, and puts exactly those flags back on undo.
  */
 function filteredRowsCommand(sheet: string, range: CellRange): EditCommand {
-  let before: (readonly [row: number, hidden: boolean])[] = [];
+  let filtered: CellRange[] = [];
+  let hiddenBefore = new Set<number>();
   return new ActionCommand(
     'Sort',
     (wb) => {
       const ws = requireSheet(wb, sheet);
-      const filtered: CellRange[] = [];
+      filtered = [];
       if (ws.activeFilter && ws.activeFilterSpec && ws.activeFilter.intersects(range))
         filtered.push(ws.activeFilter);
       for (const t of ws.tables) if (t.filter && t.range.intersects(range)) filtered.push(t.range);
-      const last = ws.getUsedRange()?.bottom ?? -1;
-      const rows = new Set<number>();
-      for (const r of filtered) for (let row = r.top; row <= Math.min(r.bottom, last); row++) rows.add(row);
-      before = [...rows].map((row) => [row, ws.isRowHidden(row)] as const);
+      hiddenBefore = new Set();
+      for (const r of filtered) for (const row of hiddenRowsIn(ws, r)) hiddenBefore.add(row);
       return EditResult.none;
     },
     (wb) => {
       const ws = requireSheet(wb, sheet);
-      for (const [row, hidden] of before)
-        if (ws.isRowHidden(row) !== hidden) ws.getOrCreateRow(row).hidden = hidden;
+      for (const r of filtered) {
+        for (const [row, model] of ws.rows) {
+          if (row >= r.top && row <= r.bottom) model.hidden = hiddenBefore.has(row);
+        }
+      }
+      for (const row of hiddenBefore) if (!ws.isRowHidden(row)) ws.getOrCreateRow(row).hidden = true;
       return EditResult.none;
     },
   );
 }
 
-/** Snapshot the hidden flag of every row of the range, run the change, undo by restoring the flags. */
+/**
+ * Run a change to row visibility over the range; undo puts back the hidden flag of each row it
+ * changed (found from the sparse row models, so a whole-column range costs nothing extra).
+ */
 function rowVisibilityCommand(
   label: string,
   sheet: string,
   range: CellRange,
   apply: (ws: Worksheet) => void,
 ): EditCommand {
-  let before: boolean[] | null = null;
+  let changed: (readonly [row: number, hidden: boolean])[] = [];
   return new ActionCommand(
     label,
     (wb) => {
       const ws = requireSheet(wb, sheet);
-      before = [];
-      for (let row = range.top; row <= range.bottom; row++) before.push(ws.isRowHidden(row));
+      const hiddenBefore = hiddenRowsIn(ws, range);
       apply(ws);
+      const hiddenAfter = hiddenRowsIn(ws, range);
+      changed = [];
+      for (const row of hiddenBefore) if (!hiddenAfter.has(row)) changed.push([row, true]);
+      for (const row of hiddenAfter) if (!hiddenBefore.has(row)) changed.push([row, false]);
       return EditResult.none;
     },
     (wb) => {
-      if (!before) return EditResult.none;
       const ws = requireSheet(wb, sheet);
-      before.forEach((hidden, i) => (ws.getOrCreateRow(range.top + i).hidden = hidden));
+      for (const [row, hidden] of changed) ws.getOrCreateRow(row).hidden = hidden;
       return EditResult.none;
     },
   );
+}
+
+function hiddenRowsIn(ws: Worksheet, range: CellRange): Set<number> {
+  const out = new Set<number>();
+  for (const [row, model] of ws.rows)
+    if (model.hidden && row >= range.top && row <= range.bottom) out.add(row);
+  return out;
 }
 
 function restoreLines(ws: Worksheet, rows: readonly LineState[], columns: readonly LineState[]): void {

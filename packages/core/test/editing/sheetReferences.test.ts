@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { dataValidation, table } from '../../src/data/types.ts';
 import { RecalculationEngine } from '../../src/dependencies/recalculationEngine.ts';
 import { ClipboardBlock } from '../../src/editing/clipboardBlock.ts';
+import { DeleteSheetCommand } from '../../src/editing/deleteSheetCommand.ts';
 import { EditHistory } from '../../src/editing/editHistory.ts';
 import { PasteBlockCommand } from '../../src/editing/pasteBlockCommand.ts';
 import { RenameSheetCommand } from '../../src/editing/renameSheetCommand.ts';
@@ -185,5 +186,55 @@ describe('cut and paste to another sheet', () => {
     expect(s1.find(1, 0)!.formula).toBe('A1*2');
     expect(s1.find(2, 0)!.formula).toBe('B5+1');
     expect(s2.find(1, 2)).toBeUndefined();
+  });
+});
+
+describe('DeleteSheetCommand fixes references outside formulas', () => {
+  function book() {
+    const workbook = Workbook.createNew();
+    const history = new EditHistory(workbook);
+    const main = workbook.activeSheet;
+    workbook.addSheet('Data');
+    workbook.addNamedRange({ name: 'Src', target: R('Data.A1:A3') });
+    workbook.addNamedRange({ name: 'Local', target: R('Sheet1.A1'), scope: 'Data' });
+    workbook.addNamedRange({ name: 'Kept', target: R('Sheet1.B1:B2') });
+    main.addValidation(dataValidation('list', R('B1:B5'), { listSource: R('Data.A1:A3') }));
+    const chartSheet = workbook.addChartSheet(
+      createChart({
+        categoriesReference: 'Data.A1:A3',
+        series: [
+          createSeries({ valuesReference: 'Data.$B$1:.$B$3' }),
+          createSeries({ valuesReference: 'Sheet1.C1:C3' }),
+        ],
+      }),
+    );
+    return { workbook, history, main, chartSheet };
+  }
+
+  it('names on (or scoped to) the sheet go, list sources break, and chart series on it go', () => {
+    const { workbook, history, main, chartSheet } = book();
+    history.execute(new DeleteSheetCommand('Data'));
+
+    expect(workbook.namedRanges.map((n) => n.name)).toEqual(['Kept']);
+    const rule = main.validations[0]!;
+    expect(str(rule.target)).toBe('B1:B5');
+    expect(rule.listSource ?? null).toBeNull(); // #REF!: the list accepts nothing
+    expect(chartSheet.chart!.series.map((s) => s.valuesReference)).toEqual(['Sheet1.C1:C3']);
+    expect(chartSheet.chart!.categoriesReference).toBeNull();
+
+    // A new sheet of the same name doesn't pick the old references back up.
+    workbook.addSheet('Data');
+    expect(workbook.namedRanges.some((n) => n.name === 'Src')).toBe(false);
+  });
+
+  it('undo puts every reference back', () => {
+    const { workbook, history, main, chartSheet } = book();
+    history.execute(new DeleteSheetCommand('Data'));
+    history.undo();
+
+    expect(workbook.namedRanges.map((n) => n.name).sort()).toEqual(['Kept', 'Local', 'Src']);
+    expect(str(main.validations[0]!.listSource)).toBe('Data.A1:A3');
+    expect(chartSheet.chart!.series).toHaveLength(2);
+    expect(chartSheet.chart!.categoriesReference).toBe('Data.A1:A3');
   });
 });

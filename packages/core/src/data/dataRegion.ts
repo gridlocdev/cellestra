@@ -5,10 +5,11 @@ import type { Worksheet } from '../model/worksheet.ts';
 export const DataRegion = {
   /**
    * The block of populated cells around (row, column): grows while any adjacent row/column inside
-   * the current span holds a cell. An empty start cell is its own region.
+   * the current span holds a value or formula (a blank cell that only carries a style doesn't count).
+   * An empty start cell is its own region.
    */
   currentRegion(sheet: Worksheet, row: number, column: number): CellRange {
-    if (!sheet.find(row, column)) return CellRange.fromBounds(row, column, row, column);
+    if (!hasContent(sheet, row, column)) return CellRange.fromBounds(row, column, row, column);
     let top = row;
     let bottom = row;
     let left = column;
@@ -57,12 +58,18 @@ export const DataRegion = {
 
 function rowHasData(sheet: Worksheet, row: number, left: number, right: number): boolean {
   if (row < 0) return false;
-  for (let c = left; c <= right; c++) if (sheet.find(row, c)) return true;
+  for (let c = left; c <= right; c++) if (hasContent(sheet, row, c)) return true;
   return false;
 }
 
 function columnHasData(sheet: Worksheet, column: number, top: number, bottom: number): boolean {
   if (column < 0) return false;
-  for (let r = top; r <= bottom; r++) if (sheet.find(r, column)) return true;
+  for (let r = top; r <= bottom; r++) if (hasContent(sheet, r, column)) return true;
   return false;
+}
+
+/** A value or a formula: formatting alone doesn't make a cell part of the data. */
+function hasContent(sheet: Worksheet, row: number, column: number): boolean {
+  const cell = sheet.find(row, column);
+  return cell !== undefined && (cell.formula !== null || cell.value.kind !== 'empty');
 }

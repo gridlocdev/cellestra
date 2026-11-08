@@ -223,6 +223,7 @@ export class AppController {
     this.#ready = new Promise<void>((resolve) => (this.#markReady = resolve));
     this.session.captureSelection = () => this.selection.state.peek();
     this.session.restoreSelection = (s) => (this.selection.state.value = s);
+    this.session.onRefused = (text) => this.#showToast(text, 'error');
     // Another dialog replacing an unanswered question answers it with its cancel value.
     effect(() => {
       const shown = this.dialog.value;

@@ -6,14 +6,26 @@ import type { ColumnFilter, FilterSpec } from './types.ts';
 
 /** Whether a value passes one column's criteria: in the allowed list (if any) and the condition (if any). */
 export function columnFilterMatches(filter: ColumnFilter, value: CellValue, locale: string): boolean {
-  if (filter.allowedValues && !filter.allowedValues.has(CellValue.toInvariantString(value))) return false;
-  if (
-    filter.condition != null &&
-    !CriteriaMatcher.build(CellValue.text(filter.condition), locale).matches(value)
-  ) {
-    return false;
-  }
-  return true;
+  return columnMatcher(filter, locale)(value);
+}
+
+/** One column's criteria as a predicate, its condition parsed once. */
+function columnMatcher(filter: ColumnFilter, locale: string): (value: CellValue) => boolean {
+  const allowed = filter.allowedValues ?? null;
+  const condition =
+    filter.condition != null ? CriteriaMatcher.build(CellValue.text(filter.condition), locale) : null;
+  return (value) =>
+    (!allowed || allowed.has(CellValue.toInvariantString(value))) && (!condition || condition.matches(value));
+}
+
+type RowTest = (sheet: Worksheet, row: number) => boolean;
+
+/** The spec as one row predicate, each column's matcher built once (`exceptColumn` left out). */
+function compile(spec: FilterSpec, exceptColumn: number | null, locale: string): RowTest {
+  const tests: [column: number, matches: (value: CellValue) => boolean][] = [];
+  for (const [column, filter] of spec.columns)
+    if (column !== exceptColumn) tests.push([column, columnMatcher(filter, locale)]);
+  return (sheet, row) => tests.every(([column, matches]) => matches(sheet.getValue(row, column)));
 }
 
 /** An empty-to-start filter spec over the given per-column criteria. */
@@ -26,25 +38,31 @@ export function filterSpec(columns: ReadonlyMap<number, ColumnFilter>, hasHeader
  * spec has one) is never hidden nor offered as a value.
  */
 export const FilterEngine = {
+  /**
+   * Hide the data rows that fail, show the ones that pass. Rows below the sheet's last stored cell
+   * hold no data and are left as they are, so a whole-column filter doesn't walk a million rows; a
+   * row model is only created where a row's flag actually changes.
+   */
   apply(sheet: Worksheet, range: CellRange, spec: FilterSpec, locale: string): void {
-    for (let row = firstDataRow(range, spec.hasHeader); row <= range.bottom; row++) {
-      sheet.getOrCreateRow(row).hidden = !passes(sheet, row, spec, null, locale);
+    const test = compile(spec, null, locale);
+    const last = dataBottom(sheet, range);
+    for (let row = firstDataRow(range, spec.hasHeader); row <= last; row++) {
+      const hidden = !test(sheet, row);
+      if (sheet.isRowHidden(row) !== hidden) sheet.getOrCreateRow(row).hidden = hidden;
     }
   },
 
   /** Unhide every row of the range (only rows that have a stored model can be hidden). */
   clear(sheet: Worksheet, range: CellRange): void {
-    for (let row = range.top; row <= range.bottom; row++) {
-      const model = sheet.findRow(row);
-      if (model) model.hidden = false;
-    }
+    for (const [row, model] of sheet.rows) if (row >= range.top && row <= range.bottom) model.hidden = false;
   },
 
   /** How many data rows the spec would leave visible — a preview that hides nothing. */
   countVisible(sheet: Worksheet, range: CellRange, spec: FilterSpec, locale: string): number {
+    const test = compile(spec, null, locale);
     let visible = 0;
-    for (let row = firstDataRow(range, spec.hasHeader); row <= range.bottom; row++) {
-      if (passes(sheet, row, spec, null, locale)) visible++;
+    for (let row = firstDataRow(range, spec.hasHeader); row <= dataBottom(sheet, range); row++) {
+      if (test(sheet, row)) visible++;
     }
     return visible;
   },
@@ -64,8 +82,9 @@ export const FilterEngine = {
   ): CellValue[] {
     const seen = new Set<string>();
     const out: CellValue[] = [];
-    for (let row = firstDataRow(range, hasHeader); row <= range.bottom; row++) {
-      if (otherFilters && !passes(sheet, row, otherFilters, column, locale)) continue;
+    const others = otherFilters ? compile(otherFilters, column, locale) : null;
+    for (let row = firstDataRow(range, hasHeader); row <= dataBottom(sheet, range); row++) {
+      if (others && !others(sheet, row)) continue;
       const value = sheet.getValue(row, column);
       const key = CellValue.toInvariantString(value);
       if (!seen.has(key)) {
@@ -81,16 +100,7 @@ function firstDataRow(range: CellRange, hasHeader: boolean): number {
   return range.top + (hasHeader ? 1 : 0);
 }
 
-function passes(
-  sheet: Worksheet,
-  row: number,
-  spec: FilterSpec,
-  exceptColumn: number | null,
-  locale: string,
-): boolean {
-  for (const [column, filter] of spec.columns) {
-    if (column === exceptColumn) continue;
-    if (!columnFilterMatches(filter, sheet.getValue(row, column), locale)) return false;
-  }
-  return true;
+/** The range's last row that can hold data: rows past the last stored cell are all empty. */
+function dataBottom(sheet: Worksheet, range: CellRange): number {
+  return Math.min(range.bottom, sheet.cellExtent()?.lastRow ?? -1);
 }

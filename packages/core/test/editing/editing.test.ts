@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { DeleteSheetCommand } from '../../src/editing/deleteSheetCommand.ts';
+import { EditRefusedError } from '../../src/editing/editCommand.ts';
 import { EditCommands } from '../../src/editing/editCommands.ts';
 import { EditHistory } from '../../src/editing/editHistory.ts';
 import { StructuralEditCommand } from '../../src/editing/structuralEditCommand.ts';
 import { CellRange } from '../../src/model/cellRange.ts';
 import type { Hyperlink } from '../../src/model/hyperlink.ts';
+import { MergedRegion } from '../../src/model/mergedRegion.ts';
 import { SheetDimensions } from '../../src/model/sheetDimensions.ts';
 import { Workbook } from '../../src/model/workbook.ts';
 import { NumberFormats, type CellStyle } from '../../src/styling/cellStyle.ts';
@@ -160,16 +162,42 @@ describe('editing', () => {
     expect(sheet.find(5, 0)!.formula).toBe('A5*2');
   });
 
-  it('insert pushing cells off the sheet drops them without overwriting survivors', () => {
+  it('insert that would push data off the sheet is refused and changes nothing', () => {
     const { history, sheet } = setup();
     const last = SheetDimensions.maxRows - 1;
     sheet.setValue(last - 1, 0, CellValue.number(111));
     sheet.setValue(last, 0, CellValue.number(222));
 
-    // Inserting at the top: 111 lands on the last row, 222 is pushed off.
+    expect(() => history.execute(new StructuralEditCommand(sheet.name, 'row', 'insert', 0, 1))).toThrow(
+      EditRefusedError,
+    );
+    expect(num(sheet.getValue(last - 1, 0))).toBe(111);
+    expect(num(sheet.getValue(last, 0))).toBe(222);
+    expect(history.canUndo).toBe(false);
+  });
+
+  it('insert pushing only formatting off the sheet drops it without overwriting survivors', () => {
+    const { workbook, history, sheet } = setup();
+    const last = SheetDimensions.maxRows - 1;
+    sheet.setValue(last - 1, 0, CellValue.number(111));
+    sheet.getOrCreate(last, 0).styleId = workbook.styles.intern({
+      ...workbook.styles.get(0),
+      font: { ...workbook.styles.get(0).font, bold: true },
+    });
+
     history.execute(new StructuralEditCommand(sheet.name, 'row', 'insert', 0, 1));
     expect(num(sheet.getValue(last, 0))).toBe(111); // survivor kept, not overwritten
     expect(sheet.getValue(last - 1, 0).kind).toBe('empty'); // its old slot vacated
+  });
+
+  it('insert columns is refused when a merge or table would be cut off at the right edge', () => {
+    const { history, sheet } = setup();
+    const lastColumn = SheetDimensions.maxColumns - 1;
+    sheet.addMerge(new MergedRegion(CellRange.fromBounds(0, lastColumn - 1, 0, lastColumn)));
+    expect(() => history.execute(new StructuralEditCommand(sheet.name, 'column', 'insert', 3, 1))).toThrow(
+      EditRefusedError,
+    );
+    expect(sheet.merges[0]!.range.right).toBe(lastColumn);
   });
 
   it('delete rows breaks a reference to a deleted cell', () => {

@@ -87,4 +87,41 @@ describe('Structural edits and tables', () => {
 
     expectSingleTable(sheet, 'A2:B8');
   });
+
+  it("deleting a table's header row leaves it without a header, not with a promoted data row", () => {
+    const { history, sheet } = setup();
+    sheet.addTable(
+      table('T', R('A2:B5'), {
+        filter: { columns: new Map(), hasHeader: true },
+        sort: { levels: [], hasHeader: true },
+      }),
+    );
+
+    del(history, sheet, 'row', 1, 1);
+
+    expectSingleTable(sheet, 'A2:B4');
+    expect(sheet.tables[0]!.hasHeader).toBe(false);
+    expect(sheet.tables[0]!.filter?.hasHeader).toBe(false);
+    expect(sheet.tables[0]!.sort?.hasHeader).toBe(false);
+
+    history.undo();
+    expectSingleTable(sheet, 'A2:B5');
+    expect(sheet.tables[0]!.hasHeader).toBe(true);
+  });
+
+  it("deleting a table's header column turns the header column off", () => {
+    const { history, sheet } = setup();
+    sheet.addTable(table('T', R('B2:D5'), { hasHeaderColumn: true }));
+    del(history, sheet, 'column', 1, 1);
+    expectSingleTable(sheet, 'B2:C5');
+    expect(sheet.tables[0]!.hasHeaderColumn).toBe(false);
+    expect(sheet.tables[0]!.hasHeader).toBe(true);
+  });
+
+  it('deleting a data row keeps the header', () => {
+    const { history, sheet } = setup();
+    sheet.addTable(table('T', R('A2:B5')));
+    del(history, sheet, 'row', 2, 1);
+    expect(sheet.tables[0]!.hasHeader).toBe(true);
+  });
 });

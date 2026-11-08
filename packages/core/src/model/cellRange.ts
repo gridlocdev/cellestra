@@ -129,7 +129,13 @@ export class CellRange {
       return single ? new CellRange(single) : null;
     }
     const start = CellAddress.tryParse(text.slice(0, colon));
-    let end = CellAddress.tryParse(text.slice(colon + 1));
+    // ODF writes an end corner on the start's sheet with an empty sheet part: `Sheet1.$B$2:.$B$7`.
+    let end = CellAddress.tryParse(
+      text
+        .slice(colon + 1)
+        .trim()
+        .replace(/^\$?\./, ''),
+    );
     if (!start || !end) return null;
     // A range lives on one sheet: an end-corner qualifier is only valid when it matches the start's.
     if (end.sheet !== null && end.sheet.toLowerCase() !== start.sheet?.toLowerCase()) return null;
