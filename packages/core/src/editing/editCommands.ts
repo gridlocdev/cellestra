@@ -161,6 +161,57 @@ export const EditCommands = {
     });
   },
 
+  /**
+   * Tick or clear checkboxes: write TRUE or FALSE at each position. A formula cell computes its
+   * own value, so it is left alone.
+   */
+  setChecked(sheet: string, positions: readonly Position[], checked: boolean): EditCommand {
+    return new CellSnapshotCommand(checked ? 'Check' : 'Uncheck', sheet, positions, (ws) => {
+      for (const [row, column] of positions) {
+        if (ws.find(row, column)?.formula) continue;
+        ws.setValue(row, column, CellValue.boolean(checked));
+      }
+    });
+  },
+
+  /**
+   * Turn a range into checkboxes: the checkbox style on every cell, and FALSE in the empty ones so
+   * each shows an unticked box (as in Google Sheets). Other values keep their value and show as
+   * usual. A whole-column or whole-row range fills only up to the sheet's used area.
+   */
+  insertCheckboxes(workbook: Workbook, sheet: string, range: CellRange): EditCommand {
+    const positions = (ws: Worksheet): Position[] =>
+      coversWholeColumns(range) || range.rowCount * range.columnCount > OVERSIZED_CELL_CAP
+        ? clampedPositions(ws, range)
+        : [...range.positions()];
+    const style = EditCommands.applyStyle(
+      workbook,
+      sheet,
+      range,
+      (s) => ({ ...s, checkbox: true }),
+      'Checkbox',
+    );
+    const fill = new CellSnapshotCommand('Checkbox', sheet, positions, (ws) => {
+      for (const [row, column] of positions(ws)) {
+        const cell = ws.find(row, column);
+        if (!cell || (cell.formula === null && cell.value.kind === 'empty'))
+          ws.setValue(row, column, CellValue.boolean(false));
+      }
+    });
+    return EditCommands.composite('Insert Checkbox', [style, fill]);
+  },
+
+  /** Take the checkbox style off a range; the TRUE/FALSE values stay. */
+  removeCheckboxes(workbook: Workbook, sheet: string, range: CellRange): EditCommand {
+    return EditCommands.applyStyle(
+      workbook,
+      sheet,
+      range,
+      ({ checkbox: _, ...rest }) => rest,
+      'Remove Checkbox',
+    );
+  },
+
   // ---- Styling ----------------------------------------------------------
 
   /**

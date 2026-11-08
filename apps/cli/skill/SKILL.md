@@ -108,7 +108,8 @@ or stdin (`cat ops.json | cellestra apply book.ods - --in-place --json`).
 
 Every op (`cellestra schema apply` is the authoritative list with every field): `set`, `clear`,
 `style` (`bold`/`italic`/`underline`/`strikethrough`, `font`, `size`, `color`, `fill`, `align`,
-`valign`, `wrap`, number `format`, `border`/`borderColor`), `width`, `height`, `freeze`,
+`valign`, `wrap`, number `format`, `border`/`borderColor`, `checkbox` for a TRUE/FALSE tick box
+that LibreOffice shows too), `width`, `height`, `freeze`,
 `merge`/`unmerge`, `hide`/`show`, `copy`/`move` (relative references shift on a copy, like the
 app's paste), `fill` (the fill handle), `paint` (format painter), `filter` (hide rows by SUMIF-style
 conditions or allowed values; `clear` to show all), `add-sheet` (`at`, `ifMissing`)/`rename-sheet`/

@@ -17,6 +17,7 @@ const MENUS: Record<'cell' | 'columnHeader' | 'rowHeader', readonly string[]> = 
     'edit.clearAll',
     '|',
     'format.merge',
+    'insert.checkbox',
     'format.cells',
   ],
   columnHeader: [

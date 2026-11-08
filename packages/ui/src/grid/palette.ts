@@ -17,6 +17,8 @@ export interface GridPalette {
   readonly activeOutline: string;
   readonly hyperlink: string;
   readonly overflowMarker: string;
+  /** An unticked checkbox's outline. */
+  readonly checkboxBorder: string;
 }
 
 export const lightPalette: GridPalette = {
@@ -35,6 +37,7 @@ export const lightPalette: GridPalette = {
   activeOutline: '#2a7de1',
   hyperlink: '#0b5fcc',
   overflowMarker: '#e53935',
+  checkboxBorder: '#8a8a8a',
 };
 
 export const darkPalette: GridPalette = {
@@ -53,4 +56,5 @@ export const darkPalette: GridPalette = {
   activeOutline: '#4a90e2',
   hyperlink: '#6bb0ff',
   overflowMarker: '#ff5252',
+  checkboxBorder: '#9a9a9a',
 };

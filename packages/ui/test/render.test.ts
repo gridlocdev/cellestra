@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CellRange, DataEditCommands, Workbook, table } from '@cellestra/core';
+import { CellRange, CellStyles, DataEditCommands, Workbook, table } from '@cellestra/core';
 import { Axis } from '../src/grid/axis.ts';
 import { lightPalette } from '../src/grid/palette.ts';
-import { fillHandleRect, renderGrid } from '../src/grid/render.ts';
+import { checkboxRect, fillHandleRect, renderGrid } from '../src/grid/render.ts';
 import { HEADER_HEIGHT, HEADER_WIDTH, Viewport } from '../src/grid/viewport.ts';
 
 /** A canvas context that records strokeRect calls (with the stroke colour and width at the time). */
@@ -103,5 +103,24 @@ describe('fillHandleRect', () => {
     expect(
       fillHandleRect(v, { row: 0, column: 0, ranges: [{ top: 3, left: 0, bottom: 3, right: 16383 }] }),
     ).toBeNull();
+  });
+});
+
+describe('checkboxRect', () => {
+  const cell = { x: 100, y: 40, w: 64, h: 20 };
+  const aligned = (horizontal: 'general' | 'left' | 'right', vertical: 'top' | 'middle' | 'bottom') => ({
+    ...CellStyles.default,
+    alignment: { ...CellStyles.default.alignment, horizontal, vertical },
+  });
+
+  it('centres a 13px box in a default cell', () => {
+    expect(checkboxRect(cell, CellStyles.default, 1)).toEqual({ x: 126 + 0.5, y: 44 + 0.5, w: 13, h: 13 });
+  });
+
+  it('follows the alignment and shrinks to fit', () => {
+    expect(checkboxRect(cell, aligned('left', 'top'), 1).x).toBeLessThan(110);
+    expect(checkboxRect(cell, aligned('right', 'middle'), 1).x).toBeGreaterThan(140);
+    expect(checkboxRect({ ...cell, h: 12 }, CellStyles.default, 1).h).toBe(8);
+    expect(checkboxRect(cell, CellStyles.default, 2).w).toBe(16);
   });
 });

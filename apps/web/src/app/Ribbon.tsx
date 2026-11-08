@@ -380,6 +380,9 @@ function InsertTab(ctx: Ctx) {
       <Group label="Formula">
         <Big {...ctx} id="insert.function" label="Function" />
       </Group>
+      <Group label="Controls">
+        <Big {...ctx} id="insert.checkbox" label="Checkbox" />
+      </Group>
       <Group label="Links & names">
         <Col>
           <Small {...ctx} id="insert.hyperlink" label="Hyperlink" />

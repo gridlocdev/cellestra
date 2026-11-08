@@ -30,6 +30,12 @@ export const style: CommandSpec = {
     onOff('--underline'),
     onOff('--strikethrough'),
     onOff('--wrap'),
+    {
+      name: '--checkbox',
+      description:
+        'show TRUE/FALSE as a checkbox; empty cells become FALSE (`--checkbox false` turns it off)',
+      kind: 'optionalValue',
+    },
     { name: '--font', description: 'Font family' },
     { name: '--size', description: 'Font size in points', type: 'number' },
     { name: '--color', description: 'Text color, #RRGGBB' },
@@ -52,6 +58,7 @@ export const style: CommandSpec = {
       underline: p.onOff('--underline'),
       strikethrough: p.onOff('--strikethrough'),
       wrap: p.onOff('--wrap'),
+      checkbox: p.onOff('--checkbox'),
       font: p.str('--font'),
       size: p.num('--size'),
       color: p.str('--color'),

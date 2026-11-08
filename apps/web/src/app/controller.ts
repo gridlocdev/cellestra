@@ -943,6 +943,50 @@ export class AppController {
     );
   }
 
+  /** Turn the selection into checkboxes, or back into plain cells when the active cell is one. */
+  toggleCheckboxStyle(): void {
+    const wb = this.session.workbook.peek();
+    const remove = !!this.activeStyle.checkbox;
+    this.run(
+      each(
+        remove ? 'Remove Checkbox' : 'Insert Checkbox',
+        this.ranges.map((r) =>
+          remove
+            ? EditCommands.removeCheckboxes(wb, this.sheetName, r)
+            : EditCommands.insertCheckboxes(wb, this.sheetName, r),
+        ),
+      ),
+    );
+  }
+
+  /**
+   * Space, or a click on a box: tick the checkboxes at `at` (or in the selection) when any of them
+   * is clear, otherwise clear them all. Only TRUE/FALSE cells count, and a formula's result can't
+   * be ticked. False when there is no checkbox to toggle, so Space can do its usual thing.
+   */
+  toggleCheckboxes(at?: { row: number; column: number }): boolean {
+    const wb = this.session.workbook.peek();
+    const sheet = this.sheet;
+    const positions: [number, number][] = [];
+    let anyClear = false;
+    const visit = (row: number, column: number) => {
+      const cell = sheet.find(row, column);
+      if (!cell || cell.formula !== null || cell.value.kind !== 'boolean') return;
+      if (!wb.styles.get(sheet.effectiveStyleId(row, column)).checkbox) return;
+      positions.push([row, column]);
+      if (!cell.value.value) anyClear = true;
+    };
+    if (at) visit(at.row, at.column);
+    else {
+      const ranges = this.ranges;
+      for (const [row, column] of sheet.enumerateCells())
+        if (ranges.some((r) => r.contains(row, column))) visit(row, column);
+    }
+    if (positions.length === 0) return false;
+    this.run(EditCommands.setChecked(this.sheetName, positions, anyClear));
+    return true;
+  }
+
   /** Per-range border edits need the range's geometry (outline vs inner edges). */
   borders(label: string, edges: (r: CellRange) => [CellRange, (s: CellStyle) => CellStyle][]): void {
     const wb = this.session.workbook.peek();

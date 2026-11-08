@@ -21,7 +21,9 @@ Formatting
   {"op":"style", "range":"A1:D1", "bold":true, "italic":false, "underline":false, "strikethrough":false,
                  "font":"Helvetica Neue", "size":12, "color":"#1A1A1A", "fill":"#EEEEEE",
                  "align":"center", "valign":"middle", "wrap":true,      align: general|left|center|right; valign: top|middle|bottom
-                 "format":"#,##0.00", "border":"thin", "borderColor":"#000000"}   border: none|thin|medium|thick|dashed|dotted|double
+                 "format":"#,##0.00", "border":"thin", "borderColor":"#000000",  border: none|thin|medium|thick|dashed|dotted|double
+                 "checkbox":true}   a TRUE/FALSE checkbox (empty cells become FALSE; false removes it; saved
+                                    as a linked form:checkbox, so LibreOffice shows it too)
                  Only the keys you give change; "fill": null removes a fill; "format":"General" resets.
   {"op":"width",  "columns":"B:D", "width": 120, "sheet":"Sheet1"}
   {"op":"height", "rows":"1", "height": 28}
@@ -78,7 +80,7 @@ Cell (the one shape used everywhere a cell appears: get, cat.cells, find.matches
    "format": "0.00",         only when the number format is not General
    "style": {"bold": true, "fill": "#EEEEEE", "align": "center", "border": "thin"}}
                              only what differs from the default, using the same keys as apply's style op
-                             (bold, italic, underline, strikethrough, font, size, color, fill, align, valign, wrap, border, borderColor)
+                             (bold, italic, underline, strikethrough, font, size, color, fill, align, valign, wrap, border, borderColor, checkbox)
 
 Edit report (set, apply, sort, chart, clean-up, … — anything that writes, with --json)
   {"ok": true,

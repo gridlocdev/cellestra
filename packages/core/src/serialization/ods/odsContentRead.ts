@@ -12,6 +12,13 @@ import { CellValue } from '../../values/cellValue.ts';
 import { serializeXmlElement, XmlElement, XmlText, type XmlDocument, type XmlName } from '../../xml/index.ts';
 import { parseInvariantFloat } from './mapping/odsCellStyles.ts';
 import { OdsCharts } from './odsCharts.ts';
+import {
+  applyCheckboxes,
+  collectCheckboxes,
+  isTakenControl,
+  withoutCheckboxes,
+  type ReadCheckboxes,
+} from './odsCheckboxes.ts';
 import { readDatabaseRanges } from './odsDatabaseRanges.ts';
 import type { ForeignXml, OdsPackage } from './odsPackage.ts';
 import { OdsPreserved, type PreservedCell } from './odsPreserved.ts';
@@ -54,6 +61,8 @@ interface ReadContext {
   readonly validationCells: ValidationCells;
   /** The sheet is a chart sheet, so its chart frame is modeled (not preserved) content. */
   readonly chartSheet: boolean;
+  /** Checkbox controls the model takes over; their cell-anchored `draw:control`s are dropped. */
+  readonly checkboxIds: ReadonlySet<string>;
 }
 
 /**
@@ -80,12 +89,13 @@ export function readContentXml(
   const validationRules = readContentValidationRules(spreadsheet);
   const validationCells: ValidationCells = new Map();
   const namedExpressions: XmlElement[] = [];
+  const checkboxes: ReadCheckboxes = { ids: new Set(), cells: [] };
 
   let seenTable = false;
   for (const child of spreadsheet.elements()) {
     if (child.is(Table('table'))) {
       seenTable = true;
-      readTable(child, workbook, styles, validationCells, pkg);
+      readTable(child, workbook, styles, validationCells, pkg, checkboxes);
     } else if (child.is(Table('named-expressions'))) {
       namedExpressions.push(...readNamedExpressions(child, workbook, null));
     } else if (child.is(Table(N.databaseRanges))) {
@@ -98,6 +108,7 @@ export function readContentXml(
   }
 
   assembleValidations(workbook, validationRules, validationCells);
+  applyCheckboxes(workbook, checkboxes);
   OdsPreserved.setWorkbook(workbook, {
     namedExpressions,
     automaticStyles: styles.preservedAutomaticStyles,
@@ -135,6 +146,7 @@ function readTable(
   styles: OdsStyleIndex,
   validationCells: ValidationCells,
   pkg: OdsPackage | null,
+  checkboxes: ReadCheckboxes,
 ): void {
   const name = table.attr(Table('name')) ?? workbook.addSheet().name;
   const sheet = workbook.findSheet(name) ?? workbook.addSheetForLoad(name);
@@ -142,7 +154,13 @@ function readTable(
   // A Cellestra chart sheet is a table holding nothing but the chart's frame; the chart is modeled
   // and its frame regenerated. An object in a sheet that has data is preserved like any shape.
   const chartHref = OdsCharts.readChartSheet(table, pkg, sheet);
-  const context: ReadContext = { styles, validationCells, chartSheet: chartHref !== null };
+  collectCheckboxes(table, sheet.name, checkboxes);
+  const context: ReadContext = {
+    styles,
+    validationCells,
+    chartSheet: chartHref !== null,
+    checkboxIds: checkboxes.ids,
+  };
 
   readColumns(table, sheet, styles);
   readRows(table, sheet, context);
@@ -163,7 +181,9 @@ function readTable(
       continue;
     }
     if (chartHref !== null && OdsCharts.containsObject(child, chartHref)) continue;
-    (seenGrid ? after : before).push(child.clone());
+    // The checkboxes the model took over are regenerated on save; the rest of the forms stay.
+    const kept = withoutCheckboxes(child, checkboxes.ids);
+    if (kept) (seenGrid ? after : before).push(kept === child ? child.clone() : kept);
   }
   const attributes = table.attributes.filter((a) => !(a.name.uri === Table.uri && a.name.local === 'name'));
   if (attributes.length > 0 || before.length > 0 || after.length > 0 || namedExpressions.length > 0) {
@@ -388,6 +408,7 @@ function parseCell(element: XmlElement, context: ReadContext): ParsedCell {
       continue;
     }
     if (context.chartSheet && child.is(Draw('frame'))) continue;
+    if (isTakenControl(child, context.checkboxIds)) continue;
     (paragraphs.length > 0 ? after : before).push(child.clone());
   }
 

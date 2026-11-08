@@ -483,6 +483,15 @@ export function buildCommands(app: AppController): CommandCatalog {
       },
     },
     {
+      id: 'insert.checkbox',
+      title: 'Checkbox',
+      description: 'Turn the selected cells into checkboxes, or back into plain cells',
+      group: 'Insert',
+      icon: 'square-check',
+      active: () => (s.version.value, app.selection.active.value, !!app.activeStyle.checkbox),
+      run: () => app.toggleCheckboxStyle(),
+    },
+    {
       id: 'insert.namedRange',
       title: 'Named Ranges…',
       description: 'Name a range so formulas can refer to it',

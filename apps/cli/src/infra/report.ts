@@ -110,6 +110,7 @@ export function styleReport(style: CellStyle): StyleReport | null {
   if (style.alignment.horizontal !== 'general') d['align'] = style.alignment.horizontal;
   if (style.alignment.vertical !== 'bottom') d['valign'] = style.alignment.vertical;
   if (style.alignment.wrapText) d['wrap'] = true;
+  if (style.checkbox) d['checkbox'] = true;
   if (Borders.hasAnyEdge(style.border)) {
     const b = style.border;
     const uniform = sameEdge(b.left, b.right) && sameEdge(b.right, b.top) && sameEdge(b.top, b.bottom);

@@ -270,6 +270,19 @@ describe('--json reports', () => {
     expect(run('get', ods, 'C4', '--formula').out.trim()).toBe('=C3*2');
   });
 
+  it('style --checkbox makes TRUE/FALSE tick boxes', () => {
+    const ods = path2('book.ods');
+    run('new', ods);
+    run('set', ods, 'A1=true', '--in-place');
+    expect(run('style', ods, 'A1:A2', '--checkbox', '--in-place').exit).toBe(0);
+    const a2 = json(run('get', ods, 'A2', '--json').out);
+    expect(a2.value).toBe(false);
+    expect(a2.style.checkbox).toBe(true);
+    expect(json(run('get', ods, 'A1', '--json').out).value).toBe(true);
+    expect(run('style', ods, 'A1:A2', '--checkbox', 'false', '--in-place').exit).toBe(0);
+    expect(json(run('get', ods, 'A2', '--json').out)).not.toHaveProperty('style');
+  });
+
   it('layout verbs front the apply ops', () => {
     const ods = path2('book.ods');
     run('new', ods);

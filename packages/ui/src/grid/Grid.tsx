@@ -23,6 +23,7 @@ import {
   type SignaturePart,
 } from './formulaEdit.ts';
 import {
+  checkboxRect,
   fillHandleRect,
   renderGrid,
   wrap,
@@ -67,6 +68,11 @@ export interface GridHost {
   openLink?(row: number, column: number): boolean;
   /** Whether a cell has a hyperlink (the pointer cursor while ⌘/Ctrl is held). */
   hasLink?(row: number, column: number): boolean;
+  /**
+   * Tick or clear checkboxes: the one at `at` (a click on its box), or every checkbox in the
+   * selection (Space). Return false when there was none, so the key does what it otherwise would.
+   */
+  toggleCheckboxes?(at?: { row: number; column: number }): boolean;
   /** A fill-handle drag or double-click: copy `source` across `target`, then select the target. */
   fill?(source: GridRange, target: GridRange): void;
   /** The copy/cut source to outline with marching ants, until paste, Escape, or an edit. */
@@ -655,6 +661,10 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       ArrowLeft: [0, -1],
       ArrowRight: [0, 1],
     };
+    if (e.key === ' ' && !mod && !e.altKey && host.toggleCheckboxes?.()) {
+      e.preventDefault();
+      return;
+    }
     const arrow = arrows[e.key];
     if (arrow) {
       e.preventDefault();
@@ -838,7 +848,27 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const hit = v.hitTest(x, y);
     if (hit.zone !== 'cell') return 'default';
     if (mod && host.hasLink?.(hit.row, hit.column)) return 'pointer';
+    if (checkboxAt(x, y)) return 'pointer';
     return 'cell';
+  };
+
+  /** The checkbox cell whose box is under (x, y), if any. A formula's box can't be clicked. */
+  const checkboxAt = (x: number, y: number): { row: number; column: number } | null => {
+    const v = state.current.viewport;
+    if (!v || !host.toggleCheckboxes) return null;
+    const hit = v.hitTest(x, y);
+    if (hit.zone !== 'cell') return null;
+    const sheet = host.sheet.value;
+    const r = sheet.selectionRangeAt(hit.row, hit.column);
+    const cell = sheet.find(r.top, r.left);
+    if (!cell || cell.formula !== null || cell.value.kind !== 'boolean') return null;
+    const style = host.styles.get(cell.styleId);
+    if (!style.checkbox) return null;
+    const box = checkboxRect(v.rangeRect(r.top, r.left, r.bottom, r.right), style, v.zoom);
+    const slop = 3;
+    const inside =
+      x >= box.x - slop && x <= box.x + box.w + slop && y >= box.y - slop && y <= box.y + box.h + slop;
+    return inside ? { row: r.top, column: r.left } : null;
   };
 
   const setCursor = (cursor: string) => {
@@ -969,6 +999,13 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         state.current.drag = { kind: 'rows', index: hit.row, origin: 0, start: 0 };
         return;
       case 'cell': {
+        const box = !e.shiftKey && !add ? checkboxAt(x, y) : null;
+        if (box) {
+          // A click on the box ticks it (and selects the cell) without starting a drag.
+          selection.select(box.row, box.column);
+          host.toggleCheckboxes?.(box);
+          return;
+        }
         const merged = host.sheet.value.selectionRangeAt(hit.row, hit.column);
         if (e.shiftKey) selection.select(hit.row, hit.column, { extend: true, grow: growOverMerges });
         else selection.select(merged.top, merged.left, { add });

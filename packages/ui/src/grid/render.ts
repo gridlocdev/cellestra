@@ -313,6 +313,61 @@ export function fillHandleRect(v: Viewport, selection: RenderSelection): Rect | 
   return { x: rr.x + rr.w - 4, y: rr.y + rr.h - 4, w: 7, h: 7 };
 }
 
+/**
+ * Where a checkbox cell's box sits: a square about the size of the text, placed by the cell's
+ * alignment (centred unless aligned otherwise). The grid hit-tests clicks against the same square.
+ */
+export function checkboxRect(cell: Rect, style: CellStyle, zoom: number): Rect {
+  const size = Math.max(6, Math.min(Math.round(CHECKBOX_SIZE * zoom), cell.w - 4, cell.h - 4));
+  const pad = CELL_PAD_X * zoom;
+  const h = style.alignment.horizontal;
+  const x =
+    h === 'left' ? cell.x + pad : h === 'right' ? cell.x + cell.w - pad - size : cell.x + (cell.w - size) / 2;
+  const vAlign = style.alignment.vertical;
+  const y =
+    vAlign === 'top'
+      ? cell.y + CELL_PAD_Y * zoom
+      : vAlign === 'bottom' && cell.h > size + 8
+        ? cell.y + cell.h - size - 3 * zoom
+        : cell.y + (cell.h - size) / 2;
+  return { x: Math.round(x) + 0.5, y: Math.round(y) + 0.5, w: size, h: size };
+}
+
+const CHECKBOX_SIZE = 13;
+
+function drawCheckbox(
+  ctx: CanvasRenderingContext2D,
+  r: Rect,
+  checked: boolean,
+  palette: GridPalette,
+  zoom: number,
+): void {
+  const radius = Math.min(3 * zoom, r.w / 4);
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(r.x, r.y, r.w, r.h, radius);
+  if (checked) {
+    ctx.fillStyle = palette.activeOutline;
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1.5, 1.8 * zoom);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(r.x + r.w * 0.24, r.y + r.h * 0.53);
+    ctx.lineTo(r.x + r.w * 0.43, r.y + r.h * 0.72);
+    ctx.lineTo(r.x + r.w * 0.77, r.y + r.h * 0.3);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = palette.canvas;
+    ctx.fill();
+    ctx.strokeStyle = palette.checkboxBorder;
+    ctx.lineWidth = Math.max(1, zoom);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawCellText(
   input: RenderInput,
   cell: Cell,
@@ -323,6 +378,10 @@ function drawCellText(
 ): void {
   const { ctx, sheet, palette, viewport: v } = input;
   const style = styleAt(input, row, column, cell.styleId);
+  if (style.checkbox && cell.value.kind === 'boolean' && !(input.showFormulas && cell.formula !== null)) {
+    drawCheckbox(ctx, checkboxRect(rect, style, v.zoom), cell.value.value, palette, v.zoom);
+    return;
+  }
   const shown =
     input.showFormulas && cell.formula !== null
       ? { text: '=' + cell.formula }

@@ -644,17 +644,23 @@ function style(session: EditSession, op: Op): void {
     const border = line === 'none' ? Borders.none : { left: edge, right: edge, top: edge, bottom: edge };
     changes.push((s) => ({ ...s, border }));
   }
-  if (changes.length === 0) {
+  const checkbox = op.bool('checkbox');
+  if (changes.length === 0 && checkbox === null) {
     throw new CliError(
-      'a style op needs at least one of: bold, italic, underline, strikethrough, font, size, color, fill, align, valign, wrap, format, border.',
+      'a style op needs at least one of: bold, italic, underline, strikethrough, font, size, color, fill, align, valign, wrap, format, border, checkbox.',
     );
   }
 
-  session.apply(
-    EditCommands.applyStyle(session.workbook, sheet.name, range, (s) =>
-      changes.reduce((acc, change) => change(acc), s),
-    ),
-  );
+  if (changes.length > 0) {
+    session.apply(
+      EditCommands.applyStyle(session.workbook, sheet.name, range, (s) =>
+        changes.reduce((acc, change) => change(acc), s),
+      ),
+    );
+  }
+  // A checkbox also needs a value: empty cells get FALSE so they show an unticked box.
+  if (checkbox === true) session.apply(EditCommands.insertCheckboxes(session.workbook, sheet.name, range));
+  if (checkbox === false) session.apply(EditCommands.removeCheckboxes(session.workbook, sheet.name, range));
 
   // applyStyle reports no cells (a style moves no values), but the report should still say what
   // was touched: every cell that now exists inside the range. Walk whichever is smaller — the

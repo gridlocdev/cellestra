@@ -7,12 +7,14 @@ import type { CellRange } from '../../model/cellRange.ts';
 import type { NamedRange } from '../../model/namedRange.ts';
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
+import { cellKey } from '../../model/sheetDimensions.ts';
 import { NumberFormats } from '../../styling/cellStyle.ts';
 import { NumberFormatter } from '../../styling/numberFormatter.ts';
 import { StylePool } from '../../styling/stylePool.ts';
 import { roundTripNumber } from '../../values/cellValue.ts';
 import { parseXmlElement, XmlDocument, XmlElement, XmlText } from '../../xml/index.ts';
 import { OdsCharts } from './odsCharts.ts';
+import { checkboxCells, checkboxControl, checkboxForm, Form, formsElement, Ooo } from './odsCheckboxes.ts';
 import { odfCellAddress, odfRangeAddress } from './odsContentShared.ts';
 import { addDatabaseRanges } from './odsDatabaseRanges.ts';
 import type { ForeignXml } from './odsPackage.ts';
@@ -65,9 +67,11 @@ export function writeContentXml(workbook: Workbook, foreign: readonly ForeignXml
   // name from each validated cell.
   const validationNames = addContentValidations(spreadsheet, workbook);
 
-  for (const sheet of workbook.worksheets) {
-    spreadsheet.add(writeTable(workbook, sheet, registry, validationNames.get(sheet.name) ?? NO_VALIDATIONS));
-  }
+  workbook.worksheets.forEach((sheet, index) => {
+    spreadsheet.add(
+      writeTable(workbook, sheet, index, registry, validationNames.get(sheet.name) ?? NO_VALIDATIONS),
+    );
+  });
 
   addNamedExpressions(spreadsheet, workbook, preserved?.namedExpressions ?? []);
   addDatabaseRanges(spreadsheet, workbook);
@@ -83,6 +87,8 @@ export function writeContentXml(workbook: Workbook, foreign: readonly ForeignXml
     .declare(NumberNs.prefix, NumberNs.uri)
     .declare(Svg.prefix, Svg.uri)
     .declare(Draw.prefix, Draw.uri)
+    .declare(Form.prefix, Form.uri)
+    .declare(Ooo.prefix, Ooo.uri)
     .declare(Xlink.prefix, Xlink.uri)
     .declare(Of.prefix, Of.uri)
     // Comments (office:annotation) carry dc:creator and dc:date; declared once here, not per note.
@@ -98,18 +104,40 @@ interface SheetWriter {
   readonly registry: StyleRegistry;
   readonly validations: ValidationTargets;
   readonly lastColumn: number;
+  /** Checkbox cells (by `cellKey`) and the id of the control each gets. */
+  readonly checkboxes: ReadonlyMap<number, string>;
 }
+
+/** What may come before `office:forms` in a table (ODF 1.3 §9.1.2); everything else comes after. */
+const BEFORE_FORMS = ['title', 'desc', 'table-source', 'scenario'];
 
 function writeTable(
   workbook: Workbook,
   sheet: Worksheet,
+  sheetIndex: number,
   registry: StyleRegistry,
   validations: ValidationTargets,
 ): XmlElement {
   const table = new XmlElement(Table('table')).setAttr(Table('name'), sheet.name);
   const preserved = OdsPreserved.table(sheet);
   for (const a of preserved?.attributes ?? []) table.setAttr(a.name, a.value);
-  for (const child of preserved?.before ?? []) table.add(child.clone());
+
+  // Checkbox cells save as form controls: one form for the sheet's checkboxes, joined to the
+  // file's own `office:forms` when it has one so its other controls are kept.
+  const checkboxes = checkboxCells(workbook, sheet, sheetIndex);
+  let form = checkboxes.size > 0 ? checkboxForm(sheet, checkboxes) : null;
+  for (const child of preserved?.before ?? []) {
+    const copy = child.clone();
+    if (form && copy.is(Office('forms'))) {
+      copy.add(form);
+      form = null;
+    } else if (form && !(copy.uri === Table.uri && BEFORE_FORMS.includes(copy.local))) {
+      table.add(formsElement(form));
+      form = null;
+    }
+    table.add(copy);
+  }
+  if (form) table.add(formsElement(form));
 
   const used = sheet.getUsedRange();
   let lastColumn = used?.right ?? 0;
@@ -127,7 +155,7 @@ function writeTable(
   for (const [index, model] of sheet.columns) if (!model.isDefault) lastColumn = Math.max(lastColumn, index);
 
   writeColumns(table, sheet, lastColumn, registry);
-  writeRows(table, { sheet, registry, validations, lastColumn }, lastRow);
+  writeRows(table, { sheet, registry, validations, lastColumn, checkboxes }, lastRow);
 
   // A chart sheet embeds its chart as an ODF draw frame (the object was written by writeObjects).
   if (sheet.isChartSheet) OdsCharts.injectFrame(table, sheet);
@@ -424,6 +452,8 @@ function writeCell(
   if (cell) {
     const preserved = OdsPreserved.cell(w.sheet, row, column, cell);
     for (const child of preserved?.before ?? []) element.add(child.clone());
+    const checkbox = covered ? undefined : w.checkboxes.get(cellKey(row, column));
+    if (checkbox !== undefined) element.add(checkboxControl(w.sheet, row, column, checkbox));
     writeCellContent(element, cell, w.registry);
     for (const child of preserved?.after ?? []) element.add(child.clone());
   }

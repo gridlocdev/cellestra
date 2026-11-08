@@ -52,6 +52,11 @@ export interface CellStyle {
   readonly border: Border;
   readonly alignment: Alignment;
   readonly numberFormat: NumberFormat;
+  /**
+   * Draw a TRUE/FALSE value as a checkbox that a click toggles. Other values show as usual.
+   * Absent means off, so styles made before checkboxes existed need no change.
+   */
+  readonly checkbox?: boolean;
 }
 
 export const BorderEdges = {
@@ -144,5 +149,6 @@ export function styleKey(s: CellStyle): string {
     a.vertical,
     +a.wrapText,
     s.numberFormat.code,
+    +!!s.checkbox,
   ].join('\u0001');
 }

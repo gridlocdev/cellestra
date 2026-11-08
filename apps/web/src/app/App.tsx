@@ -124,6 +124,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       },
       openLink: (row, column) => app.openLink(row, column),
       hasLink: (row, column) => !!app.sheet.find(row, column)?.hyperlink,
+      toggleCheckboxes: (at) => app.toggleCheckboxes(at),
       fill: (source, target) => app.fillRange(source, target),
       marquee: app.marquee,
       clearMarquee: () => app.clearMarquee(),
