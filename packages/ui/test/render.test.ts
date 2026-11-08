@@ -26,7 +26,10 @@ function recordingContext() {
   return { ctx, strokes };
 }
 
-function draw(workbook: Workbook) {
+type Selection = Parameters<typeof renderGrid>[0]['selection'];
+const ONE_CELL: Selection = { row: 10, column: 8, ranges: [{ top: 10, left: 8, bottom: 10, right: 8 }] };
+
+function draw(workbook: Workbook, selection = ONE_CELL, color: string = lightPalette.tableOutline) {
   const sheet = workbook.worksheets[0]!;
   const { ctx, strokes } = recordingContext();
   renderGrid({
@@ -45,11 +48,34 @@ function draw(workbook: Workbook) {
     sheet,
     styles: workbook.styles,
     palette: lightPalette,
-    selection: { row: 10, column: 8, ranges: [{ top: 10, left: 8, bottom: 10, right: 8 }] },
+    selection,
     display: () => ({ text: '' }),
   });
-  return strokes.filter((s) => s.color === lightPalette.tableOutline);
+  return strokes.filter((s) => s.color === color);
 }
+
+describe('selection outline', () => {
+  const outlines = (selection: Selection) =>
+    draw(Workbook.createNew(), selection, lightPalette.activeOutline).map((s) => s.width);
+
+  it('rings a single active cell with the heavy outline', () => {
+    expect(outlines(ONE_CELL)).toContain(2);
+  });
+
+  it('outlines a range as a whole, without singling out the cell it started from', () => {
+    expect(outlines({ row: 1, column: 1, ranges: [{ top: 1, left: 1, bottom: 4, right: 1 }] })).toEqual([1]);
+    expect(
+      outlines({
+        row: 6,
+        column: 1,
+        ranges: [
+          { top: 1, left: 1, bottom: 1, right: 1 },
+          { top: 6, left: 1, bottom: 6, right: 1 },
+        ],
+      }),
+    ).not.toContain(2);
+  });
+});
 
 describe('table outline', () => {
   it('frames the table with a line heavier than the gridlines', () => {

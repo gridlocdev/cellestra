@@ -485,7 +485,8 @@ function drawSelection(input: RenderInput): void {
   ctx.fillStyle = palette.selectionFill;
   for (const r of selection.ranges) {
     const single = r.top === r.bottom && r.left === r.right;
-    if (single) continue;
+    // A lone cell shows only its outline; in a multi-range selection every piece is shaded.
+    if (single && selection.ranges.length === 1) continue;
     const rect = v.rangeRect(r.top, r.left, r.bottom, Math.min(r.right, v.columns.count - 1));
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
   }
@@ -496,12 +497,22 @@ function drawSelection(input: RenderInput): void {
     ctx.lineWidth = 1;
     ctx.strokeRect(rr.x + 0.5, rr.y + 0.5, rr.w - 1, rr.h - 1);
   }
-  // Active cell: a 2px outline around it (or its whole merge), with the fill handle.
+  // Active cell: a 2px outline around it (or its whole merge), with the fill handle. A selection
+  // of more than that is outlined as a whole, so the cell it started from isn't singled out.
   const active = sheet.selectionRangeAt(selection.row, selection.column);
-  const a = v.rangeRect(active.top, active.left, active.bottom, active.right);
-  ctx.strokeStyle = palette.activeOutline;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(a.x + 1, a.y + 1, a.w - 2, a.h - 2);
+  const onlyActive =
+    selection.ranges.length <= 1 &&
+    (!last ||
+      (last.top === active.top &&
+        last.left === active.left &&
+        last.bottom === active.bottom &&
+        last.right === active.right));
+  if (onlyActive) {
+    const a = v.rangeRect(active.top, active.left, active.bottom, active.right);
+    ctx.strokeStyle = palette.activeOutline;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(a.x + 1, a.y + 1, a.w - 2, a.h - 2);
+  }
   const handle = input.overlay?.fill ? null : fillHandleRect(v, selection);
   if (handle) {
     ctx.fillStyle = palette.activeOutline;
