@@ -446,7 +446,7 @@ export function buildCommands(app: AppController): CommandCatalog {
       description: 'Pick a function and start a formula with it',
       group: 'Insert',
       shortcut: 'ctrl+alt+f',
-      icon: 'sigma',
+      icon: 'square-function',
       run: () => (app.dialog.value = { kind: 'functions' }),
     },
     {

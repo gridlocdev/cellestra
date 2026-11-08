@@ -151,6 +151,21 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.cs-toolbar-items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 32px;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+.cs-toolbar-items > * {
+  flex: none;
+  margin-block: 2px;
+}
 .cs-toolbar-fill {
   flex: 1;
   align-self: stretch;

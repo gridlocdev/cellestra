@@ -38,6 +38,7 @@ const TOOLBAR: readonly (string | '|')[] = [
   'format.bold',
   'format.italic',
   'format.underline',
+  'format.strikethrough',
   '|',
   'format.alignLeft',
   'format.alignCenter',
@@ -57,6 +58,18 @@ const TOOLBAR: readonly (string | '|')[] = [
   'data.sortDesc',
   '|',
   'view.freezePanes',
+  '|',
+  'data.toggleFilter',
+  'data.createTable',
+  'insert.chartSheet',
+  'insert.function',
+  '|',
+  'insert.rowsAbove',
+  'insert.columnsLeft',
+  '|',
+  'edit.find',
+  'edit.clearFormats',
+  'format.cells',
 ];
 
 export function App({ app, catalog }: { readonly app: AppController; readonly catalog: CommandCatalog }) {
@@ -261,27 +274,31 @@ function Toolbar({
   void app.recents.value;
   return (
     <div class="cs-toolbar" role="toolbar" aria-label="Commands">
-      {TOOLBAR.map((id, i) => {
-        if (id === '|') return <span key={i} class="cs-sep" />;
-        const c = catalog.get(id);
-        if (!c) return null;
-        const label = c.shortcutText ? `${c.title} (${c.shortcutText})` : c.title;
-        return (
-          <button
-            key={id}
-            type="button"
-            class="cs-btn"
-            title={label}
-            aria-label={c.title}
-            aria-pressed={c.active ? c.active() : undefined}
-            disabled={!catalog.isEnabled(c)}
-            onPointerDown={(e) => e.preventDefault() /* keep focus (and the selection) in the grid */}
-            onClick={() => void catalog.run(id)}
-          >
-            <Icon name={c.icon ?? 'square'} />
-          </button>
-        );
-      })}
+      {/* Buttons that don't fit wrap onto a hidden second line: whole buttons drop off the
+          end instead of the row overflowing. All of them are in ⌘K and the menus. */}
+      <div class="cs-toolbar-items">
+        {TOOLBAR.map((id, i) => {
+          if (id === '|') return <span key={i} class="cs-sep" />;
+          const c = catalog.get(id);
+          if (!c) return null;
+          const label = c.shortcutText ? `${c.title} (${c.shortcutText})` : c.title;
+          return (
+            <button
+              key={id}
+              type="button"
+              class="cs-btn"
+              title={label}
+              aria-label={c.title}
+              aria-pressed={c.active ? c.active() : undefined}
+              disabled={!catalog.isEnabled(c)}
+              onPointerDown={(e) => e.preventDefault() /* keep focus (and the selection) in the grid */}
+              onClick={() => void catalog.run(id)}
+            >
+              <Icon name={c.icon ?? 'square'} />
+            </button>
+          );
+        })}
+      </div>
       {titleInline ? (
         <span class="cs-title">
           {s.modified.value ? '• ' : ''}
