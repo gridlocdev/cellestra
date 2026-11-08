@@ -71,6 +71,8 @@ function createWindow(): BrowserWindow {
     // 'hidden' keeps the controls at their usual spot, centred in the web app's 28px title bar.
     titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
     backgroundColor: '#1e1e1e',
+    // macOS ignores this and shows the bundle's icon.icns.
+    ...(process.platform === 'darwin' ? {} : { icon: path.join(here, '..', 'build', 'icon.png') }),
     show: false,
     webPreferences: {
       preload: path.join(here, 'preload.cjs'),

@@ -52,6 +52,11 @@ build:
 build-web:
     pnpm --filter @cellestra/web build
 
+# Regenerate the app icon files in apps/desktop/build from assets/icon.svg (needs Inkscape; .icns needs macOS).
+[group('build')]
+icons:
+    ./scripts/make-icons.sh
+
 # Build the desktop app's main process and copy the web client into apps/desktop/out.
 [group('build')]
 build-desktop: build-web

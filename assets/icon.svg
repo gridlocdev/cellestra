@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Cellestra app icon source. 1024 canvas on Apple's icon grid: an 824-unit tile at (100,100)
+     with a transparent margin. scripts/make-icons.sh crops to the tile for Windows/Linux, so keep
+     the tile there. Glyph: a sheet of cells with a star ("cell" + "stella"). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- userSpaceOnUse, so the star's cut-out stroke matches the tile behind it exactly. -->
+    <linearGradient id="tile" gradientUnits="userSpaceOnUse" x1="0" y1="100" x2="0" y2="924">
+      <stop offset="0" stop-color="#3DCB86" />
+      <stop offset="1" stop-color="#128451" />
+    </linearGradient>
+    <clipPath id="sheet">
+      <rect x="230" y="300" width="500" height="440" rx="48" />
+    </clipPath>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)" />
+
+  <!-- Nudged so the whole glyph (sheet and star) is optically centred. -->
+  <g transform="translate(-34 50)">
+    <g clip-path="url(#sheet)" fill="#FFFFFF">
+      <!-- Header row, solid. -->
+      <rect x="230" y="300" width="500" height="140" />
+    </g>
+    <g stroke="#FFFFFF" stroke-width="36">
+      <line x1="230" y1="590" x2="730" y2="590" />
+      <line x1="397" y1="440" x2="397" y2="740" />
+      <line x1="563" y1="440" x2="563" y2="740" />
+    </g>
+    <rect x="230" y="300" width="500" height="440" rx="48" fill="none" stroke="#FFFFFF" stroke-width="36" />
+
+    <!-- Four-point star over the top-right corner; the tile-coloured ring separates it from the sheet. -->
+    <path d="M 730 160 Q 748 282 870 300 Q 748 318 730 440 Q 712 318 590 300 Q 712 282 730 160 Z"
+          fill="#FFFFFF" stroke="url(#tile)" stroke-width="30" stroke-linejoin="round" />
+  </g>
+</svg>

@@ -6,6 +6,8 @@ directories:
 files:
   - out/**
   - package.json
+  # The window icon on Linux and Windows (macOS takes the bundle's icon.icns).
+  - build/icon.png
 asar: true
 fileAssociations:
   - ext: ods
@@ -17,13 +19,16 @@ fileAssociations:
     mimeType: text/csv
     role: Editor
 mac:
+  icon: build/icon.icns
   category: public.app-category.productivity
   target: [dmg, zip]
   hardenedRuntime: true
   # Ad-hoc signature, so Apple silicon will run a local build. Swap for a Developer ID to distribute.
   identity: '-'
 linux:
+  icon: build/icon.png
   target: [AppImage]
   category: Office
 win:
+  icon: build/icon.ico
   target: [nsis]
