@@ -1,7 +1,12 @@
 import { CellStyles, NumberFormats, type CellStyle, type NumberFormat } from '../../styling/cellStyle.ts';
 import type { StylePool } from '../../styling/stylePool.ts';
 import type { XmlElement } from '../../xml/index.ts';
-import { OdsCellStyles, parseInvariantFloat, unquoteFamily } from './mapping/odsCellStyles.ts';
+import {
+  OdsCellStyles,
+  parseInvariantFloat,
+  unquoteFamily,
+  type MapStyleTarget,
+} from './mapping/odsCellStyles.ts';
 import { OdsDataStyles } from './mapping/odsDataStyles.ts';
 import { CM_PER_INCH, cmToPx } from './odsContentShared.ts';
 import { NumberNs, Office, Style, Svg } from './odsXmlNames.ts';
@@ -127,8 +132,22 @@ export class OdsStyleIndex {
     return true;
   }
 
+  /**
+   * What a `style:map`'s `style:apply-style-name` names. LibreOffice applies only common (named)
+   * styles, so a common style wins over an automatic one of the same name. The style is read
+   * without its own maps, so maps that name each other cannot recurse, and is interned so a save
+   * that writes it as an automatic style finds it in the pool.
+   */
+  private mapStyle(name: string): MapStyleTarget | null {
+    const common = this.commonCellStyles.has(name);
+    const style = this.cellStyle(name, 0, common, false);
+    if (style === null) return null;
+    this.pool.intern(style);
+    return { style, common };
+  }
+
   /** Resolve a cell style through its parent chain. Automatic styles shadow common ones by name. */
-  private cellStyle(name: string, depth: number, commonOnly = false): CellStyle | null {
+  private cellStyle(name: string, depth: number, commonOnly = false, withMaps = true): CellStyle | null {
     if (depth > MAX_STYLE_DEPTH) return CellStyles.default;
     const element =
       (commonOnly ? undefined : this.automaticCellStyles.get(name)) ?? this.commonCellStyles.get(name);
@@ -138,12 +157,13 @@ export class OdsStyleIndex {
     const base =
       parentName === null
         ? CellStyles.default
-        : (this.cellStyle(parentName, depth + 1, true) ?? CellStyles.default);
+        : (this.cellStyle(parentName, depth + 1, true, false) ?? CellStyles.default);
     return OdsCellStyles.parse(
       element,
       (n) => this.numberFormat(n),
       base,
       (n) => this.fontFaces.get(n) ?? null,
+      withMaps ? (n) => this.mapStyle(n) : null,
     );
   }
 }

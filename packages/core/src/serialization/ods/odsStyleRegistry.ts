@@ -1,7 +1,7 @@
-import { NumberFormats, type NumberFormat } from '../../styling/cellStyle.ts';
+import { NumberFormats, type CellStyleMap, type NumberFormat } from '../../styling/cellStyle.ts';
 import type { StylePool } from '../../styling/stylePool.ts';
 import { XmlElement } from '../../xml/index.ts';
-import { OdsCellStyles } from './mapping/odsCellStyles.ts';
+import { OdsCellStyles, type WrittenStyleMap } from './mapping/odsCellStyles.ts';
 import { OdsDataStyles } from './mapping/odsDataStyles.ts';
 import { formatUpTo3, pxToCm } from './odsContentShared.ts';
 import { Style } from './odsXmlNames.ts';
@@ -18,11 +18,19 @@ export class StyleRegistry {
 
   /** Names already used by preserved automatic styles and by styles.xml, which generated names must not take. */
   private readonly reserved: ReadonlySet<string>;
+  /** The names styles.xml declares, which is saved as it was: a `style:map` can keep naming one. */
+  private readonly commonNames: ReadonlySet<string>;
 
-  constructor(styles: StylePool, autoStyles: XmlElement, reserved: ReadonlySet<string> = new Set()) {
+  constructor(
+    styles: StylePool,
+    autoStyles: XmlElement,
+    reserved: ReadonlySet<string> = new Set(),
+    commonNames: ReadonlySet<string> = new Set(),
+  ) {
     this.styles = styles;
     this.autoStyles = autoStyles;
     this.reserved = reserved;
+    this.commonNames = commonNames;
   }
 
   private nextName(prefix: string): string {
@@ -43,10 +51,33 @@ export class StyleRegistry {
       ? null
       : this.dataStyle(style.numberFormat);
 
+    // A style a map applies is written (and named) first, so the map can point at it.
+    const maps = (style.conditionalMaps ?? []).flatMap((map): WrittenStyleMap[] => {
+      const applyStyleName = this.mapTarget(map);
+      return applyStyleName === null
+        ? []
+        : [{ condition: map.condition, applyStyleName, baseCellAddress: map.baseCellAddress }];
+    });
+
     const name = this.nextName('ce');
-    this.autoStyles.add(OdsCellStyles.build(name, style, dataStyleName));
+    this.autoStyles.add(OdsCellStyles.build(name, style, dataStyleName, maps));
     this.cellStyleNames.set(styleId, name);
     return name;
+  }
+
+  /**
+   * The name a `style:map` applies on save: the common style it named while styles.xml still
+   * declares it (or when nothing else is known), otherwise an automatic style written from what it
+   * resolved to on read, under this save's name for it.
+   */
+  private mapTarget(map: CellStyleMap): string | null {
+    if (
+      map.applyStyleName !== null &&
+      (map.applyStyle === null || this.commonNames.has(map.applyStyleName))
+    ) {
+      return map.applyStyleName;
+    }
+    return map.applyStyle === null ? null : this.cellStyle(this.styles.intern(map.applyStyle));
   }
 
   private dataStyle(format: NumberFormat): string | null {

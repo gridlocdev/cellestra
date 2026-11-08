@@ -62,7 +62,7 @@ export function writeContentXml(
     if (name !== null) reserved.add(name);
     autoStyles.add(style.clone());
   }
-  const registry = new StyleRegistry(workbook.styles, autoStyles, reserved);
+  const registry = new StyleRegistry(workbook.styles, autoStyles, reserved, reservedStyleNames);
 
   const spreadsheet = new XmlElement(Office('spreadsheet'));
 
