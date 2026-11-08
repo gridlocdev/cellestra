@@ -17,12 +17,19 @@ interface WritableHandle extends FileSystemFileHandle {
   requestPermission?(d: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
 }
 
-/** Make sure the page may use a handle (one restored from IndexedDB starts at 'prompt'). */
-async function ensurePermission(handle: FileSystemFileHandle, mode: 'read' | 'readwrite'): Promise<void> {
+/**
+ * Make sure the page may use a handle (one restored from IndexedDB starts at 'prompt'). Asking
+ * needs a user gesture, so `ask` is false for background work: then it only checks.
+ */
+async function ensurePermission(
+  handle: FileSystemFileHandle,
+  mode: 'read' | 'readwrite',
+  ask = true,
+): Promise<void> {
   const h = handle as WritableHandle;
   if (!h.queryPermission) return;
   if ((await h.queryPermission({ mode })) === 'granted') return;
-  if ((await h.requestPermission?.({ mode })) === 'granted') return;
+  if (ask && (await h.requestPermission?.({ mode })) === 'granted') return;
   throw new DOMException(
     `Cellestra was not allowed to ${mode === 'read' ? 'open' : 'save'} ${handle.name}.`,
     'NotAllowedError',
@@ -72,9 +79,9 @@ export class BrowserStore implements FileStore {
     return this.fromHandle(ref.handle);
   }
 
-  async save(ref: DocumentRef, bytes: Uint8Array): Promise<DocumentRef> {
+  async save(ref: DocumentRef, bytes: Uint8Array, opts?: { background?: boolean }): Promise<DocumentRef> {
     if (ref.handle) {
-      await ensurePermission(ref.handle, 'readwrite');
+      await ensurePermission(ref.handle, 'readwrite', !opts?.background);
       const w = await ref.handle.createWritable();
       await w.write(bytes as Uint8Array<ArrayBuffer>);
       await w.close();

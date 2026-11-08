@@ -104,6 +104,11 @@ export interface GridController {
   focus(): void;
   beginEdit(initial?: string): void;
   isEditing(): boolean;
+  /**
+   * Commit the open inline edit, if any, before something else changes the sheet or document.
+   * False when the value was refused (a stop validation rule) and the editor stays open.
+   */
+  commitEdit(): boolean;
 }
 
 const MIN_COLUMN_WIDTH = 16;
@@ -640,6 +645,11 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     else if (extend) {
       row = dr ? v.rows.step(from.row, dr) : from.row;
       column = dc ? v.columns.step(from.column, dc) : from.column;
+    } else if (Math.abs(dr) > 1) {
+      // A page: count visible rows, so hidden ones don't shorten (or overshoot) it.
+      row = v.rows.step(from.row, dr);
+      column = from.column;
+      if (v.rows.isHidden(row)) row = from.row;
     } else {
       [row, column] = sheet.stepOverMerges(from.row, from.column, dr, dc);
       // Past hidden lines; with nothing visible that way, stay put rather than land on a hidden one.
@@ -652,6 +662,9 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     reveal(row, column);
   };
 
+  // The hover tip's pending timer must not fire into an unmounted grid.
+  useEffect(() => () => clearTimeout(state.current.tipTimer), []);
+
   const pageRows = () => {
     const v = state.current.viewport ?? viewport();
     return Math.max(1, v.visibleRows.filter((b) => !b.frozen).length - 1);
@@ -659,6 +672,9 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (editingRef.current) return;
+    // An IME is composing (keyCode 229 where isComposing isn't set yet): compositionstart hands
+    // it to the editor; the key itself is not a command or a typed character.
+    if (e.isComposing || e.keyCode === 229) return;
     const mod = e.metaKey || e.ctrlKey;
     if (host.shortcut(e, false)) {
       e.preventDefault();
@@ -694,11 +710,17 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         e.preventDefault();
         moveActive(e.key === 'PageDown' ? pageRows() : -pageRows(), 0, e.shiftKey);
         return;
-      case 'Home':
+      case 'Home': {
         e.preventDefault();
-        selection.select(mod ? 0 : selection.active.value.row, 0, { extend: e.shiftKey });
-        reveal(mod ? 0 : selection.active.value.row, 0);
+        // The first visible column (and row, with ⌘), not a hidden A or 1.
+        const v = state.current.viewport ?? viewport();
+        const firstVisible = (axis: typeof v.rows) => (axis.isHidden(0) ? axis.step(0, 1) : 0);
+        const row = mod ? firstVisible(v.rows) : selection.active.value.row;
+        const column = firstVisible(v.columns);
+        selection.select(row, column, { extend: e.shiftKey });
+        reveal(row, column);
         return;
+      }
       case 'F2':
         e.preventDefault();
         beginEdit();
@@ -728,7 +750,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   const onEditorKeyDown = (e: KeyboardEvent) => {
     // The editor sits inside the grid's root: keep its keys from reaching the grid's handler.
     e.stopPropagation();
-    if (e.isComposing) return;
+    if (e.isComposing || e.keyCode === 229) return;
     if (host.shortcut(e, true)) {
       e.preventDefault();
       return;
@@ -874,7 +896,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const r = sheet.selectionRangeAt(hit.row, hit.column);
     const cell = sheet.find(r.top, r.left);
     if (!cell || cell.formula !== null || cell.value.kind !== 'boolean') return null;
-    const style = host.styles.get(cell.styleId);
+    const style = host.styles.get(sheet.effectiveStyleId(r.top, r.left));
     if (!style.checkbox) return null;
     const box = checkboxRect(v.rangeRect(r.top, r.left, r.bottom, r.right), style, v.zoom);
     const slop = 3;
@@ -1202,6 +1224,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       focus: () => rootRef.current?.focus(),
       beginEdit,
       isEditing: () => editingRef.current !== null,
+      commitEdit: () => endEdit(true),
     };
 
   return (

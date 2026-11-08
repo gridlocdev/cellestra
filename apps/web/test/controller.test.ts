@@ -107,6 +107,40 @@ describe('saving', () => {
     expect(app.session.modified.peek()).toBe(false);
   });
 
+  it('a save that finishes after a new document leaves the new document untitled', async () => {
+    const app = await makeApp();
+    const fake = new FakeStore();
+    withFake(app, fake);
+    app.session.load(OdsWriter.write(Workbook.createNew(), null), ref('a.ods'));
+    app.session.touch();
+
+    const saving = app.save();
+    await flush();
+    app.session.newDocument();
+    app.session.touch();
+    fake.saves[0]!.finish();
+    expect(await saving).toBe(true);
+    expect(app.session.document.peek()).toBeNull();
+    expect(app.session.modified.peek()).toBe(true);
+  });
+
+  it('answers an open question with its cancel value when another is asked', async () => {
+    const app = await makeApp();
+    const first = app.ask<'save' | 'discard' | 'cancel'>('cancel', (resolve) => ({
+      kind: 'confirm-discard',
+      resolve,
+    }));
+    expect(app.asking).toBe(true);
+    const second = app.prompt('Rename', 'Name', 'x');
+    expect(await first).toBe('cancel');
+    expect(app.dialog.peek()?.kind).toBe('prompt');
+    // Another dialog shown over it cancels it too.
+    app.dialog.value = { kind: 'about' };
+    expect(await second).toBeNull();
+    expect(app.asking).toBe(false);
+    expect(app.dialog.peek()?.kind).toBe('about');
+  });
+
   it('makes a repeated save a no-op once the first one leaves the document clean', async () => {
     const app = await makeApp();
     const fake = new FakeStore();
@@ -225,7 +259,7 @@ describe('grid focus at launch', () => {
     const doc = globalThis.document as unknown as { body: unknown; activeElement: unknown };
     doc.body = body;
     const focus = vi.fn();
-    app.grid.current = { focus, beginEdit: () => {}, isEditing: () => false };
+    app.grid.current = { focus, beginEdit: () => {}, isEditing: () => false, commitEdit: () => true };
 
     doc.activeElement = body;
     app.focusGridIfIdle();

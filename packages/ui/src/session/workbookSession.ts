@@ -50,6 +50,7 @@ export class WorkbookSession {
   #package: OdsPackage | null = null;
   /** Counts every dirtying change, so a save can tell whether edits landed while it was in flight. */
   #edits = 0;
+  #generation = 0;
   readonly #undoSelections: HistoryEntry[] = [];
   readonly #redoSelections: HistoryEntry[] = [];
 
@@ -159,7 +160,16 @@ export class WorkbookSession {
     if (i >= 0) this.setActiveSheet(i);
   }
 
+  /**
+   * Bumped whenever another document (or a reloaded copy) replaces the open one. A save started
+   * before that must not stamp its file onto the new document.
+   */
+  get generation(): number {
+    return this.#generation;
+  }
+
   #adopt(wb: Workbook, pkg: OdsPackage | null, ref: DocumentRef | null, format: DocumentFormat): void {
+    this.#generation++;
     this.#engine = new RecalculationEngine(wb);
     this.#engine.rebuildGraph();
     const result = this.#engine.recalculateAll();
@@ -182,10 +192,14 @@ export class WorkbookSession {
   // ── Edits ────────────────────────────────────────────────────────────────
 
   execute(command: EditCommand): void {
-    this.#undoSelections.push(this.#entry());
+    const entry = this.#entry();
+    // A command that throws (a refused edit) leaves the history as it was, so the selection
+    // stacks only move once it has run.
+    const result = this.#history.execute(command);
+    this.#undoSelections.push(entry);
     if (this.#undoSelections.length > EditHistory.maxDepth) this.#undoSelections.shift();
     this.#redoSelections.length = 0;
-    this.#apply(this.#history.execute(command));
+    this.#apply(result);
   }
 
   undo(): void {

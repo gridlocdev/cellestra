@@ -420,7 +420,10 @@ function Footer({ app }: { readonly app: AppController }) {
       <SheetTabs
         names={s.sheetNames.value}
         active={s.activeIndex.value}
-        onSelect={(i) => s.setActiveSheet(i)}
+        onSelect={(i) => {
+          // An open cell edit belongs to the sheet it was typed on.
+          if (app.grid.current?.commitEdit() ?? true) s.setActiveSheet(i);
+        }}
         onAdd={() => s.addSheet()}
         onRename={(i, name) => s.renameSheet(i, name)}
         onMove={(from, to) => s.moveSheet(from, to)}

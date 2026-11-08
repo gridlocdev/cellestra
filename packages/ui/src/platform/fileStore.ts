@@ -39,7 +39,15 @@ export interface FileStore {
   /** Re-read a document (revert, external change). */
   reload(ref: DocumentRef): Promise<OpenedDocument>;
   /** Write back over `ref`. Throws ConflictError when it changed since `ref.version`, unless forced. */
-  save(ref: DocumentRef, bytes: Uint8Array, opts?: { force?: boolean }): Promise<DocumentRef>;
+  /**
+   * `force` overwrites a file changed since it was opened. `background` (auto-save) never asks the
+   * user anything, such as a browser permission prompt; it fails with NotAllowedError instead.
+   */
+  save(
+    ref: DocumentRef,
+    bytes: Uint8Array,
+    opts?: { force?: boolean; background?: boolean },
+  ): Promise<DocumentRef>;
   /** Ask where to save a new copy. Null when cancelled. */
   saveAs(suggestedName: string, bytes: Uint8Array): Promise<DocumentRef | null>;
 }

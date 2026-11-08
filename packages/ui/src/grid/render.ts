@@ -223,8 +223,8 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
   // 5. Borders.
   for (const rb of rows) {
     for (const cb of cols) {
-      const cell = sheet.find(rb.index, cb.index);
-      const id = cell ? cell.styleId : sheet.effectiveStyleId(rb.index, cb.index);
+      // A cell with the default style still shows its row's or column's borders.
+      const id = sheet.effectiveStyleId(rb.index, cb.index);
       if (id === StylePool.defaultId) continue;
       const b = styleAt(input, rb.index, cb.index, id).border;
       const merge = merges.find((m) => m.covers(rb.index, cb.index));
@@ -377,7 +377,9 @@ function drawCellText(
   spill: { cols: readonly Band[]; ci: number; firstColumn: Band; lastColumn: Band } | null,
 ): void {
   const { ctx, sheet, palette, viewport: v } = input;
-  const style = styleAt(input, row, column, cell.styleId);
+  // A cell with the default style takes its row's or column's (font, alignment, format).
+  const id = cell.styleId !== StylePool.defaultId ? cell.styleId : sheet.effectiveStyleId(row, column);
+  const style = styleAt(input, row, column, id);
   if (style.checkbox && cell.value.kind === 'boolean' && !(input.showFormulas && cell.formula !== null)) {
     drawCheckbox(ctx, checkboxRect(rect, style, v.zoom), cell.value.value, palette, v.zoom);
     return;
@@ -600,7 +602,7 @@ function edge(
 
 /** Recent `wrap` results, keyed by font, width and text: a repaint or a row-height pass re-wraps the same cells. */
 const wrapCache = new Map<string, string[]>();
-const WRAP_CACHE_MAX = 4000;
+const WRAP_CACHE_MAX = 50_000;
 
 /**
  * Lines of `text` folded to `width`: at its own line breaks, then between words, and inside a word

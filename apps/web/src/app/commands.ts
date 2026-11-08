@@ -1091,13 +1091,19 @@ export function buildCommands(app: AppController): CommandCatalog {
   const onChart = () => s.activeSheet.value.isChartSheet;
   const gridOnly = (c: CommandSpec) =>
     (GRID_GROUPS.has(c.group) && !GRID_EXEMPT.has(c.id)) || c.id === 'sheet.resetData';
-  return new CommandCatalog(
+  const catalog = new CommandCatalog(
     specs.map((c) => {
       if (!gridOnly(c)) return c;
       const enabled = c.enabled;
       return { ...c, enabled: () => !onChart() && (enabled?.() ?? true) };
     }),
   );
+  // A command run while a cell is being edited (⌘S, ⌥⌘→, a ribbon button) first commits the
+  // edit, so the value lands in the cell it was typed into, on the sheet it was typed on.
+  // While a question waits for an answer (save changes?, overwrite?), menu commands stay out of
+  // it: running Save or New underneath would leave it unanswered.
+  catalog.beforeRun = () => !app.asking && (app.grid.current?.commitEdit() ?? true);
+  return catalog;
 }
 
 function round(n: number): number {

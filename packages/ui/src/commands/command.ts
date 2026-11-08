@@ -61,9 +61,13 @@ export class CommandCatalog {
     return c.enabled?.() ?? true;
   }
 
+  /** Called before every command runs; returning false cancels it (an edit that can't be committed). */
+  beforeRun: ((c: Command) => boolean) | null = null;
+
   run(id: string): boolean {
     const c = this.byId.get(id);
     if (!c || !this.isEnabled(c)) return false;
+    if (this.beforeRun && !this.beforeRun(c)) return false;
     if (!c.hidden) {
       const at = this.recent.indexOf(id);
       if (at >= 0) this.recent.splice(at, 1);

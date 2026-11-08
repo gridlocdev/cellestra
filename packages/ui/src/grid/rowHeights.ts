@@ -30,6 +30,11 @@ export interface RowMeasure {
 export function contentRowHeights(sheet: Worksheet, styles: StylePool, m: RowMeasure): Map<number, number> {
   const out = new Map<number, number>();
   const single = new Map<number, number>();
+  // Rows some merge covers: only cells in those rows need the (linear) merge lookup.
+  const mergedRows = new Set<number>();
+  for (const m of sheet.merges)
+    for (let r = m.range.top; r <= m.range.bottom && mergedRows.size < 100_000; r++) mergedRows.add(r);
+  const capped = mergedRows.size >= 100_000;
   for (const [row, column, cell] of sheet.enumerateCells()) {
     if (cell.value.kind === 'empty') continue;
     const id = sheet.effectiveStyleId(row, column);
@@ -37,7 +42,7 @@ export function contentRowHeights(sheet: Worksheet, styles: StylePool, m: RowMea
     const breaks = cell.value.kind === 'text' ? cell.value.value.split('\n').length : 1;
     if (id === StylePool.defaultId && breaks === 1) continue;
     // A merged cell's text has the merge's whole height to sit in; leave those rows alone.
-    if (sheet.findMerge(row, column)) continue;
+    if ((capped || mergedRows.has(row)) && sheet.findMerge(row, column)) continue;
     const style = styles.get(id);
     let need = single.get(id);
     if (need === undefined) {

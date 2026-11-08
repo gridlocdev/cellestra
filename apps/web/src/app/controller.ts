@@ -223,6 +223,11 @@ export class AppController {
     this.#ready = new Promise<void>((resolve) => (this.#markReady = resolve));
     this.session.captureSelection = () => this.selection.state.peek();
     this.session.restoreSelection = (s) => (this.selection.state.value = s);
+    // Another dialog replacing an unanswered question answers it with its cancel value.
+    effect(() => {
+      const shown = this.dialog.value;
+      if (this.#asking && shown !== this.#asking.dialog) this.#asking.cancel();
+    });
     matchMedia('(prefers-color-scheme: dark)').addEventListener(
       'change',
       (e) => (this.prefersDark.value = e.matches),
@@ -250,11 +255,8 @@ export class AppController {
     // in the pause after a burst of typing rather than in the middle of one.
     effect(() => {
       void this.session.version.value;
-      const seconds = this.autoSaveSeconds.value;
-      if (this.#autoSaveTimer) clearTimeout(this.#autoSaveTimer);
-      this.#autoSaveTimer = null;
-      if (seconds <= 0 || this.#autoSaveSuspended || !this.session.modified.peek()) return;
-      this.#autoSaveTimer = setTimeout(() => void this.autoSave(), seconds * 1000);
+      void this.autoSaveSeconds.value;
+      this.#armAutoSave();
     });
     // Switching sheets starts at A1 (Calc keeps a per-sheet cursor; good enough for now).
     let lastSheet = this.session.activeSheet.peek();
@@ -306,10 +308,11 @@ export class AppController {
   async offerRecovery(): Promise<void> {
     const orphans = await orphanedRecoveries().catch(() => []);
     for (const snapshot of orphans) {
-      const restore = await new Promise<boolean>(
-        (resolve) => (this.dialog.value = { kind: 'recovery', name: snapshot.name, resolve }),
-      );
-      this.dialog.value = null;
+      const restore = await this.ask(false, (resolve) => ({
+        kind: 'recovery',
+        name: snapshot.name,
+        resolve,
+      }));
       if (!restore) {
         await clearRecovery(snapshot.key);
         continue;
@@ -442,6 +445,15 @@ export class AppController {
     return this.#exclusive(() => this.#save(force));
   }
 
+  /** (Re)start auto-save's countdown, when it is on and there is something to save. */
+  #armAutoSave(): void {
+    const seconds = this.autoSaveSeconds.peek();
+    if (this.#autoSaveTimer) clearTimeout(this.#autoSaveTimer);
+    this.#autoSaveTimer = null;
+    if (seconds <= 0 || this.#autoSaveSuspended || !this.session.modified.peek()) return;
+    this.#autoSaveTimer = setTimeout(() => void this.autoSave(), seconds * 1000);
+  }
+
   /**
    * The auto-save tick: write the document in place, if it can be written without a question.
    * Never opens a dialog — a new document, a browser file without a handle, a CSV that would lose
@@ -451,7 +463,12 @@ export class AppController {
   async autoSave(): Promise<boolean> {
     if (this.#autoSaveTimer) clearTimeout(this.#autoSaveTimer);
     this.#autoSaveTimer = null;
-    if (this.autoSaveSeconds.peek() <= 0 || this.#autoSaveSuspended || this.#saving) return false;
+    if (this.autoSaveSeconds.peek() <= 0 || this.#autoSaveSuspended) return false;
+    if (this.#saving) {
+      // A save is running: try again once it is done, in case edits landed meanwhile.
+      void this.#saving.catch(() => false).finally(() => this.#armAutoSave());
+      return false;
+    }
     const ref = this.session.document.peek();
     if (!ref || !this.session.modified.peek()) return false;
     // A CSV that would lose formatting or other sheets asks first; one that wouldn't is fine.
@@ -464,11 +481,14 @@ export class AppController {
     if (!store.capabilities.saveInPlace || (ref.store === 'browser' && !ref.handle)) return false;
     const run = async (): Promise<boolean> => {
       const edits = this.session.editCount;
+      const generation = this.session.generation;
       const bytes = this.session.serialize();
       try {
-        this.saved(await store.save(ref, bytes, { force: false }), edits);
+        this.saved(await store.save(ref, bytes, { force: false, background: true }), edits, generation);
         return true;
       } catch (e) {
+        // The browser wants the user's say-so to write the file: that waits for a ⌘S.
+        if (e instanceof DOMException && e.name === 'NotAllowedError') return false;
         // Someone else wrote the file: whose bytes survive is not for a timer to decide.
         if (e instanceof ConflictError) return false;
         this.#autoSaveSuspended = true;
@@ -524,10 +544,11 @@ export class AppController {
       if (keep === 'ods') return this.#saveAs('ods');
     }
     const edits = this.session.editCount;
+    const generation = this.session.generation;
     const bytes = this.session.serialize();
     try {
       const saved = await store.save(ref, bytes, { force });
-      this.saved(saved, edits);
+      this.saved(saved, edits, generation);
       return true;
     } catch (e) {
       if (!(e instanceof ConflictError)) {
@@ -553,6 +574,7 @@ export class AppController {
     }
     const name = `${base}.${format}`;
     const edits = this.session.editCount;
+    const generation = this.session.generation;
     const bytes = this.session.serialize(format, name);
     try {
       let saved: DocumentRef | null;
@@ -565,7 +587,7 @@ export class AppController {
         this.info(`Exported ${saved.name}`);
         return true;
       }
-      this.saved(saved, edits);
+      this.saved(saved, edits, generation);
       return true;
     } catch (e) {
       this.error(e);
@@ -580,11 +602,12 @@ export class AppController {
   async askCsvLoss(name: string): Promise<'csv' | 'ods' | 'cancel'> {
     const losses = csvLosses(this.session.workbook.peek(), this.session.activeSheet.peek());
     if (losses.length === 0) return 'csv';
-    const choice = await new Promise<'csv' | 'ods' | 'cancel'>(
-      (resolve) => (this.dialog.value = { kind: 'csv-loss', name, losses, resolve }),
-    );
-    this.dialog.value = null;
-    return choice;
+    return this.ask<'csv' | 'ods' | 'cancel'>('cancel', (resolve) => ({
+      kind: 'csv-loss',
+      name,
+      losses,
+      resolve,
+    }));
   }
 
   /** Save to this computer (download / picker) even when the NAS is primary. */
@@ -667,8 +690,17 @@ export class AppController {
     }
   }
 
-  /** Record a save. `edits` is the session's edit count when the bytes were serialized. */
-  saved(ref: DocumentRef, edits = this.session.editCount): void {
+  /**
+   * Record a save. `edits` is the session's edit count when the bytes were serialized, and
+   * `generation` the session's document generation then: when another document has been opened
+   * since, the file is only remembered, not made the open document's.
+   */
+  saved(ref: DocumentRef, edits = this.session.editCount, generation = this.session.generation): void {
+    if (generation !== this.session.generation) {
+      void this.remember(ref);
+      this.info(`Saved ${ref.name}`);
+      return;
+    }
     this.session.markSaved(ref, edits);
     this.#autoSaveSuspended = false;
     if (!this.session.modified.peek()) void clearRecovery();
@@ -702,45 +734,75 @@ export class AppController {
     }
   }
 
+  /** The question dialog waiting for an answer, and how to give it its cancel answer. */
+  #asking: { readonly dialog: DialogState; readonly cancel: () => void } | null = null;
+
+  /** Whether a question dialog (save changes?, conflict, name…) is waiting for an answer. */
+  get asking(): boolean {
+    return this.#asking !== null && this.dialog.peek() === this.#asking.dialog;
+  }
+
+  /**
+   * Show a question dialog and wait for its answer. A question asked while another is open
+   * answers the open one with `cancel` first, so whatever awaited it (a save) never hangs.
+   */
+  ask<T>(cancel: T, make: (resolve: (value: T) => void) => DialogState): Promise<T> {
+    this.#asking?.cancel();
+    return new Promise<T>((resolve) => {
+      let settled = false;
+      const settle = (value: T) => {
+        if (settled) return;
+        settled = true;
+        if (this.#asking?.dialog === dialog) this.#asking = null;
+        if (this.dialog.peek() === dialog) this.dialog.value = null;
+        resolve(value);
+      };
+      const dialog = make(settle);
+      this.#asking = { dialog, cancel: () => settle(cancel) };
+      this.dialog.value = dialog;
+    });
+  }
+
   /** True when it is safe to replace the document (saved, discarded, or clean). */
   async confirmDiscard(): Promise<boolean> {
     if (!this.session.modified.peek()) return true;
-    const choice = await new Promise<'save' | 'discard' | 'cancel'>(
-      (resolve) => (this.dialog.value = { kind: 'confirm-discard', resolve }),
-    );
-    this.dialog.value = null;
+    const choice = await this.ask<'save' | 'discard' | 'cancel'>('cancel', (resolve) => ({
+      kind: 'confirm-discard',
+      resolve,
+    }));
     if (choice === 'cancel') return false;
     if (choice === 'save') return this.save();
     return true;
   }
 
   async askConflict(e: ConflictError): Promise<'overwrite' | 'saveAs' | 'reload' | 'cancel'> {
-    const choice = await new Promise<'overwrite' | 'saveAs' | 'reload' | 'cancel'>(
-      (resolve) => (this.dialog.value = { kind: 'conflict', reason: e.reason, message: e.message, resolve }),
-    );
-    this.dialog.value = null;
-    return choice;
+    return this.ask<'overwrite' | 'saveAs' | 'reload' | 'cancel'>('cancel', (resolve) => ({
+      kind: 'conflict',
+      reason: e.reason,
+      message: e.message,
+      resolve,
+    }));
   }
 
   async askNas(
     mode: 'open' | 'save',
     suggestedName?: string,
   ): Promise<{ root: string; path: string } | null> {
-    const r = await new Promise<{ root: string; path: string } | null>((resolve) => {
-      this.dialog.value =
-        suggestedName === undefined
-          ? { kind: 'nas', mode, resolve }
-          : { kind: 'nas', mode, suggestedName, resolve };
-    });
-    this.dialog.value = null;
-    return r;
+    return this.ask<{ root: string; path: string } | null>(null, (resolve) =>
+      suggestedName === undefined
+        ? { kind: 'nas', mode, resolve }
+        : { kind: 'nas', mode, suggestedName, resolve },
+    );
   }
 
   async prompt(title: string, label: string, value: string): Promise<string | null> {
-    const r = await new Promise<string | null>(
-      (resolve) => (this.dialog.value = { kind: 'prompt', title, label, value, resolve }),
-    );
-    this.dialog.value = null;
+    const r = await this.ask<string | null>(null, (resolve) => ({
+      kind: 'prompt',
+      title,
+      label,
+      value,
+      resolve,
+    }));
     this.grid.current?.focus();
     return r;
   }
