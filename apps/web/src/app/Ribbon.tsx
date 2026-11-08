@@ -800,28 +800,91 @@ function FontFamilyBox({ app, style }: { readonly app: AppController; readonly s
   );
 }
 
+/**
+ * The font size: type a size, or open the list, where hovering a size previews it on the
+ * selection before anything is applied.
+ */
 function FontSizeBox({ app, style }: { readonly app: AppController; readonly style: CellStyle }) {
   const size = style.font.sizePoints;
   const sizes = FONT_SIZES.includes(size) ? FONT_SIZES : [...FONT_SIZES, size].sort((a, b) => a - b);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(String(size));
+  useEffect(() => setText(String(size)), [size]);
+  const resize =
+    (points: number) =>
+    (st: CellStyle): CellStyle => ({ ...st, font: { ...st.font, sizePoints: points } });
+  const apply = (points: number) => {
+    setOpen(false);
+    if (Number.isFinite(points) && points >= 1 && points <= 409 && points !== size)
+      app.style('Font Size', resize(points));
+    else app.previewStyle(null);
+    refocus(app);
+  };
+  const close = () => {
+    setOpen(false);
+    app.previewStyle(null);
+  };
   return (
-    <select
-      class="rb-dd"
-      style={{ width: '64px' }}
-      aria-label="Font size"
-      title="Font size"
-      value={String(size)}
-      onChange={(e) => {
-        const next = Number(e.currentTarget.value);
-        app.style('Font Size', (st) => ({ ...st, font: { ...st.font, sizePoints: next } }));
-        refocus(app);
-      }}
+    <Popover
+      open={open}
+      onClose={close}
+      anchor={
+        <span class="rb-size">
+          <input
+            class="rb-dd rb-size-input"
+            aria-label="Font size"
+            title="Font size"
+            inputMode="decimal"
+            value={text}
+            onInput={(e) => setText(e.currentTarget.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={() => setText(String(size))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                apply(Number(text));
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                setText(String(size));
+                refocus(app);
+              } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setOpen(true);
+              }
+            }}
+          />
+          <button
+            type="button"
+            class="rb-size-open"
+            aria-label="Font sizes"
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={() => (open ? close() : setOpen(true))}
+          >
+            <Icon name="chevron-down" />
+          </button>
+        </span>
+      }
     >
-      {sizes.map((n) => (
-        <option key={n} value={String(n)}>
-          {n}
-        </option>
-      ))}
-    </select>
+      <div class="rb-menu rb-size-list" role="listbox" aria-label="Font sizes">
+        {sizes.map((n) => (
+          <button
+            key={n}
+            type="button"
+            role="option"
+            aria-selected={n === size}
+            class={`rb-menu-item${n === size ? ' on' : ''}`}
+            onPointerDown={(e) => e.preventDefault()}
+            onPointerEnter={() => app.previewStyle(resize(n))}
+            onPointerLeave={() => app.previewStyle(null)}
+            onClick={() => apply(n)}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+    </Popover>
   );
 }
 
@@ -866,14 +929,23 @@ function ColorButton(props: {
   const { app, kind } = props;
   const [open, setOpen] = useState(false);
   const label = kind === 'text' ? 'Text color' : 'Fill color';
+  const change =
+    (color: ArgbColor | null) =>
+    (st: CellStyle): CellStyle =>
+      kind === 'text'
+        ? { ...st, font: { ...st.font, color: color ?? Argb.black } }
+        : { ...st, fill: { background: color } };
   const apply = (color: ArgbColor | null) => {
     setOpen(false);
-    if (kind === 'text') {
-      app.style('Text Color', (st) => ({ ...st, font: { ...st.font, color: color ?? Argb.black } }));
-    } else {
-      app.style('Fill Color', (st) => ({ ...st, fill: { background: color } }));
-    }
+    app.style(kind === 'text' ? 'Text Color' : 'Fill Color', change(color));
     refocus(app);
+  };
+  // Hovering a swatch shows it on the selection; leaving (or closing) puts the real colours back.
+  const preview = (color: ArgbColor | null | undefined) =>
+    app.previewStyle(color === undefined ? null : change(color));
+  const close = () => {
+    setOpen(false);
+    preview(undefined);
   };
   const bar =
     props.current === null || Argb.isTransparent(props.current)
@@ -884,7 +956,7 @@ function ColorButton(props: {
   return (
     <Popover
       open={open}
-      onClose={() => setOpen(false)}
+      onClose={close}
       anchor={
         <button
           type="button"
@@ -916,6 +988,8 @@ function ColorButton(props: {
           class="rb-swatch-reset"
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => apply(null)}
+          onPointerEnter={() => preview(null)}
+          onPointerLeave={() => preview(undefined)}
         >
           {props.resetLabel}
         </button>
@@ -930,6 +1004,8 @@ function ColorButton(props: {
               style={{ background: hex }}
               onPointerDown={(e) => e.preventDefault()}
               onClick={() => apply(Argb.fromHex(hex))}
+              onPointerEnter={() => preview(Argb.fromHex(hex))}
+              onPointerLeave={() => preview(undefined)}
             />
           ))}
         </div>

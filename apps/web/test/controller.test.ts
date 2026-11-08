@@ -241,3 +241,72 @@ describe('grid focus at launch', () => {
     expect(focus).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('auto-save', () => {
+  it('clamps the interval and treats 0 or less as off', async () => {
+    const { normalizeAutoSave } = await import('../src/app/controller.ts');
+    expect(normalizeAutoSave(0)).toBe(0);
+    expect(normalizeAutoSave(-3)).toBe(0);
+    expect(normalizeAutoSave(2)).toBe(5);
+    expect(normalizeAutoSave(30)).toBe(30);
+    expect(normalizeAutoSave(9000)).toBe(600);
+    expect(normalizeAutoSave(Number.NaN)).toBe(0);
+  });
+
+  it('saves in place once editing pauses, and the countdown restarts on each edit', async () => {
+    vi.useFakeTimers();
+    try {
+      const app = await makeApp();
+      const fake = new FakeStore();
+      withFake(app, fake);
+      app.autoSaveSeconds.value = 10;
+      app.session.load(OdsWriter.write(Workbook.createNew(), null), ref('a.ods'));
+      app.session.touch();
+      await vi.advanceTimersByTimeAsync(8_000);
+      app.session.touch(); // still typing: push the save back
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(fake.saves).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(fake.saves).toHaveLength(1);
+      fake.saves[0]!.finish();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(app.session.modified.peek()).toBe(false);
+      // Clean now: nothing re-arms.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fake.saves).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never asks: a new document waits for ⌘S, and off means off', async () => {
+    const app = await makeApp();
+    const fake = new FakeStore();
+    withFake(app, fake);
+    app.session.load(OdsWriter.write(Workbook.createNew(), null), null);
+    app.session.touch();
+    expect(await app.autoSave()).toBe(false);
+    expect(app.dialog.peek()).toBeNull();
+
+    app.session.load(OdsWriter.write(Workbook.createNew(), null), ref('b.ods'));
+    app.session.touch();
+    app.autoSaveSeconds.value = 0;
+    expect(await app.autoSave()).toBe(false);
+    expect(fake.saves).toHaveLength(0);
+  });
+
+  it('stands down after a failed write until a save succeeds', async () => {
+    const app = await makeApp();
+    const fake = new FakeStore();
+    const errors: unknown[] = [];
+    withFake(app, fake);
+    app.error = (e) => void errors.push(e);
+    app.autoSaveSeconds.value = 30;
+    app.session.load(OdsWriter.write(Workbook.createNew(), null), { ...ref('c.ods'), version: 'v9' });
+    app.session.touch();
+    expect(await app.autoSave()).toBe(false); // stale version → the fake store throws
+    expect(errors).toHaveLength(1);
+    expect(await app.autoSave()).toBe(false);
+    expect(errors).toHaveLength(1); // reported once, not on every tick
+  });
+});

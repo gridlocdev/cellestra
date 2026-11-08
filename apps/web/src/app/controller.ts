@@ -41,6 +41,7 @@ import {
   ConflictError,
   NasStore,
   NativeStore,
+  MAX_ROW,
   Selection,
   WorkbookSession,
   clearRecovery,
@@ -130,6 +131,16 @@ const RECOVERY_INTERVAL_MS = 30_000;
 const THEME_KEY = 'cellestra.theme';
 const LAYOUT_KEY = 'cellestra.layout';
 const RIBBON_COLLAPSED_KEY = 'cellestra.ribbonCollapsed';
+const AUTO_SAVE_KEY = 'cellestra.autoSaveSeconds';
+
+/** Auto-save's interval bounds, in seconds of no editing. 0 (or less) turns it off. */
+export const AutoSaveSeconds = { default: 30, minimum: 5, maximum: 600 } as const;
+
+/** The interval a stored or typed value means: 0 for off, otherwise clamped to 5–600. */
+export function normalizeAutoSave(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(AutoSaveSeconds.maximum, Math.max(AutoSaveSeconds.minimum, Math.round(value)));
+}
 
 /** The command chrome: a tabbed ribbon (the default) or the single compact toolbar. */
 export type Layout = 'ribbon' | 'bar';
@@ -175,8 +186,20 @@ export class AppController {
   readonly layout = signal<Layout>(stored(LAYOUT_KEY) === 'bar' ? 'bar' : 'ribbon');
   /** The ribbon shows only its tabs; clicking one opens it. */
   readonly ribbonCollapsed = signal(stored(RIBBON_COLLAPSED_KEY) === 'true');
+  /** Seconds of no editing before the document is saved in place; 0 is off. */
+  readonly autoSaveSeconds = signal(
+    normalizeAutoSave(Number(stored(AUTO_SAVE_KEY) ?? AutoSaveSeconds.default)),
+  );
   readonly formatPainter = signal<FormatBlock | null>(null);
   readonly findQuery = signal('');
+  /** The copy/cut source the grid outlines with marching ants, until paste, Escape, or an edit. */
+  readonly marquee = signal<{ sheet: string; range: GridRange; cut: boolean } | null>(null);
+  /** A style drawn over the selection while a font size or colour is hovered; nothing is applied. */
+  readonly stylePreview = signal<((s: CellStyle) => CellStyle) | null>(null);
+  /** The grid's right-click menu: what was clicked and where. */
+  readonly contextMenu = signal<{ zone: 'cell' | 'columnHeader' | 'rowHeader'; x: number; y: number } | null>(
+    null,
+  );
 
   #clipboard: { block: ClipboardBlock; text: string } | null = null;
   /** Set while reloading the same document, so the cursor stays put. */
@@ -188,6 +211,9 @@ export class AppController {
   #saving: Promise<boolean> | null = null;
   /** A close request is showing its prompt; repeated requests don't stack dialogs. */
   #closing = false;
+  #autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Set after an auto-save write fails; a successful save of any kind clears it. */
+  #autoSaveSuspended = false;
   /** Settles when `start()` has finished (recovery offered): OS file opens wait for it. */
   readonly #ready: Promise<void>;
   #markReady: () => void = () => {};
@@ -211,6 +237,23 @@ export class AppController {
       } catch {
         // Storage blocked (private window): the choice lasts for this session.
       }
+    });
+    effect(() => {
+      try {
+        localStorage.setItem(AUTO_SAVE_KEY, String(this.autoSaveSeconds.value));
+      } catch {
+        // Storage blocked: the interval lasts for this session.
+      }
+    });
+    // Every edit (and every change of interval) restarts auto-save's countdown, so the save lands
+    // in the pause after a burst of typing rather than in the middle of one.
+    effect(() => {
+      void this.session.version.value;
+      const seconds = this.autoSaveSeconds.value;
+      if (this.#autoSaveTimer) clearTimeout(this.#autoSaveTimer);
+      this.#autoSaveTimer = null;
+      if (seconds <= 0 || this.#autoSaveSuspended || !this.session.modified.peek()) return;
+      this.#autoSaveTimer = setTimeout(() => void this.autoSave(), seconds * 1000);
     });
     // Switching sheets starts at A1 (Calc keeps a per-sheet cursor; good enough for now).
     let lastSheet = this.session.activeSheet.peek();
@@ -398,6 +441,53 @@ export class AppController {
     return this.#exclusive(() => this.#save(force));
   }
 
+  /**
+   * The auto-save tick: write the document in place, if it can be written without a question.
+   * Never opens a dialog — a new document, a browser file without a handle, a CSV that would lose
+   * formatting, and a file changed on disk all wait for a ⌘S instead. A failed
+   * write stands auto-save down until a save succeeds. Returns whether it wrote.
+   */
+  async autoSave(): Promise<boolean> {
+    if (this.#autoSaveTimer) clearTimeout(this.#autoSaveTimer);
+    this.#autoSaveTimer = null;
+    if (this.autoSaveSeconds.peek() <= 0 || this.#autoSaveSuspended || this.#saving) return false;
+    const ref = this.session.document.peek();
+    if (!ref || !this.session.modified.peek()) return false;
+    // A CSV that would lose formatting or other sheets asks first; one that wouldn't is fine.
+    if (
+      this.session.format.peek() === 'csv' &&
+      csvLosses(this.session.workbook.peek(), this.session.activeSheet.peek()).length > 0
+    )
+      return false;
+    const store = this.storeFor(ref);
+    if (!store.capabilities.saveInPlace || (ref.store === 'browser' && !ref.handle)) return false;
+    const run = async (): Promise<boolean> => {
+      const edits = this.session.editCount;
+      const bytes = this.session.serialize();
+      try {
+        this.saved(await store.save(ref, bytes, { force: false }), edits);
+        return true;
+      } catch (e) {
+        // Someone else wrote the file: whose bytes survive is not for a timer to decide.
+        if (e instanceof ConflictError) return false;
+        this.#autoSaveSuspended = true;
+        this.error(
+          new Error(
+            `Auto-save couldn't write the file: ${e instanceof Error ? e.message : String(e)}. It is paused until you save yourself.`,
+          ),
+        );
+        return false;
+      }
+    };
+    const p = run();
+    this.#saving = p;
+    try {
+      return await p;
+    } finally {
+      if (this.#saving === p) this.#saving = null;
+    }
+  }
+
   saveAs(format: 'ods' | 'csv' = this.session.format.peek()): Promise<boolean> {
     return this.#exclusive(() => this.#saveAs(format));
   }
@@ -579,6 +669,7 @@ export class AppController {
   /** Record a save. `edits` is the session's edit count when the bytes were serialized. */
   saved(ref: DocumentRef, edits = this.session.editCount): void {
     this.session.markSaved(ref, edits);
+    this.#autoSaveSuspended = false;
     if (!this.session.modified.peek()) void clearRecovery();
     void this.remember(ref);
     this.native?.watch(ref.store === 'native' ? ref.id : null);
@@ -725,6 +816,20 @@ export class AppController {
     } catch (e) {
       this.error(e);
     }
+    // Any edit but a paste ends the copy marquee (and with it a pending cut).
+    if (!(command instanceof PasteBlockCommand)) this.clearMarquee();
+  }
+
+  /** Escape or an edit: stop outlining the copied range; a pending cut is dropped. */
+  clearMarquee(): void {
+    if (!this.marquee.peek()) return;
+    this.marquee.value = null;
+    if (this.#clipboard?.block.isCut) this.#clipboard = null;
+  }
+
+  /** Hover preview of a style change over the selection; null puts the real styles back. */
+  previewStyle(change: ((s: CellStyle) => CellStyle) | null): void {
+    this.stylePreview.value = change;
   }
 
   // ── Cell edits ───────────────────────────────────────────────────────────
@@ -828,6 +933,7 @@ export class AppController {
   }
 
   style(label: string, change: (s: CellStyle) => CellStyle): void {
+    this.stylePreview.value = null;
     const wb = this.session.workbook.peek();
     this.run(
       each(
@@ -871,6 +977,28 @@ export class AppController {
         ),
       ),
     );
+  }
+
+  /** Fill-handle drag: copy `source` across `target` (the source tiles), then select the target. */
+  fillRange(source: GridRange, target: GridRange): void {
+    const fill = new FillCommand(
+      this.sheetName,
+      CellRange.fromBounds(source.top, source.left, source.bottom, source.right),
+      CellRange.fromBounds(target.top, target.left, target.bottom, target.right),
+    );
+    if (!this.#preflight(fill.projectWrites(this.session.workbook.peek()))) return;
+    this.run(fill);
+    this.selection.selectRange(target, { row: source.top, column: source.left });
+  }
+
+  /** The grid's hover tip for a cell: an error's reason first, else how to open its link. */
+  hoverTip(row: number, column: number): string | null {
+    const cell = this.sheet.find(row, column);
+    if (!cell) return null;
+    if (cell.value.kind === 'error') return `${cell.value.error.toString()} — ${cell.value.error.reason}`;
+    if (cell.hyperlink)
+      return `${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}-click to open ${cell.hyperlink.target}`;
+    return null;
   }
 
   fill(direction: 'down' | 'right'): void {
@@ -993,11 +1121,19 @@ export class AppController {
     this.run(EditCommands.setRowHeight(this.sheetName, row, height));
   }
 
-  autofitColumns(): void {
+  /** Double-click on a column's edge: fit it, or every selected whole column when it is one of them. */
+  autofitColumn(column: number): void {
+    const r = this.range;
+    const whole = r.top === 0 && r.bottom >= MAX_ROW;
+    this.autofitColumns(
+      whole && column >= r.left && column <= r.right ? r : CellRange.fromBounds(0, column, MAX_ROW, column),
+    );
+  }
+
+  autofitColumns(r: CellRange = this.range): void {
     const ctx = document.createElement('canvas').getContext('2d')!;
     const wb = this.session.workbook.peek();
     const sheet = this.sheet;
-    const r = this.range;
     // One pass over the stored cells (not every row of every column), with the font and the
     // measured width cached: a column of repeated values measures each distinct text once.
     const fonts = new Map<number, string>();
@@ -1008,6 +1144,8 @@ export class AppController {
       if (cell.value.kind === 'empty' || sheet.findMerge(row, column)) continue;
       const styleId = sheet.effectiveStyleId(row, column);
       const style = wb.styles.get(styleId);
+      // Wrapped text folds at the column's edge; measured flat it would ask for a paragraph's width.
+      if (style.alignment.wrapText) continue;
       let font = fonts.get(styleId);
       if (font === undefined) {
         font = `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${style.font.sizePoints * (4 / 3)}px ${style.font.family}, system-ui, sans-serif`;
@@ -1420,6 +1558,7 @@ export class AppController {
     const block = ClipboardBlock.capture(this.sheet, this.range, cut);
     const text = this.blockText(block);
     this.#clipboard = { block, text };
+    this.marquee.value = { sheet: this.sheetName, range: this.selection.range.peek(), cut };
     if (data) data.setData('text/plain', text);
     else void navigator.clipboard?.writeText(text).catch(() => {});
     if (cut) this.info('Cut — paste to move.');
@@ -1434,7 +1573,10 @@ export class AppController {
       const paste = new PasteBlockCommand(sheet, this.range, own.block, mode);
       if (!this.#preflight(paste.projectWrites())) return;
       this.run(paste);
-      if (cut) this.#clipboard = null;
+      if (cut) {
+        this.#clipboard = null;
+        this.marquee.value = null;
+      }
       return;
     }
     if (!text) return;

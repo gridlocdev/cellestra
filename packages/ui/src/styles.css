@@ -95,7 +95,84 @@ button {
   position: absolute;
   inset: 0;
   overflow: auto;
-  cursor: cell;
+  /* The grid sets the cursor for what is under the pointer (cells, headers, edges, the fill handle). */
+  cursor: default;
+}
+
+/* Hover tooltip (an error's reason, a link's hint). */
+.cs-grid-tip {
+  position: absolute;
+  z-index: 4;
+  max-width: 320px;
+  padding: 5px 8px;
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  background: var(--cs-chrome);
+  color: var(--cs-text);
+  font: 12px var(--cs-font);
+  box-shadow: var(--cs-shadow);
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+/* Formula aids under the inline editor: function names, or the argument hint. */
+.cs-grid-assist {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  background: var(--cs-bg);
+  color: var(--cs-text);
+  font: 12px var(--cs-font);
+  box-shadow: var(--cs-shadow);
+  overflow: hidden;
+}
+.cs-grid-hint {
+  /* Plain text flow, not flex: flex items would trim the space after each comma. */
+  display: block;
+  padding: 4px 8px;
+  pointer-events: none;
+  white-space: pre;
+}
+.cs-grid-hint b {
+  color: var(--cs-accent);
+}
+.cs-grid-suggest {
+  min-width: 120px;
+  padding: 3px;
+}
+.cs-grid-suggest > div {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: var(--cs-mono);
+  cursor: pointer;
+}
+.cs-grid-suggest > div:hover {
+  background: var(--cs-hover);
+}
+.cs-grid-suggest > div.on {
+  background: var(--cs-accent);
+  color: var(--cs-accent-text);
+}
+.cs-grid-suggest-about {
+  width: 240px;
+  padding: 6px 10px;
+  border-left: 1px solid var(--cs-border);
+  background: var(--cs-chrome);
+  white-space: normal;
+}
+.cs-grid-suggest-sig {
+  margin-bottom: 4px;
+  font-family: var(--cs-mono);
+  font-weight: 600;
+}
+.cs-grid-suggest-key {
+  margin-top: 6px;
+  color: var(--cs-text-2);
+  font-size: 11px;
 }
 .cs-grid-spacer {
   width: 1px;
@@ -491,4 +568,63 @@ button {
   margin: auto;
   text-align: center;
   color: var(--cs-text-2);
+}
+
+/* The grid's right-click menu. */
+.cs-context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--cs-border);
+  border-radius: 8px;
+  background: var(--cs-bg);
+  color: var(--cs-text);
+  font: 13px var(--cs-font);
+  box-shadow: var(--cs-shadow);
+  user-select: none;
+}
+.cs-context-item {
+  width: 100%;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+.cs-context-item .cs-icon {
+  width: 15px;
+  height: 15px;
+}
+.cs-context-item:hover:not(:disabled),
+.cs-context-item:focus-visible {
+  background: var(--cs-accent);
+  color: var(--cs-accent-text);
+  outline: none;
+}
+.cs-context-item:disabled {
+  opacity: 0.4;
+}
+.cs-context-title {
+  flex: 1;
+}
+.cs-context-key {
+  margin-left: 16px;
+  color: var(--cs-text-2);
+  font-size: 12px;
+}
+.cs-context-item:hover:not(:disabled) .cs-context-key {
+  color: inherit;
+}
+.cs-context-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--cs-border);
 }

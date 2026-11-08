@@ -1,10 +1,39 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { effect, type ReadonlySignal } from '@preact/signals';
-import type { CellStyle, CellValue, StylePool, Worksheet } from '@cellestra/core';
+import {
+  Defaults,
+  type CellStyle,
+  type CellValue,
+  type FunctionMetadata,
+  type StylePool,
+  type Worksheet,
+} from '@cellestra/core';
 import { Axis } from './axis.ts';
 import { chromeButtons, hitChrome, type ChromeButton } from './chrome.ts';
-import { renderGrid, CELL_PAD_X, CELL_PAD_Y, type DisplayText } from './render.ts';
-import { Viewport, HEADER_HEIGHT, HEADER_WIDTH } from './viewport.ts';
+import {
+  columnCompletion,
+  fillDownTarget,
+  fillTarget,
+  formulaReferences,
+  functionPrefix,
+  functionSuggestions,
+  isReferenceExpected,
+  referenceText,
+  signatureHint,
+  type SignaturePart,
+} from './formulaEdit.ts';
+import {
+  fillHandleRect,
+  renderGrid,
+  wrap,
+  CELL_PAD_X,
+  CELL_PAD_Y,
+  MARQUEE_DASH,
+  type DisplayText,
+  type GridOverlay,
+} from './render.ts';
+import { contentRowHeights } from './rowHeights.ts';
+import { Viewport, HEADER_HEIGHT, HEADER_WIDTH, type Rect } from './viewport.ts';
 import type { GridPalette } from './palette.ts';
 import { MAX_COLUMN, MAX_ROW, rangeOf, type GridRange, type Selection } from '../session/selection.ts';
 
@@ -36,6 +65,22 @@ export interface GridHost {
   chrome?(button: ChromeButton, anchor: { x: number; y: number; w: number; h: number }): void;
   /** ⌘/Ctrl-click on a cell with a hyperlink. Return true when it opened something. */
   openLink?(row: number, column: number): boolean;
+  /** Whether a cell has a hyperlink (the pointer cursor while ⌘/Ctrl is held). */
+  hasLink?(row: number, column: number): boolean;
+  /** A fill-handle drag or double-click: copy `source` across `target`, then select the target. */
+  fill?(source: GridRange, target: GridRange): void;
+  /** The copy/cut source to outline with marching ants, until paste, Escape, or an edit. */
+  readonly marquee?: ReadonlySignal<{ sheet: string; range: GridRange; cut: boolean } | null>;
+  /** Escape or a new edit: drop the marquee (and with it a pending cut). */
+  clearMarquee?(): void;
+  /** A style shown over the selection without applying it (hovering a font size or colour). */
+  readonly stylePreview?: ReadonlySignal<((style: CellStyle) => CellStyle) | null>;
+  /** Double-click on a column header's right edge: fit the column to its content. */
+  autofitColumn?(column: number): void;
+  /** Right-click (or Ctrl-click on macOS); the selection already covers what was clicked. */
+  contextMenu?(zone: 'cell' | 'columnHeader' | 'rowHeader', at: { x: number; y: number }): void;
+  /** The hover tooltip for a cell (an error's reason, a link's hint), or null. */
+  hoverTip?(row: number, column: number): string | null;
 }
 
 export interface GridProps {
@@ -60,6 +105,12 @@ const MIN_ROW_HEIGHT = 8;
 const EDITOR_BORDER = 2;
 const EDITOR_LINE_HEIGHT = 1.2;
 const RESIZE_GRAB = 4;
+/** Extra px around the 7px fill handle that still grabs it. */
+const HANDLE_GRAB = 3;
+/** How long the pointer rests on a cell before its tooltip shows. */
+const TIP_DELAY_MS = 450;
+const MARQUEE_STEP_MS = 90;
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 interface Axes {
   readonly columns: Axis;
@@ -69,7 +120,7 @@ interface Axes {
   readonly lastColumn: number;
 }
 
-function axesFor(sheet: Worksheet): Axes {
+function axesFor(sheet: Worksheet, content: ReadonlyMap<number, number>): Axes {
   const cols: [number, number][] = [];
   let lastColumn = -1;
   for (const [i, c] of sheet.columns) {
@@ -79,9 +130,11 @@ function axesFor(sheet: Worksheet): Axes {
   const rows: [number, number][] = [];
   let lastRow = -1;
   for (const [i, r] of sheet.rows) {
-    rows.push([i, r.hidden ? 0 : r.height]);
+    rows.push([i, r.hidden ? 0 : Math.max(r.height, content.get(i) ?? 0)]);
     if (!r.isDefault) lastRow = Math.max(lastRow, i);
   }
+  // Rows with no layout of their own that their content makes taller.
+  for (const [i, h] of content) if (!sheet.rows.has(i)) rows.push([i, h]);
   return {
     columns: new Axis(MAX_COLUMN + 1, 64, cols),
     rows: new Axis(MAX_ROW + 1, 20, rows),
@@ -131,7 +184,32 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     used: null as { bottom: number; right: number } | null,
     drag: null as null | Drag,
     chrome: [] as ChromeButton[],
+    /** Rows their content makes taller, for `contentVersion`. */
+    content: new Map<number, number>(),
+    contentVersion: -1,
+    contentStamp: -1,
+    /** A fill-handle drag's target, outlined while dragging. */
+    fill: null as GridRange | null,
+    /** The references of the formula being typed, outlined in colour. */
+    references: [] as { range: GridRange; color: string }[],
+    /** Pointing while typing a formula: the reference the last click or arrow put in the text. */
+    point: null as Point | null,
+    /** Marching-ants dash offset. */
+    phase: 0,
+    /** The last pointer position over the grid (for the cursor when ⌘ goes down or up). */
+    pointer: null as { x: number; y: number } | null,
+    tipTimer: 0,
+    tipCell: null as { row: number; column: number } | null,
   });
+  const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
+  /** The formula aids under the editor: function names matching what is typed, or the argument hint. */
+  const [assist, setAssist] = useState<{
+    suggestions: readonly FunctionMetadata[];
+    index: number;
+    hint: readonly SignaturePart[] | null;
+  } | null>(null);
+  const assistRef = useRef(assist);
+  assistRef.current = assist;
 
   // --- layout -----------------------------------------------------------------------------------
   useLayoutEffect(() => {
@@ -141,12 +219,42 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     return () => ro.disconnect();
   }, []);
 
+  const measureCtx = useRef<CanvasRenderingContext2D | null>(null);
+  const fontCss = (style: CellStyle, zoom = 1) =>
+    `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${((style.font.sizePoints * 96) / 72) * zoom}px "${style.font.family}", "Helvetica Neue", Arial, sans-serif`;
+
+  /** Recompute the rows content makes taller; true when that changed. */
+  const refreshContentHeights = (sheet: Worksheet, version: number): boolean => {
+    const s = state.current;
+    if (s.contentVersion === version && s.contentStamp === sheet.layoutStamp && s.axesSheet === sheet)
+      return false;
+    s.contentVersion = version;
+    s.contentStamp = sheet.layoutStamp;
+    measureCtx.current ??= document.createElement('canvas').getContext('2d');
+    const ctx = measureCtx.current;
+    const next = contentRowHeights(sheet, host.styles, {
+      display: (value, style) => host.display(value, style).text,
+      wrappedLines: (text, style, width) => {
+        if (!ctx) return text.split('\n').length;
+        ctx.font = fontCss(style);
+        return wrap(ctx, text, width).length;
+      },
+      columnWidth: (c) => sheet.columns.get(c)?.width ?? Defaults.columnWidth,
+    });
+    const prev = s.content;
+    s.content = next;
+    if (prev.size !== next.size) return true;
+    for (const [k, h] of next) if (prev.get(k) !== h) return true;
+    return false;
+  };
+
   const viewport = (): Viewport => {
     const s = state.current;
     const version = host.version.value;
     const sheet = host.sheet.value;
-    if (!s.axes || s.axesStamp !== sheet.layoutStamp || s.axesSheet !== sheet) {
-      s.axes = axesFor(sheet);
+    const grew = refreshContentHeights(sheet, version);
+    if (grew || !s.axes || s.axesStamp !== sheet.layoutStamp || s.axesSheet !== sheet) {
+      s.axes = axesFor(sheet, s.content);
       s.axesStamp = sheet.layoutStamp;
       s.axesSheet = sheet;
       s.usedVersion = -1;
@@ -183,7 +291,21 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const sel = selection.state.value;
     const chrome = chromeButtons(host.sheet.value, v, sel);
     state.current.chrome = chrome;
+    const s = state.current;
+    const marquee = host.marquee?.value;
+    const preview = host.stylePreview?.value;
+    const overlay: GridOverlay = {
+      fill: s.fill,
+      references: s.references,
+      point: s.point?.range ?? null,
+      marquee:
+        marquee && marquee.sheet === host.sheet.value.name
+          ? { range: marquee.range, cut: marquee.cut, phase: s.phase }
+          : null,
+      stylePreview: preview ? { ranges: sel.ranges, transform: preview } : null,
+    };
     renderGrid({
+      overlay,
       chrome,
       ctx,
       viewport: v,
@@ -223,6 +345,29 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
 
   // Redraw on any signal the frame reads.
   useEffect(() => effect(() => draw()), [size, editing, host, selection, zoom, palette, showFormulas]);
+
+  // The marquee's ants march while it is up.
+  useEffect(() => {
+    const m = host.marquee;
+    if (!m) return;
+    let timer = 0;
+    const stop = effect(() => {
+      const on = m.value !== null;
+      if (on && !timer)
+        timer = window.setInterval(() => {
+          state.current.phase = (state.current.phase + 1) % (MARQUEE_DASH[0] + MARQUEE_DASH[1]);
+          draw();
+        }, MARQUEE_STEP_MS);
+      else if (!on && timer) {
+        clearInterval(timer);
+        timer = 0;
+      }
+    });
+    return () => {
+      stop();
+      if (timer) clearInterval(timer);
+    };
+  }, [host, size, editing]);
 
   // --- scrolling ---------------------------------------------------------------------------------
   // The scroller's position in sheet px is the truth; a scroll event that only echoes a position we
@@ -271,6 +416,8 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const editor = editorRef.current!;
     editor.value = initial ?? host.editText(row, column);
     setEditing({ row, column });
+    host.clearMarquee?.();
+    hideTip();
     host.draft?.(editor.value);
     // Show and focus synchronously, inside the key event: the next keystrokes (and an IME
     // composition) must land in the editor, not the grid.
@@ -279,6 +426,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     editor.focus();
     const end = editor.value.length;
     editor.setSelectionRange(end, end);
+    refreshFormulaAids();
   };
 
   /** False when the host rejected the value (a stop validation rule); the editor stays open. */
@@ -292,6 +440,9 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     }
     setEditing(null);
     host.draft?.(null);
+    state.current.point = null;
+    state.current.references = [];
+    setAssist(null);
     if (refocus) rootRef.current?.focus();
     if (move[0] || move[1]) moveActive(move[0], move[1], false, true);
     return true;
@@ -323,6 +474,111 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       padding: `${room - padBottom}px ${CELL_PAD_X * v.zoom}px ${padBottom}px`,
       font: `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${fontPx}px "${style.font.family}", "Helvetica Neue", Arial, sans-serif`,
     });
+    fitEditor(rect, v);
+  };
+
+  /**
+   * Grow the editor past its cell when the text needs it, as Calc does: to the right for a long
+   * line (up to the grid's right edge) and down for extra lines. Never smaller than the cell.
+   */
+  const fitEditor = (cell: Rect, v: Viewport) => {
+    const editor = editorRef.current!;
+    const wider = editor.scrollWidth - editor.clientWidth;
+    if (wider > 0) {
+      const room = Math.max(cell.w, v.width - cell.x - 2);
+      editor.style.width = `${Math.min(room, cell.w + wider + 2 * CELL_PAD_X * v.zoom)}px`;
+    }
+    const taller = editor.scrollHeight - editor.clientHeight;
+    if (taller > 0) {
+      const room = Math.max(cell.h, v.height - cell.y - 2);
+      editor.style.height = `${Math.min(room, cell.h + taller)}px`;
+    }
+  };
+
+  /** Re-fit the editor after its text changed. */
+  const refitEditor = () => {
+    const v = state.current.viewport;
+    if (v && editingRef.current) placeEditor(v);
+  };
+
+  // --- formula aids ------------------------------------------------------------------------------
+  /** Reference outlines, function suggestions and the argument hint, for the editor's text and caret. */
+  const refreshFormulaAids = () => {
+    const editor = editorRef.current;
+    if (!editor || !editingRef.current) return;
+    const text = editor.value;
+    const caret = editor.selectionStart;
+    const formula = text.startsWith('=');
+    state.current.references = formula ? formulaReferences(text, host.sheet.value.name) : [];
+    const prefix = formula && editor.selectionEnd === caret ? functionPrefix(text, caret) : null;
+    const suggestions = prefix ? functionSuggestions(prefix.prefix) : [];
+    const hint = formula ? (signatureHint(text, caret)?.parts ?? null) : null;
+    const prev = assistRef.current;
+    if (suggestions.length === 0 && !hint) setAssist(null);
+    else
+      setAssist({
+        suggestions,
+        // Keep the highlighted name while it still matches.
+        index: Math.max(
+          0,
+          suggestions.findIndex((m) => m.name === prev?.suggestions[prev.index]?.name),
+        ),
+        hint,
+      });
+    draw();
+  };
+
+  /** Put the highlighted function name (and its opening parenthesis) in place of what was typed. */
+  const acceptSuggestion = (index = assistRef.current?.index ?? 0) => {
+    const editor = editorRef.current!;
+    const meta = assistRef.current?.suggestions[index];
+    const prefix = functionPrefix(editor.value, editor.selectionStart);
+    if (!meta || !prefix) return;
+    const insert = `${meta.name}(`;
+    editor.setRangeText(insert, prefix.start, editor.selectionStart, 'end');
+    host.draft?.(editor.value);
+    refitEditor();
+    state.current.point = null;
+    refreshFormulaAids();
+  };
+
+  /** Whether the caret sits right after the reference the last click or arrow put in. */
+  const isPointing = (): boolean => {
+    const p = state.current.point;
+    const editor = editorRef.current;
+    return (
+      !!p &&
+      !!editor &&
+      editor.selectionStart === p.start + p.length &&
+      editor.selectionEnd === editor.selectionStart
+    );
+  };
+
+  /** Whether a click or an arrow should put a cell reference in the formula being typed. */
+  const canPoint = (): boolean => {
+    const editor = editorRef.current;
+    if (!editor || !editingRef.current || !editor.value.startsWith('=')) return false;
+    if (editor.selectionStart !== editor.selectionEnd) return false;
+    return isPointing() || isReferenceExpected(editor.value, editor.selectionStart);
+  };
+
+  /**
+   * Point at a range: insert its reference at the caret, or replace the one just pointed at, so
+   * consecutive pokes move the reference rather than piling them up.
+   */
+  const pointAt = (anchor: { row: number; column: number }, to: { row: number; column: number }) => {
+    const editor = editorRef.current!;
+    const range = rangeOf(anchor.row, anchor.column, to.row, to.column);
+    const text = referenceText(range);
+    const p = isPointing() ? state.current.point! : null;
+    const start = p ? p.start : editor.selectionStart;
+    const end = p ? p.start + p.length : editor.selectionEnd;
+    editor.setRangeText(text, start, end, 'end');
+    state.current.point = { anchor, cursor: to, range, start, length: text.length };
+    host.draft?.(editor.value);
+    refitEditor();
+    reveal(to.row, to.column);
+    refreshFormulaAids();
   };
 
   // --- navigation --------------------------------------------------------------------------------
@@ -434,6 +690,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         host.clearSelection();
         return;
       case 'Escape':
+        host.clearMarquee?.();
         return;
     }
     // Typing a printable character replaces the cell's content and starts editing. ⌥ (macOS) and
@@ -455,6 +712,52 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     if (e.isComposing) return;
     if (host.shortcut(e, true)) {
       e.preventDefault();
+      return;
+    }
+    const plain = !e.altKey && !e.metaKey && !e.ctrlKey;
+    // The function-name list takes ↑/↓ to choose, Tab to accept, and Escape to close.
+    const list = assistRef.current?.suggestions ?? [];
+    if (list.length > 0 && plain) {
+      const at = assistRef.current!.index;
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.shiftKey) {
+        e.preventDefault();
+        const step = e.key === 'ArrowDown' ? 1 : -1;
+        setAssist({ ...assistRef.current!, index: (at + step + list.length) % list.length });
+        return;
+      }
+      if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault();
+        acceptSuggestion(at);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setAssist(
+          assistRef.current!.hint ? { suggestions: [], index: 0, hint: assistRef.current!.hint } : null,
+        );
+        return;
+      }
+    }
+    // Pointing: in a formula where a reference can go, the arrows move a reference instead of
+    // the caret (⇧ stretches it to a range).
+    const arrows: Record<string, [number, number]> = {
+      ArrowUp: [-1, 0],
+      ArrowDown: [1, 0],
+      ArrowLeft: [0, -1],
+      ArrowRight: [0, 1],
+    };
+    const arrow = arrows[e.key];
+    if (arrow && plain && canPoint()) {
+      e.preventDefault();
+      const at = editingRef.current!;
+      const p = isPointing() ? state.current.point! : null;
+      const from = p ? p.cursor : at;
+      const v = state.current.viewport ?? viewport();
+      const to = {
+        row: arrow[0] ? v.rows.step(from.row, arrow[0]) : from.row,
+        column: arrow[1] ? v.columns.step(from.column, arrow[1]) : from.column,
+      };
+      pointAt(e.shiftKey && p ? p.anchor : to, to);
       return;
     }
     if (e.key === 'Escape') {
@@ -511,22 +814,126 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     return null;
   };
 
+  const handleAt = (x: number, y: number): boolean => {
+    const v = state.current.viewport;
+    if (!v || editingRef.current) return false;
+    const h = fillHandleRect(v, selection.state.value);
+    return (
+      !!h &&
+      x >= h.x - HANDLE_GRAB &&
+      x <= h.x + h.w + HANDLE_GRAB &&
+      y >= h.y - HANDLE_GRAB &&
+      y <= h.y + h.h + HANDLE_GRAB
+    );
+  };
+
+  /** The cursor for what is under the pointer: it says what a press there will do. */
+  const cursorAt = (x: number, y: number, mod: boolean): string => {
+    const v = state.current.viewport;
+    if (!v) return 'default';
+    const r = resizeTarget(x, y);
+    if (r) return r.kind === 'resizeColumn' ? 'col-resize' : 'row-resize';
+    if (hitChrome(state.current.chrome, x, y)) return 'pointer';
+    if (handleAt(x, y)) return 'crosshair';
+    const hit = v.hitTest(x, y);
+    if (hit.zone !== 'cell') return 'default';
+    if (mod && host.hasLink?.(hit.row, hit.column)) return 'pointer';
+    return 'cell';
+  };
+
+  const setCursor = (cursor: string) => {
+    const el = scrollerRef.current;
+    if (el && el.style.cursor !== cursor) el.style.cursor = cursor;
+  };
+
+  // ⌘/Ctrl going down or up over a link changes what a click does, so the cursor follows the key.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const p = state.current.pointer;
+      if (!p || state.current.drag || (e.key !== 'Meta' && e.key !== 'Control')) return;
+      setCursor(cursorAt(p.x, p.y, e.metaKey || e.ctrlKey));
+    };
+    addEventListener('keydown', onKey);
+    addEventListener('keyup', onKey);
+    return () => {
+      removeEventListener('keydown', onKey);
+      removeEventListener('keyup', onKey);
+    };
+  });
+
+  // --- hover tooltip -------------------------------------------------------------------------------
+  const hideTip = () => {
+    const s = state.current;
+    clearTimeout(s.tipTimer);
+    s.tipCell = null;
+    setTip(null);
+  };
+
+  const hoverTip = (x: number, y: number, clientX: number, clientY: number) => {
+    const s = state.current;
+    const v = s.viewport;
+    if (!v || !host.hoverTip || editingRef.current) return hideTip();
+    const hit = v.hitTest(x, y);
+    if (hit.zone !== 'cell') return hideTip();
+    const cell = host.sheet.value.selectionRangeAt(hit.row, hit.column);
+    if (s.tipCell && s.tipCell.row === cell.top && s.tipCell.column === cell.left) return;
+    hideTip();
+    s.tipCell = { row: cell.top, column: cell.left };
+    s.tipTimer = window.setTimeout(() => {
+      const text = host.hoverTip?.(cell.top, cell.left);
+      const r = rootRef.current!.getBoundingClientRect();
+      if (text) setTip({ text, x: clientX - r.left + 12, y: clientY - r.top + 16 });
+    }, TIP_DELAY_MS);
+  };
+
   const onPointerDown = (e: PointerEvent) => {
+    hideTip();
     if (e.button !== 0) return;
+    // Ctrl-click on macOS is the context menu, not an added selection.
+    if (IS_MAC && e.ctrlKey) return;
+    const { x, y } = point(e);
+    const v = state.current.viewport;
+    if (!v) return;
+    // Typing a formula where a reference can go: a click points at the cell instead of leaving.
+    if (editingRef.current && editorRef.current!.value.startsWith('=')) {
+      const hit = v.hitTest(x, y);
+      if (hit.zone === 'cell' && (canPoint() || e.shiftKey)) {
+        e.preventDefault();
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        const p = isPointing() ? state.current.point : null;
+        const to = { row: hit.row, column: hit.column };
+        if (e.shiftKey && p) pointAt(p.anchor, to);
+        else if (canPoint()) pointAt(to, to);
+        state.current.drag = { kind: 'point', index: 0, origin: 0, start: 0 };
+        editorRef.current!.focus();
+        return;
+      }
+    }
     if (editingRef.current && !endEdit(true)) {
       // Rejected: stay in the editor on the same cell rather than moving the selection under it.
       e.preventDefault();
       editorRef.current?.focus();
       return;
     }
-    const { x, y } = point(e);
-    const v = state.current.viewport;
-    if (!v) return;
     rootRef.current!.focus();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const resize = resizeTarget(x, y);
     if (resize) {
+      if (e.detail === 2) {
+        autofit(resize);
+        return;
+      }
       state.current.drag = resize;
+      return;
+    }
+    if (handleAt(x, y)) {
+      const source = selection.range.value;
+      if (e.detail === 2) {
+        const target = fillDownTarget(host.sheet.value, source);
+        if (target) host.fill?.(source, target);
+        return;
+      }
+      state.current.drag = { kind: 'fill', index: 0, origin: 0, start: 0, source };
       return;
     }
     const button = hitChrome(state.current.chrome, x, y);
@@ -572,14 +979,21 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     }
   };
 
+  /** Double-click on a header edge: fit the column to its content, or the row to its text. */
+  const autofit = (edge: Drag) => {
+    if (edge.kind === 'resizeColumn') host.autofitColumn?.(edge.index);
+    // The row's own height goes back to the default; its content then sets how tall it draws.
+    else if (edge.kind === 'resizeRow') host.resizeRow(edge.index, Defaults.rowHeight);
+  };
+
   const onPointerMove = (e: PointerEvent) => {
     const { x, y } = point(e);
     const v = state.current.viewport;
     const drag = state.current.drag;
-    const canvas = canvasRef.current!;
+    state.current.pointer = { x, y };
     if (!drag) {
-      const r = resizeTarget(x, y);
-      canvas.style.cursor = r ? (r.kind === 'resizeColumn' ? 'col-resize' : 'row-resize') : 'cell';
+      setCursor(cursorAt(x, y, e.metaKey || e.ctrlKey));
+      if (e.buttons === 0) hoverTip(x, y, e.clientX, e.clientY);
       return;
     }
     if (!v) return;
@@ -614,6 +1028,28 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       case 'rows':
         selection.extendLines('rows', v.rowAt(y));
         return;
+      case 'fill': {
+        const target = fillTarget(drag.source!, v.rowAt(y), v.columnAt(x));
+        const f = state.current.fill;
+        if (
+          !f ||
+          f.top !== target.top ||
+          f.left !== target.left ||
+          f.bottom !== target.bottom ||
+          f.right !== target.right
+        ) {
+          state.current.fill = target;
+          draw();
+        }
+        return;
+      }
+      case 'point': {
+        const p = state.current.point;
+        if (!p) return;
+        const to = { row: v.rowAt(y), column: v.columnAt(x) };
+        if (to.row !== p.cursor.row || to.column !== p.cursor.column) pointAt(p.anchor, to);
+        return;
+      }
     }
   };
 
@@ -621,14 +1057,95 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const drag = state.current.drag;
     state.current.drag = null;
     if (guideRef.current) guideRef.current.style.display = 'none';
+    if (drag?.kind === 'fill') {
+      const target = state.current.fill;
+      state.current.fill = null;
+      const src = drag.source!;
+      if (
+        target &&
+        (target.top !== src.top ||
+          target.left !== src.left ||
+          target.bottom !== src.bottom ||
+          target.right !== src.right)
+      )
+        host.fill?.(src, target);
+      draw();
+      return;
+    }
+    if (drag?.kind === 'point') {
+      editorRef.current?.focus();
+      return;
+    }
     if (drag?.size === undefined) return;
     if (drag.kind === 'resizeColumn') host.resizeColumn(drag.index, drag.size);
     else if (drag.kind === 'resizeRow') host.resizeRow(drag.index, drag.size);
   };
 
+  const onPointerLeave = () => {
+    state.current.pointer = null;
+    hideTip();
+  };
+
+  const onContextMenu = (e: MouseEvent) => {
+    e.preventDefault();
+    hideTip();
+    if (!host.contextMenu) return;
+    if (editingRef.current && !endEdit(true)) return;
+    const r = canvasRef.current!.getBoundingClientRect();
+    const v = state.current.viewport;
+    if (!v) return;
+    const hit = v.hitTest(e.clientX - r.left, e.clientY - r.top);
+    if (hit.zone === 'corner') return;
+    const ranges = selection.state.value.ranges;
+    const inside = (row: number, column: number) =>
+      ranges.some((g) => row >= g.top && row <= g.bottom && column >= g.left && column <= g.right);
+    // A right-click outside the selection selects what was clicked first, so the menu acts on it.
+    if (hit.zone === 'cell' && !inside(hit.row, hit.column)) {
+      const m = host.sheet.value.selectionRangeAt(hit.row, hit.column);
+      selection.select(m.top, m.left);
+    } else if (
+      hit.zone === 'columnHeader' &&
+      !ranges.some(
+        (g) => g.top === 0 && g.bottom === MAX_ROW && hit.column >= g.left && hit.column <= g.right,
+      )
+    )
+      selection.selectRange(rangeOf(0, hit.column, MAX_ROW, hit.column), {
+        row: v.visibleRows.find((b) => !b.frozen)?.index ?? 0,
+        column: hit.column,
+      });
+    else if (
+      hit.zone === 'rowHeader' &&
+      !ranges.some((g) => g.left === 0 && g.right === MAX_COLUMN && hit.row >= g.top && hit.row <= g.bottom)
+    )
+      selection.selectRange(rangeOf(hit.row, 0, hit.row, MAX_COLUMN));
+    rootRef.current?.focus();
+    host.contextMenu(hit.zone, { x: e.clientX, y: e.clientY });
+  };
+
   const onWheel = (e: WheelEvent) => {
     if (e.ctrlKey) return; // pinch-zoom is handled by the app's zoom command
     // Native scroller handles it; nothing to do.
+  };
+
+  const onEditorInput = (e: Event) => {
+    const editor = e.currentTarget as HTMLTextAreaElement;
+    const typed = (e as InputEvent).inputType === 'insertText';
+    // Typing ends pointing: the next click or arrow inserts a new reference.
+    state.current.point = null;
+    // Type-ahead: appending to plain text offers the nearest entry above that starts with it,
+    // selected, so the next keystroke replaces it and Enter keeps it.
+    const at = editingRef.current;
+    const text = editor.value;
+    if (typed && at && !text.startsWith('=') && editor.selectionStart === text.length) {
+      const match = columnCompletion(host.sheet.value, at.row, at.column, text);
+      if (match) {
+        editor.value = match;
+        editor.setSelectionRange(text.length, match.length);
+      }
+    }
+    host.draft?.(editor.value);
+    refitEditor();
+    refreshFormulaAids();
   };
 
   if (controller)
@@ -662,6 +1179,8 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onPointerLeave={onPointerLeave}
+        onContextMenu={onContextMenu}
       >
         <div ref={spacerRef} class="cs-grid-spacer" />
       </div>
@@ -672,19 +1191,93 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         spellcheck={false}
         autocomplete="off"
         onKeyDown={onEditorKeyDown}
-        onInput={(e) => host.draft?.((e.currentTarget as HTMLTextAreaElement).value)}
+        onKeyUp={(e) => {
+          // The caret moved: the argument it is in may have changed.
+          if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') refreshFormulaAids();
+        }}
+        onClick={refreshFormulaAids}
+        onInput={onEditorInput}
         onBlur={(e) => {
           // Grid clicks are handled (and any rejection reported) by onPointerDown.
           if (rootRef.current?.contains(e.relatedTarget as Node | null)) return;
           endEdit(true, [0, 0], false);
         }}
       />
+      {editing && assist && (
+        <FormulaAssist assist={assist} editor={editorRef.current} onPick={acceptSuggestion} />
+      )}
+      {tip && (
+        <div class="cs-grid-tip" role="tooltip" style={{ left: `${tip.x}px`, top: `${tip.y}px` }}>
+          {tip.text}
+        </div>
+      )}
     </div>
   );
 }
 
+/** Function names matching what is typed, or the argument hint, just under the inline editor. */
+function FormulaAssist(props: {
+  assist: { suggestions: readonly FunctionMetadata[]; index: number; hint: readonly SignaturePart[] | null };
+  editor: HTMLTextAreaElement | null;
+  onPick(index: number): void;
+}) {
+  const { assist, editor } = props;
+  if (!editor) return null;
+  const left = parseFloat(editor.style.left) || 0;
+  const top = (parseFloat(editor.style.top) || 0) + (parseFloat(editor.style.height) || 0) + 2;
+  const style = { left: `${left}px`, top: `${top}px` };
+  if (assist.suggestions.length > 0) {
+    const current = assist.suggestions[assist.index];
+    return (
+      <div class="cs-grid-assist" style={style}>
+        <div class="cs-grid-suggest" role="listbox" aria-label="Functions">
+          {assist.suggestions.map((m, i) => (
+            <div
+              key={m.name}
+              role="option"
+              aria-selected={i === assist.index}
+              class={i === assist.index ? 'on' : ''}
+              onPointerDown={(e) => {
+                // Keep the editor's focus; picking is a click, not a blur.
+                e.preventDefault();
+                props.onPick(i);
+              }}
+            >
+              <span class="cs-grid-suggest-name">{m.name}</span>
+            </div>
+          ))}
+        </div>
+        {current && (
+          <div class="cs-grid-suggest-about">
+            <div class="cs-grid-suggest-sig">{current.signature}</div>
+            <div>{current.summary}</div>
+            <div class="cs-grid-suggest-key">Tab to insert</div>
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (!assist.hint) return null;
+  return (
+    <div class="cs-grid-assist cs-grid-hint" style={style} role="status">
+      {assist.hint.map((p, i) => (p.active ? <b key={i}>{p.text}</b> : <span key={i}>{p.text}</span>))}
+    </div>
+  );
+}
+
+/** Pointing while typing a formula: where the reference went in the text, and what it covers. */
+interface Point {
+  readonly anchor: { row: number; column: number };
+  readonly cursor: { row: number; column: number };
+  readonly range: GridRange;
+  readonly start: number;
+  readonly length: number;
+}
+
 interface Drag {
-  readonly kind: 'resizeColumn' | 'resizeRow' | 'cells' | 'columns' | 'rows';
+  readonly kind: 'resizeColumn' | 'resizeRow' | 'cells' | 'columns' | 'rows' | 'fill' | 'point';
+  /** A fill drag's source range. */
+  readonly source?: GridRange;
   readonly index: number;
   readonly origin: number;
   readonly start: number;

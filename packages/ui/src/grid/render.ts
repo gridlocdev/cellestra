@@ -41,6 +41,36 @@ export interface RenderInput {
   readonly showFormulas?: boolean;
   /** Filter chevrons and the validation-list arrow, from `chromeButtons`. */
   readonly chrome?: readonly ChromeButton[];
+  /** Transient marks drawn over the cells (drag previews, the copy marquee, formula references). */
+  readonly overlay?: GridOverlay;
+}
+
+type Range = RenderSelection['ranges'][number];
+
+export interface GridOverlay {
+  /** Where a fill-handle drag will fill, outlined dashed while dragging. */
+  readonly fill?: Range | null;
+  /** The copy/cut source: marching ants until paste, Escape or an edit. `phase` animates the dashes. */
+  readonly marquee?: { readonly range: Range; readonly cut: boolean; readonly phase: number } | null;
+  /** The ranges the formula being typed refers to, each in its own colour. */
+  readonly references?: readonly { readonly range: Range; readonly color: string }[];
+  /** The cell or range being pointed at while typing a formula. */
+  readonly point?: Range | null;
+  /** A style shown over some cells without changing them (hover previews of fonts and colours). */
+  readonly stylePreview?: {
+    readonly ranges: readonly Range[];
+    readonly transform: (style: CellStyle) => CellStyle;
+  } | null;
+}
+
+/** The style a cell draws with: its own, with any hover preview applied over it. */
+function styleAt(input: RenderInput, row: number, column: number, id: number): CellStyle {
+  const style = input.styles.get(id);
+  const p = input.overlay?.stylePreview;
+  if (!p) return style;
+  for (const r of p.ranges)
+    if (row >= r.top && row <= r.bottom && column >= r.left && column <= r.right) return p.transform(style);
+  return style;
 }
 
 export interface DisplayText {
@@ -92,7 +122,7 @@ export function renderGrid(input: RenderInput): void {
 
 function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly Band[], clip: Rect): void {
   if (!rows.length || !cols.length || clip.w <= 0 || clip.h <= 0) return;
-  const { ctx, sheet, styles, palette, viewport: v } = input;
+  const { ctx, sheet, palette, viewport: v } = input;
   ctx.save();
   ctx.beginPath();
   ctx.rect(clip.x, clip.y, clip.w, clip.h);
@@ -111,7 +141,7 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
   for (const rb of rows) {
     for (const cb of cols) {
       if (coveredByMerge(rb.index, cb.index)) continue;
-      const style = styles.get(sheet.effectiveStyleId(rb.index, cb.index));
+      const style = styleAt(input, rb.index, cb.index, sheet.effectiveStyleId(rb.index, cb.index));
       const fill = style.fill.background;
       if (fill !== null) {
         ctx.fillStyle = Argb.toCss(fill);
@@ -157,7 +187,12 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
   // 3. Merged areas: one rect each, painted over the gridlines inside them.
   for (const m of merges) {
     const r = v.rangeRect(m.range.top, m.range.left, m.range.bottom, m.range.right);
-    const style = styles.get(sheet.effectiveStyleId(m.range.top, m.range.left));
+    const style = styleAt(
+      input,
+      m.range.top,
+      m.range.left,
+      sheet.effectiveStyleId(m.range.top, m.range.left),
+    );
     ctx.fillStyle = style.fill.background !== null ? Argb.toCss(style.fill.background) : palette.canvas;
     ctx.fillRect(r.x, r.y, r.w - 1, r.h - 1);
   }
@@ -191,7 +226,7 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
       const cell = sheet.find(rb.index, cb.index);
       const id = cell ? cell.styleId : sheet.effectiveStyleId(rb.index, cb.index);
       if (id === StylePool.defaultId) continue;
-      const b = styles.get(id).border;
+      const b = styleAt(input, rb.index, cb.index, id).border;
       const merge = merges.find((m) => m.covers(rb.index, cb.index));
       const rect = merge
         ? v.rangeRect(merge.range.top, merge.range.left, merge.range.bottom, merge.range.right)
@@ -217,7 +252,65 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
   }
 
   drawSelection(input);
+  if (input.overlay) drawOverlay(input, input.overlay);
   ctx.restore();
+}
+
+/** Marching-ants dash lengths. */
+export const MARQUEE_DASH = [4, 3] as const;
+
+function drawOverlay(input: RenderInput, o: GridOverlay): void {
+  const { ctx, viewport: v, palette } = input;
+  const rectOf = (r: Range) => v.rangeRect(r.top, r.left, r.bottom, Math.min(r.right, v.columns.count - 1));
+  ctx.save();
+  if (o.point) {
+    const p = rectOf(o.point);
+    ctx.fillStyle = palette.selectionFill;
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+  }
+  ctx.lineWidth = 1.5;
+  for (const ref of o.references ?? []) {
+    const r = rectOf(ref.range);
+    ctx.strokeStyle = ref.color;
+    ctx.fillStyle = ref.color + '14';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeRect(r.x + 0.75, r.y + 0.75, r.w - 1.5, r.h - 1.5);
+  }
+  if (o.point) {
+    const p = rectOf(o.point);
+    ctx.strokeStyle = palette.activeOutline;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([MARQUEE_DASH[0], MARQUEE_DASH[1]]);
+    ctx.strokeRect(p.x + 1, p.y + 1, p.w - 2, p.h - 2);
+  }
+  if (o.marquee) {
+    const r = rectOf(o.marquee.range);
+    ctx.lineWidth = 2;
+    ctx.setLineDash([MARQUEE_DASH[0], MARQUEE_DASH[1]]);
+    ctx.lineDashOffset = -o.marquee.phase;
+    // Cut is muted grey, copy is green: a glance tells them apart.
+    ctx.strokeStyle = o.marquee.cut ? '#707070' : '#1e884e';
+    ctx.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
+    ctx.lineDashOffset = 0;
+  }
+  if (o.fill) {
+    const r = rectOf(o.fill);
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 2]);
+    ctx.strokeStyle = palette.activeOutline;
+    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  }
+  ctx.restore();
+}
+
+/** The fill handle's square, centred on the bottom-right corner of the last selected range. */
+export function fillHandleRect(v: Viewport, selection: RenderSelection): Rect | null {
+  const last = selection.ranges[selection.ranges.length - 1];
+  if (!last) return null;
+  // Whole columns or rows have no corner to drag on screen.
+  if (last.bottom >= v.rows.count - 1 || last.right >= v.columns.count - 1) return null;
+  const rr = v.rangeRect(last.top, last.left, last.bottom, last.right);
+  return { x: rr.x + rr.w - 4, y: rr.y + rr.h - 4, w: 7, h: 7 };
 }
 
 function drawCellText(
@@ -228,8 +321,8 @@ function drawCellText(
   rect: Rect,
   spill: { cols: readonly Band[]; ci: number; firstColumn: Band; lastColumn: Band } | null,
 ): void {
-  const { ctx, sheet, styles, palette, viewport: v } = input;
-  const style = styles.get(cell.styleId);
+  const { ctx, sheet, palette, viewport: v } = input;
+  const style = styleAt(input, row, column, cell.styleId);
   const shown =
     input.showFormulas && cell.formula !== null
       ? { text: '=' + cell.formula }
@@ -350,10 +443,13 @@ function drawSelection(input: RenderInput): void {
   ctx.strokeStyle = palette.activeOutline;
   ctx.lineWidth = 2;
   ctx.strokeRect(a.x + 1, a.y + 1, a.w - 2, a.h - 2);
-  if (last) {
-    const rr = v.rangeRect(last.top, last.left, last.bottom, last.right);
+  const handle = input.overlay?.fill ? null : fillHandleRect(v, selection);
+  if (handle) {
     ctx.fillStyle = palette.activeOutline;
-    ctx.fillRect(rr.x + rr.w - 4, rr.y + rr.h - 4, 7, 7);
+    ctx.fillRect(handle.x, handle.y, handle.w, handle.h);
+    ctx.strokeStyle = palette.canvas;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(handle.x - 0.5, handle.y - 0.5, handle.w + 1, handle.h + 1);
   }
 }
 
@@ -432,7 +528,7 @@ function edge(
   ctx.restore();
 }
 
-function wrap(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
+export function wrap(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
   const out: string[] = [];
   for (const para of text.split('\n')) {
     let current = '';

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CellRange, DataEditCommands, Workbook, table } from '@cellestra/core';
 import { Axis } from '../src/grid/axis.ts';
 import { lightPalette } from '../src/grid/palette.ts';
-import { renderGrid } from '../src/grid/render.ts';
+import { fillHandleRect, renderGrid } from '../src/grid/render.ts';
 import { HEADER_HEIGHT, HEADER_WIDTH, Viewport } from '../src/grid/viewport.ts';
 
 /** A canvas context that records strokeRect calls (with the stroke colour and width at the time). */
@@ -71,5 +71,37 @@ describe('table outline', () => {
     // And just right of it (C1) to A1:C4.
     DataEditCommands.expandTableForEdit(wb, sheet.name, sheet.tables[0]!, 0, 2)!.apply(wb);
     expect(draw(wb).map((s) => s.rect)).toEqual([[HEADER_WIDTH, HEADER_HEIGHT, 192, 80]]);
+  });
+});
+
+describe('fillHandleRect', () => {
+  const viewport = () =>
+    new Viewport({
+      columns: new Axis(16384, 64, []),
+      rows: new Axis(1048576, 20, []),
+      frozenColumns: 0,
+      frozenRows: 0,
+      scrollX: 0,
+      scrollY: 0,
+      zoom: 1,
+      width: 800,
+      height: 600,
+    });
+
+  it('sits on the bottom-right corner of the last range', () => {
+    const v = viewport();
+    const r = fillHandleRect(v, { row: 0, column: 0, ranges: [{ top: 0, left: 0, bottom: 1, right: 1 }] })!;
+    expect(r.x + 4).toBe(HEADER_WIDTH + 128);
+    expect(r.y + 4).toBe(HEADER_HEIGHT + 40);
+  });
+
+  it('is absent for whole rows and columns', () => {
+    const v = viewport();
+    expect(
+      fillHandleRect(v, { row: 0, column: 0, ranges: [{ top: 0, left: 2, bottom: 1048575, right: 2 }] }),
+    ).toBeNull();
+    expect(
+      fillHandleRect(v, { row: 0, column: 0, ranges: [{ top: 3, left: 0, bottom: 3, right: 16383 }] }),
+    ).toBeNull();
   });
 });

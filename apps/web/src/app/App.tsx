@@ -15,7 +15,13 @@ import {
   type GridHost,
   type RecentEntry,
 } from '@cellestra/ui';
-import type { AppController, Layout, Theme } from './controller.ts';
+import {
+  AutoSaveSeconds,
+  normalizeAutoSave,
+  type AppController,
+  type Layout,
+  type Theme,
+} from './controller.ts';
 import {
   FilterPopup,
   FunctionPicker,
@@ -27,6 +33,7 @@ import {
 } from './DataDialogs.tsx';
 import { ChartPane } from './ChartPane.tsx';
 import { Ribbon } from './Ribbon.tsx';
+import { GridContextMenu } from './ContextMenu.tsx';
 
 const TOOLBAR: readonly (string | '|')[] = [
   'file.new',
@@ -116,6 +123,14 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
         }
       },
       openLink: (row, column) => app.openLink(row, column),
+      hasLink: (row, column) => !!app.sheet.find(row, column)?.hyperlink,
+      fill: (source, target) => app.fillRange(source, target),
+      marquee: app.marquee,
+      clearMarquee: () => app.clearMarquee(),
+      stylePreview: app.stylePreview,
+      autofitColumn: (column) => app.autofitColumn(column),
+      contextMenu: (zone, at) => (app.contextMenu.value = { zone, ...at }),
+      hoverTip: (row, column) => app.hoverTip(row, column),
     }),
     [app, catalog, s, draft],
   );
@@ -238,6 +253,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
           />
         )}
       </div>
+      <GridContextMenu app={app} catalog={catalog} />
       <Footer app={app} />
       <Overlays app={app} catalog={catalog} />
       {dragging.value && <div class="cs-drop">Drop a spreadsheet to open it</div>}
@@ -965,6 +981,25 @@ function SettingsDialog({ app, onClose }: { readonly app: AppController; readonl
             <option value="ribbon">Ribbon (tabs)</option>
             <option value="bar">Compact toolbar</option>
           </select>
+        </label>
+        <label style={{ display: 'grid', gap: '4px' }}>
+          Auto-save (seconds)
+          <input
+            type="number"
+            min={0}
+            max={AutoSaveSeconds.maximum}
+            step={5}
+            value={app.autoSaveSeconds.value}
+            onChange={(e) => {
+              const v = normalizeAutoSave(Number(e.currentTarget.value));
+              app.autoSaveSeconds.value = v;
+              e.currentTarget.value = String(v);
+            }}
+          />
+          <span class="cs-muted" style={{ fontSize: '12px' }}>
+            Seconds of no editing before the file is saved in place. 0 turns auto-save off; anything below{' '}
+            {AutoSaveSeconds.minimum} counts as {AutoSaveSeconds.minimum}. New and uploaded files wait for ⌘S.
+          </span>
         </label>
         {app.nasAvailable.value && (
           <label style={{ display: 'grid', gap: '4px' }}>
