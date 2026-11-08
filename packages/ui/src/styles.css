@@ -343,14 +343,32 @@ button {
   font-style: italic;
   border-right: 1px solid var(--cs-border);
 }
-.cs-formula-input {
+.cs-formula-field {
   flex: 1;
+  position: relative;
+}
+/* Line height + padding come to the bar's 28px for one line (FormulaBar.tsx sizes it). */
+.cs-formula-input {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 5;
+  box-sizing: border-box;
+  margin: 0;
   border: 0;
-  background: transparent;
-  padding: 0 8px;
+  background: var(--cs-bg);
+  padding: 5px 8px;
   font: 13px var(--cs-mono);
+  line-height: 18px;
   color: var(--cs-text);
   outline: none;
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+}
+.cs-formula-input-open {
+  overflow-y: auto;
+  border-bottom: 1px solid var(--cs-border);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
 }
 
 /* Sheet tabs + status bar */
@@ -622,6 +640,11 @@ button {
 }
 .cs-context-item:hover:not(:disabled) .cs-context-key {
   color: inherit;
+}
+.cs-context-check {
+  width: 15px;
+  margin-left: 12px;
+  display: flex;
 }
 .cs-context-sep {
   height: 1px;

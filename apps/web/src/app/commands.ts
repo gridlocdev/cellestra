@@ -236,10 +236,10 @@ export function buildCommands(app: AppController): CommandCatalog {
     {
       id: 'edit.selectAll',
       title: 'Select All',
-      description: 'Select the whole sheet',
+      description: 'Select the table you are in, then the whole sheet',
       group: 'Edit',
       shortcut: 'mod+a',
-      run: () => app.selection.selectRange({ top: 0, left: 0, bottom: 1_048_575, right: 16_383 }),
+      run: () => app.selectAll(),
     },
     {
       id: 'edit.find',

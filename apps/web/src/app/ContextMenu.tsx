@@ -17,7 +17,6 @@ const MENUS: Record<'cell' | 'columnHeader' | 'rowHeader', readonly string[]> = 
     'edit.clearAll',
     '|',
     'format.merge',
-    'insert.checkbox',
     'format.cells',
   ],
   columnHeader: [
@@ -56,6 +55,9 @@ const MENUS: Record<'cell' | 'columnHeader' | 'rowHeader', readonly string[]> = 
     'format.cells',
   ],
 };
+
+/** Added to the cell menu when the click lands in a table: its own formatting, ticked when on. */
+const TABLE_ITEMS: readonly string[] = ['|', 'data.bandedRows', 'data.headerColumn', 'data.removeTable'];
 
 /** The grid's right-click menu: the catalog's own commands, so titles and shortcuts match the rest. */
 export function GridContextMenu({
@@ -109,7 +111,7 @@ export function GridContextMenu({
   }, [menu]);
 
   if (!menu) return null;
-  const items = MENUS[menu.zone];
+  const items = menu.zone === 'cell' && app.activeTable ? [...MENUS.cell, ...TABLE_ITEMS] : MENUS[menu.zone];
   return (
     <div
       ref={ref}
@@ -127,11 +129,13 @@ export function GridContextMenu({
         if (id === '|') return <div key={i} class="cs-context-sep" role="separator" />;
         const c = catalog.get(id);
         if (!c || c.hidden) return null;
+        const on = c.active?.();
         return (
           <button
             key={id}
             type="button"
-            role="menuitem"
+            role={on === undefined ? 'menuitem' : 'menuitemcheckbox'}
+            aria-checked={on}
             class="cs-context-item"
             disabled={!catalog.isEnabled(c)}
             onPointerDown={(e) => e.preventDefault()}
@@ -143,6 +147,7 @@ export function GridContextMenu({
             <Icon name={c.icon ?? 'square'} />
             <span class="cs-context-title">{c.title}</span>
             {c.shortcutText && <span class="cs-context-key">{c.shortcutText}</span>}
+            {on !== undefined && <span class="cs-context-check">{on ? <Icon name="check" /> : null}</span>}
           </button>
         );
       })}

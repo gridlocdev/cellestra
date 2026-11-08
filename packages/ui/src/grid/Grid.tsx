@@ -464,7 +464,8 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     }
     const r = host.sheet.value.selectionRangeAt(editing.row, editing.column);
     const rect = v.rangeRect(r.top, r.left, r.bottom, r.right);
-    const style = host.styles.get(host.sheet.value.find(editing.row, editing.column)?.styleId ?? 0);
+    const style = host.styles.get(host.sheet.value.effectiveStyleId(editing.row, editing.column));
+    const wraps = style.alignment.wrapText;
     const fontPx = ((style.font.sizePoints * 96) / 72) * v.zoom;
     // The box is exactly the cell, so the vertical padding is whatever room the line leaves
     // (none in a default 20px row), with the text near the bottom as the grid draws it.
@@ -479,18 +480,22 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       height: `${rect.h}px`,
       padding: `${room - padBottom}px ${CELL_PAD_X * v.zoom}px ${padBottom}px`,
       font: `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${fontPx}px "${style.font.family}", "Helvetica Neue", Arial, sans-serif`,
+      // A wrapping cell wraps in the editor too, at the cell's width, as the grid will draw it.
+      whiteSpace: wraps ? 'pre-wrap' : 'pre',
+      overflowWrap: wraps ? 'anywhere' : 'normal',
     });
-    fitEditor(rect, v);
+    fitEditor(rect, v, wraps);
   };
 
   /**
    * Grow the editor past its cell when the text needs it, as Calc does: to the right for a long
    * line (up to the grid's right edge) and down for extra lines. Never smaller than the cell.
+   * Wrapping text keeps the cell's width and only grows down.
    */
-  const fitEditor = (cell: Rect, v: Viewport) => {
+  const fitEditor = (cell: Rect, v: Viewport, wraps: boolean) => {
     const editor = editorRef.current!;
     const wider = editor.scrollWidth - editor.clientWidth;
-    if (wider > 0) {
+    if (wider > 0 && !wraps) {
       const room = Math.max(cell.w, v.width - cell.x - 2);
       editor.style.width = `${Math.min(room, cell.w + wider + 2 * CELL_PAD_X * v.zoom)}px`;
     }
@@ -777,7 +782,12 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       e.preventDefault();
       endEdit(true, [1, 0]);
     } else if (e.key === 'Enter' && (e.altKey || e.shiftKey)) {
-      // ⌥↩ / ⇧↩ insert a line break — the textarea's default.
+      // ⌥↩ / ⇧↩ start a new line in the cell. Inserted here rather than left to the textarea:
+      // macOS doesn't reliably insert one for ⌥↩.
+      e.preventDefault();
+      const editor = e.currentTarget as HTMLTextAreaElement;
+      editor.setRangeText('\n', editor.selectionStart, editor.selectionEnd, 'end');
+      editor.dispatchEvent(new Event('input', { bubbles: true }));
     } else if (e.key === 'Tab') {
       e.preventDefault();
       endEdit(true, [0, e.shiftKey ? -1 : 1]);

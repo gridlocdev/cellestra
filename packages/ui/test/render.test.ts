@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CellRange, CellStyles, DataEditCommands, Workbook, table } from '@cellestra/core';
 import { Axis } from '../src/grid/axis.ts';
 import { lightPalette } from '../src/grid/palette.ts';
-import { checkboxRect, fillHandleRect, renderGrid } from '../src/grid/render.ts';
+import { checkboxRect, fillHandleRect, renderGrid, wrap } from '../src/grid/render.ts';
 import { HEADER_HEIGHT, HEADER_WIDTH, Viewport } from '../src/grid/viewport.ts';
 
 /** A canvas context that records strokeRect calls (with the stroke colour and width at the time). */
@@ -148,5 +148,20 @@ describe('checkboxRect', () => {
     expect(checkboxRect(cell, aligned('right', 'middle'), 1).x).toBeGreaterThan(140);
     expect(checkboxRect({ ...cell, h: 12 }, CellStyles.default, 1).h).toBe(8);
     expect(checkboxRect(cell, CellStyles.default, 2).w).toBe(16);
+  });
+});
+
+describe('wrap', () => {
+  // 6px a character.
+  const ctx = recordingContext().ctx;
+
+  it('folds between words and keeps typed line breaks', () => {
+    expect(wrap(ctx, 'aaa bbb ccc', 42)).toEqual(['aaa bbb', 'ccc']);
+    expect(wrap(ctx, 'one\ntwo', 600)).toEqual(['one', 'two']);
+  });
+
+  it('breaks a word too long for a line instead of cutting it off', () => {
+    expect(wrap(ctx, 'abcdefghij', 24)).toEqual(['abcd', 'efgh', 'ij']);
+    expect(wrap(ctx, 'hi abcdefghij', 24)).toEqual(['hi', 'abcd', 'efgh', 'ij']);
   });
 });

@@ -41,6 +41,7 @@ import {
   ConflictError,
   NasStore,
   NativeStore,
+  MAX_COLUMN,
   MAX_ROW,
   Selection,
   WorkbookSession,
@@ -1174,7 +1175,9 @@ export class AppController {
     );
   }
 
-  autofitColumns(r: CellRange = this.range): void {
+  /** Fit each column the range touches to its widest value anywhere in the column. */
+  autofitColumns(range: CellRange = this.range): void {
+    const r = CellRange.fromBounds(0, range.left, MAX_ROW, range.right);
     const ctx = document.createElement('canvas').getContext('2d')!;
     const wb = this.session.workbook.peek();
     const sheet = this.sheet;
@@ -1200,7 +1203,8 @@ export class AppController {
       let width = measured.get(key);
       if (width === undefined) {
         ctx.font = font;
-        width = ctx.measureText(text).width;
+        // A multi-line value is as wide as its longest line.
+        width = Math.max(...text.split('\n').map((line) => ctx.measureText(line).width));
         measured.set(key, width);
       }
       if (width > (widths.get(column) ?? 0)) widths.set(column, width);
@@ -1444,6 +1448,20 @@ export class AppController {
     const t: Table = { name: `Table${n}`, range: r, hasHeader: looksLikeHeader(sheet, r) };
     this.run(DataEditCommands.createStyledTable(this.session.workbook.peek(), this.sheetName, t));
     this.selection.select(r.top, r.left);
+  }
+
+  /** ⌘A: inside a table, the table first; pressed again (or outside one), the whole sheet. */
+  selectAll(): void {
+    const active = this.selection.active.peek();
+    const t = this.activeTable;
+    const s = this.selection.state.peek();
+    const r = s.ranges.length === 1 ? s.ranges[0]! : null;
+    const tr = t?.range;
+    const onTable =
+      !!tr && !!r && r.top === tr.top && r.left === tr.left && r.bottom === tr.bottom && r.right === tr.right;
+    if (tr && !onTable)
+      this.selection.selectRange({ top: tr.top, left: tr.left, bottom: tr.bottom, right: tr.right }, active);
+    else this.selection.selectRange({ top: 0, left: 0, bottom: MAX_ROW, right: MAX_COLUMN }, active);
   }
 
   get activeTable(): Table | null {

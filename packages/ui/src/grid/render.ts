@@ -598,16 +598,31 @@ function edge(
   ctx.restore();
 }
 
+/**
+ * Lines of `text` folded to `width`: at its own line breaks, then between words, and inside a word
+ * too long for a line on its own (so nothing is cut off at the cell's edge).
+ */
 export function wrap(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
   const out: string[] = [];
+  const fits = (s: string) => ctx.measureText(s).width <= width;
   for (const para of text.split('\n')) {
     let current = '';
     for (const word of para.split(/(\s+)/)) {
+      if (!word) continue;
       const next = current + word;
-      if (current && ctx.measureText(next).width > width) {
-        out.push(current.trimEnd());
-        current = word.trimStart();
-      } else current = next;
+      if (fits(next)) {
+        current = next;
+        continue;
+      }
+      if (current.trim()) out.push(current.trimEnd());
+      current = word.trimStart();
+      // A word wider than the line: break it at the last character that fits (at least one).
+      while (current.length > 1 && !fits(current)) {
+        let cut = 1;
+        while (cut < current.length && fits(current.slice(0, cut + 1))) cut++;
+        out.push(current.slice(0, cut));
+        current = current.slice(cut);
+      }
     }
     out.push(current);
   }
