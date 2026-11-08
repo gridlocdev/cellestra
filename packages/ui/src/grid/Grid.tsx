@@ -34,6 +34,7 @@ import {
   type GridOverlay,
 } from './render.ts';
 import { contentRowHeights } from './rowHeights.ts';
+import { insertLineBreak } from '../components/lineBreak.ts';
 import { Viewport, HEADER_HEIGHT, HEADER_WIDTH, type Rect } from './viewport.ts';
 import type { GridPalette } from './palette.ts';
 import { MAX_COLUMN, MAX_ROW, rangeOf, type GridRange, type Selection } from '../session/selection.ts';
@@ -109,6 +110,7 @@ const MIN_COLUMN_WIDTH = 16;
 const MIN_ROW_HEIGHT = 8;
 /** Must match `.cs-grid-editor` in styles.css. */
 const EDITOR_BORDER = 2;
+
 const EDITOR_LINE_HEIGHT = 1.2;
 const RESIZE_GRAB = 4;
 /** Extra px around the 7px fill handle that still grabs it. */
@@ -478,7 +480,9 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       // Exactly the cell: a textarea's default size (cols × rows) is wider and taller than one.
       width: `${rect.w}px`,
       height: `${rect.h}px`,
-      padding: `${room - padBottom}px ${CELL_PAD_X * v.zoom}px ${padBottom}px`,
+      // The 2px border sits inside the cell, so the side padding gives it back: the text then
+      // starts, and wraps, exactly where the grid draws it.
+      padding: `${room - padBottom}px ${Math.max(0, CELL_PAD_X * v.zoom - EDITOR_BORDER)}px ${padBottom}px`,
       font: `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${fontPx}px "${style.font.family}", "Helvetica Neue", Arial, sans-serif`,
       // A wrapping cell wraps in the editor too, at the cell's width, as the grid will draw it.
       whiteSpace: wraps ? 'pre-wrap' : 'pre',
@@ -785,9 +789,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       // ⌥↩ / ⇧↩ start a new line in the cell. Inserted here rather than left to the textarea:
       // macOS doesn't reliably insert one for ⌥↩.
       e.preventDefault();
-      const editor = e.currentTarget as HTMLTextAreaElement;
-      editor.setRangeText('\n', editor.selectionStart, editor.selectionEnd, 'end');
-      editor.dispatchEvent(new Event('input', { bubbles: true }));
+      insertLineBreak(e.currentTarget as HTMLTextAreaElement);
     } else if (e.key === 'Tab') {
       e.preventDefault();
       endEdit(true, [0, e.shiftKey ? -1 : 1]);

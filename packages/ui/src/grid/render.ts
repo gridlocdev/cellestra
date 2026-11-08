@@ -598,11 +598,27 @@ function edge(
   ctx.restore();
 }
 
+/** Recent `wrap` results, keyed by font, width and text: a repaint or a row-height pass re-wraps the same cells. */
+const wrapCache = new Map<string, string[]>();
+const WRAP_CACHE_MAX = 4000;
+
 /**
  * Lines of `text` folded to `width`: at its own line breaks, then between words, and inside a word
  * too long for a line on its own (so nothing is cut off at the cell's edge).
  */
 export function wrap(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
+  const key = `${String(ctx.font)}\u0000${width}\u0000${text}`;
+  const hit = wrapCache.get(key);
+  if (hit) return hit;
+  const out = wrapUncached(ctx, text, width);
+  if (wrapCache.size >= WRAP_CACHE_MAX) wrapCache.clear();
+  wrapCache.set(key, out);
+  return out;
+}
+
+function wrapUncached(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
+  // No room at all (a sliver of a column): one character a line would make the row absurdly tall.
+  if (!(width > 0)) return text.split('\n');
   const out: string[] = [];
   const fits = (s: string) => ctx.measureText(s).width <= width;
   for (const para of text.split('\n')) {
@@ -616,10 +632,19 @@ export function wrap(ctx: CanvasRenderingContext2D, text: string, width: number)
       }
       if (current.trim()) out.push(current.trimEnd());
       current = word.trimStart();
-      // A word wider than the line: break it at the last character that fits (at least one).
+      // A word wider than the line: break it at the longest prefix that fits (at least one
+      // character, never half a surrogate pair), found by binary search.
       while (current.length > 1 && !fits(current)) {
-        let cut = 1;
-        while (cut < current.length && fits(current.slice(0, cut + 1))) cut++;
+        let lo = 1;
+        let hi = current.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi + 1) >> 1;
+          if (fits(current.slice(0, mid))) lo = mid;
+          else hi = mid - 1;
+        }
+        let cut = lo;
+        const code = current.charCodeAt(cut - 1);
+        if (code >= 0xd800 && code <= 0xdbff) cut = cut > 1 ? cut - 1 : cut + 1;
         out.push(current.slice(0, cut));
         current = current.slice(cut);
       }

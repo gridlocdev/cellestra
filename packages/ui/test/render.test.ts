@@ -164,4 +164,10 @@ describe('wrap', () => {
     expect(wrap(ctx, 'abcdefghij', 24)).toEqual(['abcd', 'efgh', 'ij']);
     expect(wrap(ctx, 'hi abcdefghij', 24)).toEqual(['hi', 'abcd', 'efgh', 'ij']);
   });
+
+  it('never splits a surrogate pair, and leaves text alone with no room', () => {
+    // '😀' is two UTF-16 units (12px here); a 3-unit line would end inside it.
+    expect(wrap(ctx, 'ab😀cd', 18)).toEqual(['ab', '😀c', 'd']);
+    expect(wrap(ctx, 'abc def', 0)).toEqual(['abc def']);
+  });
 });

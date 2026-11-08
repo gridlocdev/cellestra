@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { insertLineBreak } from './lineBreak.ts';
 
 const FIELD_LINE = 18;
 const FIELD_PAD = 10;
@@ -83,12 +84,12 @@ export function FormulaBar(props: {
           }}
           onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
           onKeyDown={(e) => {
+            // Keys that confirm an IME composition belong to the input method.
+            if (e.isComposing) return;
             if (e.key === 'Enter' && (e.altKey || e.shiftKey)) {
               // ⌥↩ / ⇧↩ start a new line in the cell, as in the grid's own editor.
               e.preventDefault();
-              const field = e.currentTarget;
-              field.setRangeText('\n', field.selectionStart, field.selectionEnd, 'end');
-              setText(field.value);
+              insertLineBreak(e.currentTarget);
             } else if (e.key === 'Enter') {
               e.preventDefault();
               editing.current = false;
