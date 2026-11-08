@@ -68,7 +68,8 @@ function createWindow(): BrowserWindow {
     minWidth: 640,
     minHeight: 400,
     title: 'Cellestra',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    // 'hidden' keeps the controls at their usual spot, centred in the web app's 28px title bar.
+    titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
     backgroundColor: '#1e1e1e',
     show: false,
     webPreferences: {

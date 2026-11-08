@@ -151,8 +151,30 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cs-native-mac .cs-toolbar {
-  padding-left: 78px;
+.cs-toolbar-fill {
+  flex: 1;
+  align-self: stretch;
+  -webkit-app-region: drag;
+}
+/* macOS (Electron, titleBarStyle 'hidden'): the window controls sit in this 28px row, left. */
+.cs-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  flex: none;
+  padding: 0 78px;
+  background: var(--cs-chrome);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.cs-titlebar .cs-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--cs-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .cs-sep {
   width: 1px;

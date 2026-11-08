@@ -192,7 +192,8 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
 
   return (
     <div class={`cs-app ${isMacNative ? 'cs-native-mac' : ''}`}>
-      <Toolbar app={app} catalog={catalog} />
+      {isMacNative && <TitleBar app={app} />}
+      <Toolbar app={app} catalog={catalog} titleInline={!isMacNative} />
       <FormulaBarConnected app={app} />
       <div class="cs-main" onPointerUp={() => app.selectionDone()}>
         {s.activeSheet.value.isChartSheet ? (
@@ -226,7 +227,32 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
   );
 }
 
-function Toolbar({ app, catalog }: { readonly app: AppController; readonly catalog: CommandCatalog }) {
+/**
+ * The Mac window's title bar: the workbook's name centred on the row with the window controls,
+ * where the eye finds it first. Elsewhere the native title bar (or the browser tab) shows it.
+ */
+function TitleBar({ app }: { readonly app: AppController }) {
+  const s = app.session;
+  return (
+    <div class="cs-titlebar">
+      <span class="cs-title">
+        {s.modified.value ? '• ' : ''}
+        {s.title.value}
+      </span>
+    </div>
+  );
+}
+
+function Toolbar({
+  app,
+  catalog,
+  titleInline,
+}: {
+  readonly app: AppController;
+  readonly catalog: CommandCatalog;
+  /** Show the workbook's name in the toolbar (when there is no title bar of our own). */
+  readonly titleInline: boolean;
+}) {
   const s = app.session;
   // Read the signals the enabled/active checks depend on, so the toolbar re-renders with them.
   void s.version.value;
@@ -256,10 +282,14 @@ function Toolbar({ app, catalog }: { readonly app: AppController; readonly catal
           </button>
         );
       })}
-      <span class="cs-title">
-        {s.modified.value ? '• ' : ''}
-        {s.title.value}
-      </span>
+      {titleInline ? (
+        <span class="cs-title">
+          {s.modified.value ? '• ' : ''}
+          {s.title.value}
+        </span>
+      ) : (
+        <span class="cs-toolbar-fill" />
+      )}
       <button
         type="button"
         class="cs-btn"
