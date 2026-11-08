@@ -51,6 +51,9 @@ export interface GridController {
 
 const MIN_COLUMN_WIDTH = 16;
 const MIN_ROW_HEIGHT = 8;
+/** Must match `.cs-grid-editor` in styles.css. */
+const EDITOR_BORDER = 2;
+const EDITOR_LINE_HEIGHT = 1.2;
 const RESIZE_GRAB = 4;
 
 interface Axes {
@@ -298,14 +301,20 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const r = host.sheet.value.selectionRangeAt(editing.row, editing.column);
     const rect = v.rangeRect(r.top, r.left, r.bottom, r.right);
     const style = host.styles.get(host.sheet.value.find(editing.row, editing.column)?.styleId ?? 0);
+    const fontPx = ((style.font.sizePoints * 96) / 72) * v.zoom;
+    // The box is exactly the cell, so the vertical padding is whatever room the line leaves
+    // (none in a default 20px row), with the text near the bottom as the grid draws it.
+    const room = Math.max(0, rect.h - 2 * EDITOR_BORDER - fontPx * EDITOR_LINE_HEIGHT);
+    const padBottom = Math.min(room, CELL_PAD_Y * v.zoom);
     Object.assign(editor.style, {
       display: 'block',
       left: `${rect.x}px`,
       top: `${rect.y}px`,
-      minWidth: `${rect.w}px`,
-      minHeight: `${rect.h}px`,
-      padding: `${CELL_PAD_Y * v.zoom}px ${CELL_PAD_X * v.zoom}px`,
-      font: `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${((style.font.sizePoints * 96) / 72) * v.zoom}px "${style.font.family}", "Helvetica Neue", Arial, sans-serif`,
+      // Exactly the cell: a textarea's default size (cols × rows) is wider and taller than one.
+      width: `${rect.w}px`,
+      height: `${rect.h}px`,
+      padding: `${room - padBottom}px ${CELL_PAD_X * v.zoom}px ${padBottom}px`,
+      font: `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${fontPx}px "${style.font.family}", "Helvetica Neue", Arial, sans-serif`,
     });
   };
 

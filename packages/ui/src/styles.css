@@ -115,8 +115,9 @@ button {
   z-index: 2;
   margin: 0;
   border: 2px solid var(--cs-accent);
-  background: #fff;
-  color: #000;
+  /* Same colours as the grid canvas (palette.ts), so it follows the theme. */
+  background: var(--cs-bg);
+  color: var(--cs-text);
   resize: none;
   outline: none;
   overflow: hidden;
