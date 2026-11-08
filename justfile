@@ -68,7 +68,8 @@ install-desktop: package-desktop-dir
     set -euo pipefail
     target="/Applications/{{ app_name }}.app"
     built=$(ls -d "{{ release }}"/mac*/"{{ app_name }}.app" | head -1)
-    if pgrep -f "$target/Contents/MacOS/" >/dev/null; then
+    # Anchored, so a shell command that merely mentions the path does not count.
+    if pgrep -f "^$target/Contents/MacOS/" >/dev/null; then
       echo "{{ app_name }} is running — quit it first, then run this again." >&2
       exit 1
     fi
