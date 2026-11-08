@@ -13,6 +13,9 @@ import { drawChrome, type ChromeButton } from './chrome.ts';
 import type { GridPalette } from './palette.ts';
 import { HEADER_HEIGHT, HEADER_WIDTH, type Band, type Rect, type Viewport } from './viewport.ts';
 
+/** Table frame thickness in CSS pixels (gridlines are 1). */
+const TABLE_OUTLINE_WIDTH = 2;
+
 export const CELL_PAD_X = 5;
 export const CELL_PAD_Y = 2;
 const PT_TO_PX = 96 / 72;
@@ -151,16 +154,6 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
     line(ctx, crisp(cb.start + cb.size), clip.y, crisp(cb.start + cb.size), clip.y + clip.h);
   ctx.stroke();
 
-  // Table outline, in the header band's colour so frame and header read as one piece.
-  ctx.strokeStyle = palette.tableHeaderBand;
-  ctx.lineWidth = 1.2;
-  for (const t of sheet.tables) {
-    const r = t.range;
-    if (r.bottom < top || r.top > bottom || r.right < left || r.left > right) continue;
-    const rect = v.rangeRect(r.top, r.left, r.bottom, r.right);
-    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
-  }
-
   // 3. Merged areas: one rect each, painted over the gridlines inside them.
   for (const m of merges) {
     const r = v.rangeRect(m.range.top, m.range.left, m.range.bottom, m.range.right);
@@ -208,6 +201,19 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
       edge(ctx, b.left, rect.x, rect.y, rect.x, rect.y + rect.h);
       edge(ctx, b.right, rect.x + rect.w, rect.y, rect.x + rect.w, rect.y + rect.h);
     }
+  }
+
+  // 6. Table outlines, over cell borders so a table always reads as one framed block. Drawn from
+  // the table's range, so the frame grows with the table.
+  ctx.strokeStyle = palette.tableOutline;
+  ctx.lineWidth = TABLE_OUTLINE_WIDTH;
+  ctx.setLineDash([]);
+  for (const t of sheet.tables) {
+    const r = t.range;
+    if (r.bottom < top || r.top > bottom || r.right < left || r.left > right) continue;
+    const rect = v.rangeRect(r.top, r.left, r.bottom, r.right);
+    // Centred on the cell edges, like the gridlines it covers.
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
   }
 
   drawSelection(input);
