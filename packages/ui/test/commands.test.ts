@@ -68,7 +68,15 @@ describe('CommandCatalog', () => {
 
   it('searches titles and keywords', () => {
     expect(catalog.search('ord').map((c) => c.id)).toEqual(['data.sort']);
-    expect(catalog.search('sa').map((c) => c.id)).toEqual(['file.save']);
+    expect(catalog.search('sa').map((c) => c.id)).toEqual(['file.save', 'data.sort']);
+  });
+
+  it('ignores spaces and matches letters in order', () => {
+    expect(catalog.search('sortasc').map((c) => c.id)).toEqual(['data.sort']);
+    expect(catalog.search('s ort  asc').map((c) => c.id)).toEqual(['data.sort']);
+    expect(catalog.search('srtasc').map((c) => c.id)).toEqual(['data.sort']);
+    expect(catalog.search('bd').map((c) => c.id)).toEqual(['format.bold']);
+    expect(catalog.search('xyz')).toEqual([]);
   });
 
   it('only global commands fire while typing', () => {

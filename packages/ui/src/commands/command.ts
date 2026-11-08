@@ -86,22 +86,51 @@ export class CommandCatalog {
     );
   }
 
-  /** Palette search: every query word must appear in the title, group, or keywords; title-prefix first. */
+  /**
+   * Palette search. Spaces in the query are ignored, so "insertrow" and "ins row" both find
+   * Insert Row. Best first: the title starts with the query, then contains it, then the query
+   * appears in the group, keywords, or description (or each typed word does), then the title
+   * holds the query's letters in order (fuzzy).
+   */
   search(query: string): Command[] {
-    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const q = compact(query);
     const visible = this.all.filter((c) => !c.hidden);
-    if (!words.length) {
+    if (!q) {
       const recent = this.recent.map((id) => this.byId.get(id)!).filter((c) => c && !c.hidden);
       return [...recent, ...visible.filter((c) => !recent.includes(c))];
     }
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     const scored: [Command, number][] = [];
     for (const c of visible) {
-      const title = c.title.toLowerCase();
-      const hay = `${title} ${c.group.toLowerCase()} ${c.keywords?.toLowerCase() ?? ''} ${c.description.toLowerCase()}`;
-      if (!words.every((w) => hay.includes(w))) continue;
-      const score = title.startsWith(words[0]!) ? 0 : title.includes(words[0]!) ? 1 : 2;
-      scored.push([c, score]);
+      const title = compact(c.title);
+      const rest = `${c.group} ${c.keywords ?? ''} ${c.description}`.toLowerCase();
+      const score = title.startsWith(q)
+        ? 0
+        : title.includes(q)
+          ? 1
+          : compact(rest).includes(q) || words.every((w) => `${c.title.toLowerCase()} ${rest}`.includes(w))
+            ? 2
+            : inOrder(q, title)
+              ? 3
+              : -1;
+      if (score >= 0) scored.push([c, score]);
     }
+    // Array.sort is stable, so equal scores keep the catalog's order.
     return scored.sort((a, b) => a[1] - b[1]).map(([c]) => c);
   }
+}
+
+/** Lower-cased with every space removed: what the palette compares. */
+export function compact(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, '');
+}
+
+/** True when every character of `needle` appears in `hay`, in order (gaps allowed). */
+export function inOrder(needle: string, hay: string): boolean {
+  let at = 0;
+  for (const ch of needle) {
+    at = hay.indexOf(ch, at) + 1;
+    if (at === 0) return false;
+  }
+  return true;
 }

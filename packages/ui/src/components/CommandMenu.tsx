@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { CommandCatalog } from '../commands/command.ts';
+import { compact, type CommandCatalog } from '../commands/command.ts';
 import { Icon } from './Icon.tsx';
 
 /** ⌘K: search and run any command. Recent commands come first when the query is empty. */
@@ -61,8 +61,9 @@ export function QuickPick<T>(props: {
 }) {
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
-  const q = query.toLowerCase();
-  const results = props.items.filter((i) => props.label(i).toLowerCase().includes(q));
+  // Same rule as the command palette: spaces don't count.
+  const q = compact(query);
+  const results = props.items.filter((i) => compact(props.label(i)).includes(q));
   const pick = (i: number) => {
     const item = results[i];
     props.onClose();
