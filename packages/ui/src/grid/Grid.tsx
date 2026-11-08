@@ -420,8 +420,9 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       case 'Escape':
         return;
     }
-    // Typing a printable character replaces the cell's content and starts editing.
-    if (e.key.length === 1 && !mod && !e.altKey) {
+    // Typing a printable character replaces the cell's content and starts editing. ⌥ (macOS) and
+    // AltGr (Ctrl+Alt elsewhere) type characters too; ⌘ and plain Ctrl are shortcuts.
+    if (e.key.length === 1 && !e.metaKey && (!e.ctrlKey || e.altKey)) {
       e.preventDefault();
       beginEdit(e.key);
     }

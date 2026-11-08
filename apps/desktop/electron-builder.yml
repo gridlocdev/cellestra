@@ -20,6 +20,8 @@ mac:
   category: public.app-category.productivity
   target: [dmg, zip]
   hardenedRuntime: true
+  # Ad-hoc signature, so Apple silicon will run a local build. Swap for a Developer ID to distribute.
+  identity: '-'
 linux:
   target: [AppImage]
   category: Office

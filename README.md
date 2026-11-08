@@ -39,13 +39,14 @@ If LibreOffice has a file open (it leaves a `.~lock` file next to it), saving th
 ## Desktop
 
 ```bash
-just desktop     # run it
-just package     # build a .dmg / AppImage / installer in apps/desktop/release
+just run-desktop      # run it in dev mode
+just package-desktop  # build a .dmg / AppImage / installer in apps/desktop/release
+just install-desktop  # macOS: package and install into /Applications
 ```
 
 ## For developers
 
-You need Node 22.18 or later and pnpm (installed via `corepack enable`). Run `just setup`, then `just web` for the dev server and `just check` before you commit. [AGENTS.md](AGENTS.md) has the rules and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the code is laid out. The product spec is in [docs/PRD.md](docs/PRD.md).
+You need Node 22.18 or later and pnpm (installed via `corepack enable`). Run `just setup`, then `just run-web` for the dev server and `just check` before you commit. Run `just` on its own to list every recipe. [AGENTS.md](AGENTS.md) has the rules and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the code is laid out. The product spec is in [docs/PRD.md](docs/PRD.md).
 
 ## License
 

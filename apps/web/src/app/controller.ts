@@ -211,11 +211,24 @@ export class AppController {
       }
       void this.refreshRecents();
       setInterval(() => void this.snapshot(), RECOVERY_INTERVAL_MS);
-      addEventListener('focus', () => this.session.recalculateVolatile());
+      addEventListener('focus', () => {
+        this.session.recalculateVolatile();
+        this.focusGridIfIdle();
+      });
       await this.offerRecovery();
     } finally {
       this.#markReady();
+      // Typing right after launch edits the active cell, with no click first.
+      queueMicrotask(() => this.focusGridIfIdle());
     }
+  }
+
+  /** Give the grid the keyboard when nothing else has it (focus sits on the page itself). */
+  focusGridIfIdle(): void {
+    if (typeof document === 'undefined' || this.dialog.peek()) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || active === document.documentElement)
+      this.grid.current?.focus();
   }
 
   /**

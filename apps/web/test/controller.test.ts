@@ -217,3 +217,27 @@ describe('recovery and reloads', () => {
     expect(app.session.activeSheet.peek().getValue(0, 0)).toEqual(CellValue.text('a'));
   });
 });
+
+describe('grid focus at launch', () => {
+  it('focuses the grid when focus sits on the page, not when a field or dialog has it', async () => {
+    const app = await makeApp();
+    const body = {};
+    const doc = globalThis.document as unknown as { body: unknown; activeElement: unknown };
+    doc.body = body;
+    const focus = vi.fn();
+    app.grid.current = { focus, beginEdit: () => {}, isEditing: () => false };
+
+    doc.activeElement = body;
+    app.focusGridIfIdle();
+    expect(focus).toHaveBeenCalledTimes(1);
+
+    doc.activeElement = { tagName: 'INPUT' };
+    app.focusGridIfIdle();
+    expect(focus).toHaveBeenCalledTimes(1);
+
+    doc.activeElement = body;
+    app.dialog.value = { kind: 'recovery', name: 'x', resolve: () => {} } as never;
+    app.focusGridIfIdle();
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+});
