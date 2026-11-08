@@ -128,6 +128,19 @@ export interface DataTarget {
 
 const RECOVERY_INTERVAL_MS = 30_000;
 const THEME_KEY = 'cellestra.theme';
+const LAYOUT_KEY = 'cellestra.layout';
+const RIBBON_COLLAPSED_KEY = 'cellestra.ribbonCollapsed';
+
+/** The command chrome: a tabbed ribbon (the default) or the single compact toolbar. */
+export type Layout = 'ribbon' | 'bar';
+
+function stored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Everything the app does, independent of how it is drawn: documents and stores, edits on the
@@ -159,6 +172,9 @@ export class AppController {
     this.theme.value === 'system' ? this.prefersDark.value : this.theme.value === 'dark',
   );
   readonly palette = computed(() => (this.isDark.value ? darkPalette : lightPalette));
+  readonly layout = signal<Layout>(stored(LAYOUT_KEY) === 'bar' ? 'bar' : 'ribbon');
+  /** The ribbon shows only its tabs; clicking one opens it. */
+  readonly ribbonCollapsed = signal(stored(RIBBON_COLLAPSED_KEY) === 'true');
   readonly formatPainter = signal<FormatBlock | null>(null);
   readonly findQuery = signal('');
 
@@ -187,6 +203,14 @@ export class AppController {
     effect(() => {
       localStorage.setItem(THEME_KEY, this.theme.value);
       document.documentElement.dataset.theme = this.isDark.value ? 'dark' : 'light';
+    });
+    effect(() => {
+      try {
+        localStorage.setItem(LAYOUT_KEY, this.layout.value);
+        localStorage.setItem(RIBBON_COLLAPSED_KEY, String(this.ribbonCollapsed.value));
+      } catch {
+        // Storage blocked (private window): the choice lasts for this session.
+      }
     });
     // Switching sheets starts at A1 (Calc keeps a per-sheet cursor; good enough for now).
     let lastSheet = this.session.activeSheet.peek();

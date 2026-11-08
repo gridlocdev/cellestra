@@ -1,0 +1,550 @@
+/* The tabbed ribbon layout. Light values follow the design; dark ones come from the theme. */
+
+.rb {
+  --rb-chrome: #f6f7f9;
+  --rb-body: #ffffff;
+  --rb-line: #e3e6eb;
+  --rb-field-line: #d5d9e0;
+  --rb-field: #ffffff;
+  --rb-text: #2b3038;
+  --rb-text-2: #5e6673;
+  --rb-tab: #3a404a;
+  --rb-tab-on: #1a3fa0;
+  --rb-accent: #2557d6;
+  --rb-hover: #e6e9ee;
+  --rb-pressed: #dce6fb;
+  --rb-menu-shadow: 0 8px 24px rgb(16 24 40 / 14%), 0 2px 6px rgb(16 24 40 / 8%);
+
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--cs-font);
+  color: var(--rb-text);
+  user-select: none;
+}
+
+:root[data-theme='dark'] .rb {
+  --rb-chrome: var(--cs-chrome);
+  --rb-body: var(--cs-bg);
+  --rb-line: var(--cs-border);
+  --rb-field-line: var(--cs-border);
+  --rb-field: var(--cs-chrome-2);
+  --rb-text: var(--cs-text);
+  --rb-text-2: var(--cs-text-2);
+  --rb-tab: var(--cs-text-2);
+  --rb-tab-on: #9db8ff;
+  --rb-accent: #6f95ff;
+  --rb-hover: var(--cs-hover);
+  --rb-pressed: rgb(111 149 255 / 22%);
+  --rb-menu-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+
+.rb .cs-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.rb-fill {
+  flex: 1;
+}
+
+/* --- top bar --- */
+
+.rb-top {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: var(--rb-chrome);
+  -webkit-app-region: drag;
+}
+
+/* Room for the window controls, which sit in this bar on macOS. */
+.rb-top.mac {
+  padding-left: 86px;
+}
+
+.rb-top > :not(.rb-fill) {
+  -webkit-app-region: no-drag;
+}
+
+.rb-logo {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  fill: none;
+  stroke: var(--rb-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rb-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.rb-status {
+  font-size: 12px;
+  color: var(--rb-text-2);
+  white-space: nowrap;
+}
+
+.rb-search {
+  flex: 0 1 280px;
+  min-width: 140px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--rb-field-line);
+  border-radius: 6px;
+  background: var(--rb-field);
+  color: var(--rb-text-2);
+  cursor: text;
+}
+
+.rb-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--rb-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: text;
+}
+
+.rb-search input::placeholder {
+  color: var(--rb-text-2);
+}
+
+.rb-search kbd {
+  font: inherit;
+  font-size: 11px;
+  color: var(--rb-text-2);
+}
+
+/* --- tabs --- */
+
+.rb-tabs {
+  height: 36px;
+  display: flex;
+  align-items: stretch;
+  padding: 0 8px;
+  background: var(--rb-chrome);
+  border-bottom: 1px solid var(--rb-line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.rb-tab {
+  flex: none;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--rb-tab);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.rb-tab:hover {
+  color: var(--rb-text);
+}
+
+.rb-tab.on {
+  color: var(--rb-tab-on);
+  border-bottom-color: var(--rb-accent);
+  font-weight: 600;
+}
+
+/* --- body --- */
+
+.rb-body {
+  height: 100px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: stretch;
+  padding: 6px 4px;
+  background: var(--rb-body);
+  border-bottom: 1px solid var(--rb-line);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.rb-grp {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px;
+  border-right: 1px solid var(--rb-line);
+}
+
+.rb-grp-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rb-grp-label {
+  padding-top: 4px;
+  font-size: 11px;
+  color: var(--rb-text-2);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.rb-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rb-row.tight {
+  gap: 1px;
+}
+
+.rb-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+}
+
+.rb-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rb-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--rb-field-line);
+  flex: none;
+}
+
+/* --- buttons --- */
+
+.rb-tb,
+.rb-big,
+.rb-big-top,
+.rb-big-bottom,
+.rb-menu-item {
+  border: 0;
+  background: none;
+  color: var(--rb-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.rb-tb {
+  height: 32px;
+  min-width: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.rb-tb .cs-icon + .cs-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.rb-sm {
+  height: 24px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 6px 0 4px;
+  font-size: 12px;
+}
+
+.rb-sm.tall {
+  height: 32px;
+}
+
+.rb-sm .cs-icon + .cs-icon {
+  margin-left: -2px;
+}
+
+.rb-tb:hover:not(:disabled),
+.rb-big:hover:not(:disabled),
+.rb-big-top:hover:not(:disabled),
+.rb-big-bottom:hover:not(:disabled) {
+  background: var(--rb-hover);
+}
+
+.rb-tb[aria-pressed='true'],
+.rb-tb[aria-expanded='true'],
+.rb-big[aria-pressed='true'],
+.rb-big-bottom[aria-expanded='true'] {
+  background: var(--rb-pressed);
+  color: var(--rb-tab-on);
+}
+
+.rb-tb:disabled,
+.rb-big:disabled,
+.rb-big-top:disabled,
+.rb-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.rb-g {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.rb-g.serif {
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.rb-g.small {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rb-split {
+  display: flex;
+  align-items: center;
+}
+
+.rb-split > .rb-tb:first-child {
+  border-radius: 6px 0 0 6px;
+  padding-right: 4px;
+}
+
+.rb-split .rb-chev {
+  min-width: 18px;
+  padding: 0 2px;
+  border-radius: 0 6px 6px 0;
+}
+
+.rb-split .rb-chev .cs-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.rb-big {
+  width: 60px;
+  height: 70px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 2px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.15;
+  text-align: center;
+  flex: none;
+}
+
+.rb-big > .cs-icon,
+.rb-big-top > .cs-icon {
+  width: 26px;
+  height: 26px;
+}
+
+.rb-big .cs-icon svg {
+  stroke-width: 1.5;
+}
+
+.rb-big.split {
+  gap: 0;
+  padding: 0;
+}
+
+.rb-big.split:hover {
+  background: none;
+}
+
+.rb-big.split .rb-pop {
+  width: 100%;
+}
+
+.rb-big-top {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px 6px 0 0;
+}
+
+.rb-big-bottom {
+  width: 100%;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 0 0 6px 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.rb-big-bottom .cs-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.rb-collapse {
+  align-self: flex-end;
+}
+
+/* --- drop-downs --- */
+
+.rb-dd {
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border: 1px solid var(--rb-field-line);
+  border-radius: 6px;
+  background: var(--rb-field);
+  color: var(--rb-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.rb-pop {
+  position: relative;
+  display: flex;
+}
+
+.rb-pop-panel {
+  position: fixed;
+  z-index: 50;
+  margin-top: 4px;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--rb-line);
+  border-radius: 8px;
+  background: var(--rb-body);
+  box-shadow: var(--rb-menu-shadow);
+}
+
+.rb-menu {
+  display: flex;
+  flex-direction: column;
+}
+
+.rb-menu-item {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.rb-menu-item:hover:not(:disabled) {
+  background: var(--rb-hover);
+}
+
+.rb-menu-title {
+  flex: 1;
+}
+
+.rb-menu-key {
+  color: var(--rb-text-2);
+  font-size: 12px;
+  margin-left: 16px;
+}
+
+.rb-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--rb-line);
+}
+
+/* --- colours --- */
+
+.rb-color {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.rb-color > svg {
+  width: 16px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rb-color > .cs-icon {
+  height: 14px;
+}
+
+.rb-color-bar {
+  width: 16px;
+  height: 3px;
+  border-radius: 1px;
+  box-shadow: inset 0 0 0 1px var(--rb-field-line);
+}
+
+.rb-swatches {
+  display: grid;
+  gap: 6px;
+  padding: 4px;
+}
+
+.rb-swatch-reset {
+  height: 26px;
+  border: 1px solid var(--rb-field-line);
+  border-radius: 5px;
+  background: var(--rb-field);
+  color: var(--rb-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rb-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 22px);
+  gap: 6px;
+}
+
+.rb-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 15%);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.rb-swatch:hover {
+  outline: 2px solid var(--rb-accent);
+  outline-offset: 1px;
+}

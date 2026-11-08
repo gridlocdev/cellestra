@@ -38,6 +38,11 @@ export interface CellestraNative {
   saveDialog(suggestedName: string, bytes: Uint8Array): Promise<SavedFile | null>;
   setDocumentState(state: DocumentState): void;
   setMenu(menu: readonly NativeMenuItem[]): void;
+  /**
+   * macOS: the height of the page's own title bar, so the window controls sit centred in it.
+   * Optional so an older desktop build without it still works.
+   */
+  setTitleBarHeight?(height: number): void;
   confirmClose(): void;
   /** The close (or quit) was cancelled; the window stays open. */
   cancelClose(): void;

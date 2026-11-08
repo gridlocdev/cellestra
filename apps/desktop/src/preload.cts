@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('cellestraNative', {
     ipcRenderer.invoke('cellestra:save-dialog', suggestedName, bytes),
   setDocumentState: (state: DocumentState): void => ipcRenderer.send('cellestra:document-state', state),
   setMenu: (menu: readonly NativeMenuItem[]): void => ipcRenderer.send('cellestra:set-menu', menu),
+  setTitleBarHeight: (height: number): void => ipcRenderer.send('cellestra:title-bar-height', height),
   confirmClose: (): void => ipcRenderer.send('cellestra:confirm-close'),
   cancelClose: (): void => ipcRenderer.send('cellestra:cancel-close'),
   watch: (path: string | null): void => ipcRenderer.send('cellestra:watch', path),

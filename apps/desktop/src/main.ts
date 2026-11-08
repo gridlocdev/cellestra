@@ -276,6 +276,13 @@ function registerIpc(): void {
     win.setDocumentEdited(s.dirty);
     if (process.platform === 'darwin') win.setRepresentedFilename(grants.has(s.path) ? s.path : '');
   });
+  ipcMain.on(Channels.setTitleBarHeight, (e, height: unknown) => {
+    const win = fromEvent(e);
+    if (!win || !trusted(e) || process.platform !== 'darwin') return;
+    if (typeof height !== 'number' || !Number.isFinite(height) || height < 20 || height > 120) return;
+    // The controls are 14px tall; 28px is the standard bar, where macOS's own spot is right.
+    win.setWindowButtonPosition(height === 28 ? null : { x: 16, y: Math.round((height - 14) / 2) });
+  });
   ipcMain.on(Channels.setMenu, (e, items: readonly NativeMenuItem[]) => {
     const win = fromEvent(e);
     if (!win || !trusted(e)) return;

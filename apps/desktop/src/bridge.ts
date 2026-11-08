@@ -43,6 +43,7 @@ export const Channels = {
   saveDialog: 'cellestra:save-dialog',
   setDocumentState: 'cellestra:document-state',
   setMenu: 'cellestra:set-menu',
+  setTitleBarHeight: 'cellestra:title-bar-height',
   confirmClose: 'cellestra:confirm-close',
   /** The renderer kept the window open (the user cancelled the unsaved-changes prompt). */
   cancelClose: 'cellestra:cancel-close',

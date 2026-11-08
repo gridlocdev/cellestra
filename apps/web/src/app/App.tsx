@@ -15,7 +15,7 @@ import {
   type GridHost,
   type RecentEntry,
 } from '@cellestra/ui';
-import type { AppController, Theme } from './controller.ts';
+import type { AppController, Layout, Theme } from './controller.ts';
 import {
   FilterPopup,
   FunctionPicker,
@@ -26,6 +26,7 @@ import {
   ValidationListPopup,
 } from './DataDialogs.tsx';
 import { ChartPane } from './ChartPane.tsx';
+import { Ribbon } from './Ribbon.tsx';
 
 const TOOLBAR: readonly (string | '|')[] = [
   'file.new',
@@ -205,11 +206,23 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
   }, [app, dragging]);
 
   const isMacNative = app.native?.platform === 'darwin';
+  const ribbon = app.layout.value === 'ribbon';
+
+  // The ribbon's top bar is the (taller) title bar, so the window controls move down into it.
+  useEffect(() => {
+    if (isMacNative) app.native?.setTitleBarHeight?.(ribbon ? 44 : 28);
+  }, [app, isMacNative, ribbon]);
 
   return (
     <div class={`cs-app ${isMacNative ? 'cs-native-mac' : ''}`}>
-      {isMacNative && <TitleBar app={app} />}
-      <Toolbar app={app} catalog={catalog} titleInline={!isMacNative} />
+      {ribbon ? (
+        <Ribbon app={app} catalog={catalog} macTitleBar={isMacNative} />
+      ) : (
+        <>
+          {isMacNative && <TitleBar app={app} />}
+          <Toolbar app={app} catalog={catalog} titleInline={!isMacNative} />
+        </>
+      )}
       <FormulaBarConnected app={app} draft={draft} />
       <div class="cs-main" onPointerUp={() => app.selectionDone()}>
         {s.activeSheet.value.isChartSheet ? (
@@ -941,6 +954,16 @@ function SettingsDialog({ app, onClose }: { readonly app: AppController; readonl
                 {t === 'system' ? 'Match system' : t[0]!.toUpperCase() + t.slice(1)}
               </option>
             ))}
+          </select>
+        </label>
+        <label style={{ display: 'grid', gap: '4px' }}>
+          Layout
+          <select
+            value={app.layout.value}
+            onChange={(e) => (app.layout.value = e.currentTarget.value as Layout)}
+          >
+            <option value="ribbon">Ribbon (tabs)</option>
+            <option value="bar">Compact toolbar</option>
           </select>
         </label>
         {app.nasAvailable.value && (
