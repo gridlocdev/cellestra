@@ -9,7 +9,7 @@ import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import { StylePool } from '../../styling/stylePool.ts';
 import { CellValue } from '../../values/cellValue.ts';
-import { serializeXmlElement, XmlElement, XmlText, type XmlDocument, type XmlName } from '../../xml/index.ts';
+import { serializeXmlElement, XmlElement, type XmlDocument, type XmlName } from '../../xml/index.ts';
 import { parseInvariantFloat } from './mapping/odsCellStyles.ts';
 import { OdsCharts } from './odsCharts.ts';
 import {
@@ -22,6 +22,7 @@ import {
 import { readDatabaseRanges } from './odsDatabaseRanges.ts';
 import type { ForeignXml, OdsPackage } from './odsPackage.ts';
 import { OdsPreserved, type PreservedCell } from './odsPreserved.ts';
+import { paragraphText } from './odsContentShared.ts';
 import { OdsStyleIndex } from './odsStyleIndex.ts';
 import {
   assembleValidations,
@@ -63,6 +64,8 @@ interface ReadContext {
   readonly chartSheet: boolean;
   /** Checkbox controls the model takes over; their cell-anchored `draw:control`s are dropped. */
   readonly checkboxIds: ReadonlySet<string>;
+  /** The table's merges, gathered in reading order and added once the grid is read. */
+  readonly merges: MergedRegion[];
 }
 
 /**
@@ -151,8 +154,8 @@ function readTable(
   const name = table.attr(Table('name')) ?? workbook.addSheet().name;
   const sheet = workbook.findSheet(name) ?? workbook.addSheetForLoad(name);
 
-  // A Cellestra chart sheet is a table holding nothing but the chart's frame; the chart is modeled
-  // and its frame regenerated. An object in a sheet that has data is preserved like any shape.
+  // A Cellestra chart sheet is a table holding nothing but the chart's frame in A1; the chart is
+  // modeled and its frame regenerated. A chart anywhere else is preserved like any shape.
   const chartHref = OdsCharts.readChartSheet(table, pkg, sheet);
   collectCheckboxes(table, sheet.name, checkboxes);
   const context: ReadContext = {
@@ -160,10 +163,12 @@ function readTable(
     validationCells,
     chartSheet: chartHref !== null,
     checkboxIds: checkboxes.ids,
+    merges: [],
   };
 
   readColumns(table, sheet, styles);
   readRows(table, sheet, context);
+  addMerges(sheet, context.merges);
 
   // Everything else the table carries is kept as it was: its attributes (protection, print
   // ranges, its table style) and its unmodeled children (shapes, forms, conditional formats).
@@ -180,7 +185,6 @@ function readTable(
       namedExpressions.push(...readNamedExpressions(child, workbook, sheet.name));
       continue;
     }
-    if (chartHref !== null && OdsCharts.containsObject(child, chartHref)) continue;
     // The checkboxes the model took over are regenerated on save; the rest of the forms stay.
     const kept = withoutCheckboxes(child, checkboxes.ids);
     if (kept) (seenGrid ? after : before).push(kept === child ? child.clone() : kept);
@@ -234,6 +238,7 @@ function readColumns(table: XmlElement, sheet: Worksheet, styles: OdsStyleIndex)
 
 function readRows(table: XmlElement, sheet: Worksheet, context: ReadContext): void {
   const rows = gridElements(table, Table('table-row'), ROW_GROUPS);
+  const padding = paddingStart(rows);
   let row = 0;
   for (let index = 0; index < rows.length; index++) {
     if (row >= MAX_ROWS) break;
@@ -248,8 +253,9 @@ function readRows(table: XmlElement, sheet: Worksheet, context: ReadContext): vo
 
     // LibreOffice pads sheets with runs like 1,048,000 repeated rows of 1,024 blank cells; a plain
     // run carries nothing, so skip it whole instead of visiting a billion positions. The padding
-    // run at the end of a sheet only ever carries the default row height, so it is skipped too.
-    if (inert && !hidden && defaultStyleId === null && (height === null || trailing)) {
+    // at the end of a sheet (one run, or a run and a last row alike) only ever carries the default
+    // row height, so it is skipped too.
+    if (inert && !hidden && defaultStyleId === null && (height === null || trailing || index >= padding)) {
       row += repeat;
       continue;
     }
@@ -264,6 +270,24 @@ function readRows(table: XmlElement, sheet: Worksheet, context: ReadContext): vo
     if (!inert) readCells(element, sheet, row, repeat, trailing, context);
     row += repeat;
   }
+}
+
+/**
+ * The index of the first row element of the sheet's padding: the trailing rows that are all inert
+ * and laid out alike (same style, visibility and default cell style). `rows.length` when the last
+ * row is not inert.
+ */
+function paddingStart(rows: readonly XmlElement[]): number {
+  const layout = (e: XmlElement): string =>
+    `${e.attr(Table('style-name'))}|${e.attr(Table('visibility'))}|${e.attr(Table('default-cell-style-name'))}`;
+  let start = rows.length;
+  while (start > 0) {
+    const element = rows[start - 1]!;
+    if (!rowIsInert(element)) break;
+    if (start < rows.length && layout(element) !== layout(rows[start]!)) break;
+    start--;
+  }
+  return start;
 }
 
 /** A blank cell that only says how many columns it repeats over. */
@@ -375,13 +399,32 @@ function readCells(
           for (let c = column; c < column + repeat; c++) {
             const right = Math.min(c + columnsSpanned - 1, MAX_COLUMNS - 1);
             const range = new CellRange(new CellAddress(c, r), new CellAddress(right, r + rowsSpanned - 1));
-            sheet.addMerge(new MergedRegion(range));
+            context.merges.push(new MergedRegion(range));
           }
         }
       }
     }
     column += repeat;
   }
+}
+
+/**
+ * Add the merges read from a table, skipping any that overlaps one already added: a corrupt file
+ * with two overlapping spans loses the later one, not the whole load. `merges` arrive in reading
+ * order (by top row), so only the merges still open at a candidate's top can overlap it.
+ */
+function addMerges(sheet: Worksheet, merges: readonly MergedRegion[]): void {
+  if (merges.length === 0) return;
+  const accepted = [...sheet.merges];
+  let open = [...accepted];
+  for (const merge of merges) {
+    const top = merge.range.top;
+    if (open.some((m) => m.range.bottom < top)) open = open.filter((m) => m.range.bottom >= top);
+    if (open.some((m) => m.range.intersects(merge.range))) continue;
+    accepted.push(merge);
+    open.push(merge);
+  }
+  sheet.replaceMerges(accepted);
 }
 
 function storeCell(sheet: Worksheet, row: number, column: number, parsed: ParsedCell): void {
@@ -442,58 +485,18 @@ function readValue(element: XmlElement, paragraphs: readonly XmlElement[]): Cell
       const b = element.attr(Office('boolean-value'))?.trim();
       return CellValue.boolean(b === 'true' || b === '1');
     }
-    case 'string':
-      return CellValue.text(paragraphs.map(paragraphText).join('\n'));
-    default:
-      return CellValue.empty;
+    case 'string': {
+      // office:string-value, when present, is the value; the paragraphs are only its display.
+      const value = element.attr(Office('string-value'));
+      return CellValue.text(value ?? paragraphs.map(paragraphText).join('\n'));
+    }
+    default: {
+      // No value type, but text: a string cell from a writer that left the type out (ODF 19.385
+      // makes it optional), which LibreOffice reads as text too.
+      const text = paragraphs.map(paragraphText).join('\n');
+      return text.length > 0 ? CellValue.text(text) : CellValue.empty;
+    }
   }
-}
-
-/** The most spaces one `text:s` may stand for (a hostile `text:c` would otherwise allocate gigabytes). */
-const MAX_SPACE_RUN = 65536;
-
-/**
- * The text of one `text:p` (ODF 6.1): `text:s` is `text:c` spaces (default 1), `text:tab` a tab,
- * `text:line-break` a newline, and spans, links and other inline markup contribute their own text.
- * Whitespace-only text nodes are content too (a cell holding " " is a space). Only paragraphs are
- * joined with "\n", by the caller. Iterative, so deeply nested spans cannot overflow the stack.
- */
-function paragraphText(paragraph: XmlElement): string {
-  let text = '';
-  const stack: Array<{ e: XmlElement; i: number }> = [{ e: paragraph, i: 0 }];
-  while (stack.length > 0) {
-    const top = stack[stack.length - 1]!;
-    if (top.i >= top.e.nodes.length) {
-      stack.pop();
-      continue;
-    }
-    const node = top.e.nodes[top.i++]!;
-    if (node instanceof XmlText) {
-      text += node.value;
-      continue;
-    }
-    if (!(node instanceof XmlElement)) continue;
-    if (node.uri === Text.uri) {
-      if (node.local === 's') {
-        const count = readPositive(node, Text('c'));
-        text += ' '.repeat(Math.min(count, MAX_SPACE_RUN));
-        continue;
-      }
-      if (node.local === 'tab') {
-        text += '\t';
-        continue;
-      }
-      if (node.local === 'line-break') {
-        text += '\n';
-        continue;
-      }
-      // A footnote or an annotation inside the paragraph is not part of the cell's text.
-      if (node.local === 'note') continue;
-    }
-    if (node.is(Office('annotation'))) continue;
-    stack.push({ e: node, i: 0 });
-  }
-  return text;
 }
 
 function readHyperlink(paragraphs: readonly XmlElement[]): Hyperlink | null {

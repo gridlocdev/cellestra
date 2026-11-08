@@ -134,11 +134,18 @@ class LocaleNumberParser {
   constructor(locale: string) {
     let group = ',';
     let decimal = '.';
+    // Digits per group: the last group (primary) and the ones before it (3 and 3, or en-IN's 3 and 2).
+    let primary = 3;
+    let secondary = 3;
     try {
+      const integers: string[] = [];
       for (const part of new Intl.NumberFormat(locale).formatToParts(1234567.5)) {
         if (part.type === 'group') group = part.value;
         else if (part.type === 'decimal') decimal = part.value;
+        else if (part.type === 'integer') integers.push(part.value);
       }
+      if (integers.length >= 2) primary = integers.at(-1)!.length;
+      if (integers.length >= 3) secondary = integers.at(-2)!.length;
     } catch {
       // An unknown locale falls back to the invariant separators.
     }
@@ -148,7 +155,10 @@ class LocaleNumberParser {
     this.decimal = decimal;
     const g = escapeRegex(group);
     const d = escapeRegex(decimal);
-    this.pattern = new RegExp(`^(\\d[\\d${g}]*)?(?:${d}(\\d*))?(?:[eE]([+-]?\\d+))?$`);
+    // A group separator only where groups fall: "1,234" and "12,345,678", never "1,2" (two values
+    // to a reader in a comma locale, not twelve).
+    const grouped = `\\d{1,${secondary}}(?:${g}\\d{${secondary}})*${g}\\d{${primary}}`;
+    this.pattern = new RegExp(`^(${grouped}|\\d+)?(?:${d}(\\d*))?(?:[eE]([+-]?\\d+))?$`);
   }
 
   parse(raw: string): number | null {

@@ -75,9 +75,11 @@ export class OdsStyleIndex {
           break;
         }
         case 'table-row': {
-          const height = parseLength(
-            element.element(Style('table-row-properties'))?.attr(Style('row-height')) ?? null,
-          );
+          const properties = element.element(Style('table-row-properties'));
+          // An optimal-height row's height is whatever its content needs; the number stored with
+          // it is only the last measurement (LibreOffice's 0.178in on every row), not a choice.
+          if (properties?.attr(Style('use-optimal-row-height')) === 'true') break;
+          const height = parseLength(properties?.attr(Style('row-height')) ?? null);
           if (height !== null) this.rowHeights.set(name, cmToPx(height));
           break;
         }

@@ -1,6 +1,6 @@
 import type { CalculationMode } from '../../model/documentSettings.ts';
 import type { Workbook } from '../../model/workbook.ts';
-import { tryParseXml, XmlDocument, XmlElement } from '../../xml/index.ts';
+import { tryParseXml, XmlDocument, XmlElement, type XmlName } from '../../xml/index.ts';
 import { Config, Dc, Fo, Manifest, OdsXmlNames as N, Office, Style } from './odsXmlNames.ts';
 
 const CALC_MODE_ITEM = 'CellestraCalculationMode';
@@ -53,35 +53,36 @@ export const OdsSupportXml = {
     return new XmlDocument(root);
   },
 
-  buildSettings(workbook: Workbook): XmlDocument {
-    const count = workbook.sheetCount;
-    const activeSheet =
-      count > 0
-        ? workbook.worksheets[Math.min(Math.max(workbook.settings.activeSheetIndex, 0), count - 1)]!.name
-        : '';
+  /**
+   * settings.xml for `workbook`. With the source file's settings (`previousXml`), what the model owns
+   * — the active sheet, frozen panes, calculation mode, locale — is written into them, and the rest
+   * (zoom, grid lines, the printer setup, every `ooo:configuration-settings` item) is kept as it was.
+   */
+  buildSettings(workbook: Workbook, previousXml: string | null = null): XmlDocument {
+    const fresh = freshSettings(workbook);
+    const root =
+      previousXml === null ? null : (tryParseXml(previousXml, { preserveWhitespace: false })?.root ?? null);
+    const settings = root?.is(Office('document-settings')) ? root.element(Office('settings')) : null;
+    if (!root || !settings) return fresh;
 
-    // Frozen panes and the active sheet live where LibreOffice looks for them: inside a view in
-    // ooo:view-settings, with one Tables entry per sheet that has a freeze.
-    const view = new XmlElement(
-      Config('config-item-map-entry'),
-      configItem(VIEW_ID_ITEM, 'string', 'view1'),
-      tables(workbook),
-      configItem(ACTIVE_TABLE_ITEM, 'string', activeSheet),
-    );
+    const freshSet = fresh.root.element(Office('settings'))!.element(Config('config-item-set'))!;
+    const viewSet = named(settings, Config('config-item-set'), VIEW_SETTINGS);
+    if (!viewSet) {
+      settings.addFirst(freshSet);
+      return new XmlDocument(root);
+    }
+    setItem(viewSet, CALC_MODE_ITEM, 'string', CALC_MODE_NAMES[workbook.settings.calculationMode]);
+    setItem(viewSet, LOCALE_ITEM, 'string', workbook.settings.locale ?? '');
 
-    const itemSet = new XmlElement(Config('config-item-set'))
-      .setAttr(Config('name'), 'ooo:view-settings')
-      .add(
-        new XmlElement(Config('config-item-map-indexed')).setAttr(Config('name'), VIEWS_ITEM).add(view),
-        configItem(CALC_MODE_ITEM, 'string', CALC_MODE_NAMES[workbook.settings.calculationMode]),
-        configItem(LOCALE_ITEM, 'string', workbook.settings.locale ?? ''),
-      );
-
-    const root = new XmlElement(Office('document-settings'))
-      .declare(Office.prefix, Office.uri)
-      .declare(Config.prefix, Config.uri)
-      .setAttr(Office('version'), '1.3')
-      .add(new XmlElement(Office('settings'), itemSet));
+    const freshViews = freshSet.element(Config('config-item-map-indexed'))!;
+    const views = named(viewSet, Config('config-item-map-indexed'), VIEWS_ITEM);
+    const view = views?.element(Config('config-item-map-entry')) ?? null;
+    if (!views) viewSet.add(freshViews);
+    else if (!view) views.add(freshViews.element(Config('config-item-map-entry'))!);
+    else {
+      setItem(view, ACTIVE_TABLE_ITEM, 'string', activeSheetName(workbook));
+      mergeTables(view, workbook);
+    }
     return new XmlDocument(root);
   },
 
@@ -149,6 +150,88 @@ export const OdsSupportXml = {
   },
 } as const;
 
+const VIEW_SETTINGS = 'ooo:view-settings';
+
+function activeSheetName(workbook: Workbook): string {
+  const count = workbook.sheetCount;
+  return count > 0
+    ? workbook.worksheets[Math.min(Math.max(workbook.settings.activeSheetIndex, 0), count - 1)]!.name
+    : '';
+}
+
+/** settings.xml built from the model alone. */
+function freshSettings(workbook: Workbook): XmlDocument {
+  const activeSheet = activeSheetName(workbook);
+
+  // Frozen panes and the active sheet live where LibreOffice looks for them: inside a view in
+  // ooo:view-settings, with one Tables entry per sheet that has a freeze.
+  const view = new XmlElement(
+    Config('config-item-map-entry'),
+    configItem(VIEW_ID_ITEM, 'string', 'view1'),
+    tables(workbook),
+    configItem(ACTIVE_TABLE_ITEM, 'string', activeSheet),
+  );
+
+  const itemSet = new XmlElement(Config('config-item-set'))
+    .setAttr(Config('name'), VIEW_SETTINGS)
+    .add(
+      new XmlElement(Config('config-item-map-indexed')).setAttr(Config('name'), VIEWS_ITEM).add(view),
+      configItem(CALC_MODE_ITEM, 'string', CALC_MODE_NAMES[workbook.settings.calculationMode]),
+      configItem(LOCALE_ITEM, 'string', workbook.settings.locale ?? ''),
+    );
+
+  const root = new XmlElement(Office('document-settings'))
+    .declare(Office.prefix, Office.uri)
+    .declare(Config.prefix, Config.uri)
+    .setAttr(Office('version'), '1.3')
+    .add(new XmlElement(Office('settings'), itemSet));
+  return new XmlDocument(root);
+}
+
+/** The child `name`d element (by `config:name`) of `parent`, or null. */
+function named(parent: XmlElement, element: XmlName, name: string): XmlElement | null {
+  return parent.elements(element).find((e) => e.attr(Config('name')) === name) ?? null;
+}
+
+/** Set (or add) the `config:config-item` called `name` under `parent`. */
+function setItem(parent: XmlElement, name: string, type: string, value: string): void {
+  const item = named(parent, Config('config-item'), name);
+  if (item) item.value = value;
+  else parent.add(configItem(name, type, value));
+}
+
+/**
+ * Bring a view's per-sheet `Tables` map in line with the model: entries for sheets that no longer
+ * exist go, and a sheet whose freeze changed gets the split items rewritten. An entry whose freeze
+ * is unchanged keeps every item (scroll position, cursor, zoom) untouched.
+ */
+function mergeTables(view: XmlElement, workbook: Workbook): void {
+  let map = named(view, Config('config-item-map-named'), TABLES_ITEM);
+  if (!map)
+    view.add((map = new XmlElement(Config('config-item-map-named')).setAttr(Config('name'), TABLES_ITEM)));
+  for (const entry of map.elements(Config('config-item-map-entry'))) {
+    const name = entry.attr(Config('name'));
+    if (name === null || !workbook.findSheet(name)) map.remove(entry);
+  }
+  for (const sheet of workbook.worksheets) {
+    const entry = named(map, Config('config-item-map-entry'), sheet.name);
+    const columns = Math.max(0, sheet.frozenColumns);
+    const rows = Math.max(0, sheet.frozenRows);
+    if (!entry) {
+      if (columns > 0 || rows > 0) map.add(tableEntry(sheet.name, columns, rows));
+      continue;
+    }
+    const was = {
+      columns: frozenLines(entry, HORIZONTAL_SPLIT_MODE_ITEM, HORIZONTAL_SPLIT_POSITION_ITEM),
+      rows: frozenLines(entry, VERTICAL_SPLIT_MODE_ITEM, VERTICAL_SPLIT_POSITION_ITEM),
+    };
+    if (was.columns === columns && was.rows === rows) continue;
+    for (const item of tableEntry(sheet.name, columns, rows).elements()) {
+      setItem(entry, item.attr(Config('name'))!, item.attr(Config('type'))!, item.value);
+    }
+  }
+}
+
 /**
  * One `Tables` map holding the frozen-pane state of every sheet that has one. Sheets with no freeze
  * are left out — an absent entry already means "no panes".
@@ -157,27 +240,22 @@ function tables(workbook: Workbook): XmlElement {
   const map = new XmlElement(Config('config-item-map-named')).setAttr(Config('name'), TABLES_ITEM);
   for (const sheet of workbook.worksheets) {
     if (sheet.frozenRows <= 0 && sheet.frozenColumns <= 0) continue;
-    map.add(
-      new XmlElement(Config('config-item-map-entry')).setAttr(Config('name'), sheet.name).add(
-        configItem(
-          HORIZONTAL_SPLIT_MODE_ITEM,
-          'short',
-          sheet.frozenColumns > 0 ? FROZEN_SPLIT_MODE : NO_SPLIT_MODE,
-        ),
-        configItem(
-          VERTICAL_SPLIT_MODE_ITEM,
-          'short',
-          sheet.frozenRows > 0 ? FROZEN_SPLIT_MODE : NO_SPLIT_MODE,
-        ),
-        configItem(HORIZONTAL_SPLIT_POSITION_ITEM, 'int', String(sheet.frozenColumns)),
-        configItem(VERTICAL_SPLIT_POSITION_ITEM, 'int', String(sheet.frozenRows)),
-        // Where the unfrozen pane starts — the same line, since a freeze splits exactly there.
-        configItem(POSITION_RIGHT_ITEM, 'int', String(sheet.frozenColumns)),
-        configItem(POSITION_BOTTOM_ITEM, 'int', String(sheet.frozenRows)),
-      ),
-    );
+    map.add(tableEntry(sheet.name, sheet.frozenColumns, sheet.frozenRows));
   }
   return map;
+}
+
+/** One sheet's `Tables` entry: its split modes and positions for a freeze of `columns` × `rows`. */
+function tableEntry(name: string, columns: number, rows: number): XmlElement {
+  return new XmlElement(Config('config-item-map-entry')).setAttr(Config('name'), name).add(
+    configItem(HORIZONTAL_SPLIT_MODE_ITEM, 'short', columns > 0 ? FROZEN_SPLIT_MODE : NO_SPLIT_MODE),
+    configItem(VERTICAL_SPLIT_MODE_ITEM, 'short', rows > 0 ? FROZEN_SPLIT_MODE : NO_SPLIT_MODE),
+    configItem(HORIZONTAL_SPLIT_POSITION_ITEM, 'int', String(columns)),
+    configItem(VERTICAL_SPLIT_POSITION_ITEM, 'int', String(rows)),
+    // Where the unfrozen pane starts — the same line, since a freeze splits exactly there.
+    configItem(POSITION_RIGHT_ITEM, 'int', String(columns)),
+    configItem(POSITION_BOTTOM_ITEM, 'int', String(rows)),
+  );
 }
 
 /** `Enum.TryParse<CalculationMode>`: case-sensitive name match in C#; accepted case-insensitively here. */

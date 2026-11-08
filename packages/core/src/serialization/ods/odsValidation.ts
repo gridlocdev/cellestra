@@ -11,7 +11,13 @@ import { CellRange } from '../../model/cellRange.ts';
 import type { Workbook } from '../../model/workbook.ts';
 import { roundTripNumber } from '../../values/cellValue.ts';
 import { XmlElement } from '../../xml/index.ts';
-import { odfCellAddress, odfRangeAddress, type ValidationNames } from './odsContentShared.ts';
+import {
+  appendParagraphText,
+  odfCellAddress,
+  odfRangeAddress,
+  paragraphText,
+  type ValidationNames,
+} from './odsContentShared.ts';
 import { OdsPreserved } from './odsPreserved.ts';
 import { OdsXmlNames as N, Table, Text } from './odsXmlNames.ts';
 
@@ -52,6 +58,11 @@ function writeContentValidation(name: string, validation: DataValidation, sheetN
   const preserved = OdsPreserved.validation(validation);
   if (preserved) return preserved.element.clone().setAttr(Table('name'), name);
 
+  // What the model has no field for comes from the element the rule was read from, if any.
+  const source = OdsPreserved.validationSource(validation);
+  const sourceHelp = source?.element(Table(N.helpMessage)) ?? null;
+  const sourceError = source?.element(Table(N.errorMessage)) ?? null;
+
   const element = new XmlElement(Table(N.contentValidation)).setAttr(Table('name'), name);
   // "Any value" is the absence of a condition.
   if (validation.kind !== 'any') element.setAttr(Table(N.condition), buildCondition(validation, sheetName));
@@ -60,24 +71,46 @@ function writeContentValidation(name: string, validation: DataValidation, sheetN
     .setAttr(Table(N.baseCellAddress), odfCellAddress(validation.target.topLeft, sheetName));
 
   if (validation.kind === 'list') element.setAttr(Table(N.displayList), 'unsorted');
+  copyAttributes(source ?? null, element, [
+    N.condition,
+    N.baseCellAddress,
+    ...(validation.kind === 'list' ? [] : [N.displayList]),
+  ]);
 
   const input = validation.inputMessage;
-  if (input) {
-    element.add(
-      new XmlElement(Table(N.helpMessage))
-        .setAttr(Table(N.display), 'true')
-        .add(new XmlElement(Text('p'), input)),
-    );
+  if (input || sourceHelp) {
+    const help = new XmlElement(Table(N.helpMessage)).setAttr(Table(N.display), 'true');
+    copyAttributes(sourceHelp, help, []);
+    addMessage(help, input);
+    element.add(help);
   }
 
   // The error response: Stop/Warning/Information map to the ODF message-type; Stop rejects.
-  const error = new XmlElement(Table(N.errorMessage))
-    .setAttr(Table(N.display), 'true')
-    .setAttr(Table(N.messageType), messageTypeOf(validation.response));
-  if (validation.errorMessage) error.add(new XmlElement(Text('p'), validation.errorMessage));
+  const error = new XmlElement(Table(N.errorMessage)).setAttr(Table(N.display), 'true');
+  copyAttributes(sourceError, error, [N.messageType]);
+  error.setAttr(Table(N.messageType), messageTypeOf(validation.response));
+  addMessage(error, validation.errorMessage);
   element.add(error);
 
   return element;
+}
+
+/** Copy `from`'s attributes onto `to` (overwriting), except `table:name` and the `skip`ped ones. */
+function copyAttributes(from: XmlElement | null, to: XmlElement, skip: readonly string[]): void {
+  for (const a of from?.attributes ?? []) {
+    if (a.name.uri === Table.uri && (a.name.local === 'name' || skip.includes(a.name.local))) continue;
+    to.setAttr(a.name, a.value);
+  }
+}
+
+/** A message as one `text:p` per line (ODF has no newline inside a paragraph). */
+function addMessage(target: XmlElement, message: string | null | undefined): void {
+  if (!message) return;
+  for (const line of message.replace(/\r\n?/g, '\n').split('\n')) {
+    const paragraph = new XmlElement(Text('p'));
+    appendParagraphText(paragraph, line);
+    target.add(paragraph);
+  }
 }
 
 function messageTypeOf(response: ValidationResponse): string {
@@ -168,6 +201,8 @@ export interface ValidationRule {
   readonly response: ValidationResponse;
   /** The original element, when the condition is one the model cannot express. */
   readonly preserved: XmlElement | null;
+  /** The original element, for what the model has no field for (titles, display flags). */
+  readonly source: XmlElement;
 }
 
 /** A rectangle of cells, inclusive. */
@@ -198,23 +233,22 @@ export function readContentValidationRules(spreadsheet: XmlElement): Map<string,
     const parsed = condition === null ? ANY : parseCondition(condition);
     rules.set(name, {
       ...(parsed ?? ANY),
-      inputMessage: paragraphText(helpElement),
-      errorMessage: paragraphText(errorElement),
+      inputMessage: messageText(helpElement),
+      errorMessage: messageText(errorElement),
       response: responseOf(errorElement?.attr(Table(N.messageType)) ?? null),
       // Anything unrecognised is kept whole, rather than guessed at: a guess (the old "decimal
       // between 0 and 0") rejects every entry the original rule allowed.
       preserved: parsed === null ? element.clone() : null,
+      source: element.clone(),
     });
   }
   return rules;
 }
 
-function paragraphText(messageElement: XmlElement | null): string | null {
+/** A message's text: its paragraphs' text (spaces, tabs and line breaks kept), one line each. */
+function messageText(messageElement: XmlElement | null): string | null {
   if (!messageElement) return null;
-  const joined = messageElement
-    .elements(Text('p'))
-    .map((p) => p.value)
-    .join('\n');
+  const joined = messageElement.elements(Text('p')).map(paragraphText).join('\n');
   return joined.length > 0 ? joined : null;
 }
 
@@ -412,6 +446,7 @@ export function assembleValidations(
         response: rule.response,
       });
       if (rule.preserved) OdsPreserved.setValidation(validation, { element: rule.preserved });
+      OdsPreserved.setValidationSource(validation, rule.source);
       sheet.addValidation(validation);
     }
   }

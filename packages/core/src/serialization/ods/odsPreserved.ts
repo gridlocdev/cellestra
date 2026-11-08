@@ -58,6 +58,8 @@ const cells = new WeakMap<Cell, PreservedCell>();
 const cellsByPosition = new WeakMap<Worksheet, Map<number, PositionedCell>>();
 const workbooks = new WeakMap<Workbook, PreservedWorkbook>();
 const validations = new WeakMap<DataValidation, PreservedValidation>();
+const validationSources = new WeakMap<DataValidation, XmlElement>();
+const databaseRangeSources = new WeakMap<object, XmlElement>();
 
 function fingerprint(cell: Cell): string {
   const v = cell.value;
@@ -107,5 +109,30 @@ export const OdsPreserved = {
   },
   validation(validation: DataValidation): PreservedValidation | undefined {
     return validations.get(validation);
+  },
+
+  /**
+   * The `table:content-validation` a modeled rule was read from: the writer takes from it what the
+   * model has no field for (allow-empty-cell, display-list, message titles and display flags). An
+   * edited rule is a new object, so it starts from the defaults again.
+   */
+  setValidationSource(validation: DataValidation, element: XmlElement): void {
+    validationSources.set(validation, element);
+  },
+  validationSource(validation: DataValidation): XmlElement | undefined {
+    return validationSources.get(validation);
+  },
+
+  /**
+   * The `table:database-range` a table (or a sheet's anonymous range, keyed by its `activeFilter`
+   * range object) was read from, for what the model has no field for: whether it shows filter
+   * buttons, its data source, subtotal rules, sort options. A table or range replaced by an edit is
+   * a new object, so it starts from the defaults again.
+   */
+  setDatabaseRangeSource(owner: object, element: XmlElement): void {
+    databaseRangeSources.set(owner, element);
+  },
+  databaseRangeSource(owner: object): XmlElement | undefined {
+    return databaseRangeSources.get(owner);
   },
 } as const;

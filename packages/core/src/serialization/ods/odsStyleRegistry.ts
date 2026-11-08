@@ -16,7 +16,7 @@ export class StyleRegistry {
   private readonly rowStyleNames = new Map<number, string>();
   private next = 0;
 
-  /** Names already used by preserved automatic styles, which generated names must not take. */
+  /** Names already used by preserved automatic styles and by styles.xml, which generated names must not take. */
   private readonly reserved: ReadonlySet<string>;
 
   constructor(styles: StylePool, autoStyles: XmlElement, reserved: ReadonlySet<string> = new Set()) {
@@ -28,7 +28,9 @@ export class StyleRegistry {
   private nextName(prefix: string): string {
     for (;;) {
       const name = `${prefix}${this.next++}`;
-      if (!this.reserved.has(name)) return name;
+      // A sectioned data style also names its sections `N3P0`, `N3P1`, … (as LibreOffice does).
+      const sections = prefix === 'N' ? [0, 1, 2].map((i) => `${name}P${i}`) : [];
+      if (!this.reserved.has(name) && !sections.some((n) => this.reserved.has(n))) return name;
     }
   }
 
@@ -93,10 +95,10 @@ export class StyleRegistry {
         .setAttr(Style('name'), name)
         .setAttr(Style('family'), 'table-row')
         .add(
-          new XmlElement(Style('table-row-properties')).setAttr(
-            Style('row-height'),
-            formatCm(pxToCm(height)),
-          ),
+          new XmlElement(Style('table-row-properties'))
+            .setAttr(Style('row-height'), formatCm(pxToCm(height)))
+            // A height someone set is kept, not re-measured to fit the content when LibreOffice loads it.
+            .setAttr(Style('use-optimal-row-height'), 'false'),
         ),
     );
     this.rowStyleNames.set(height, name);

@@ -15,7 +15,7 @@ import { roundTripNumber } from '../../values/cellValue.ts';
 import { parseXmlElement, XmlDocument, XmlElement, XmlText } from '../../xml/index.ts';
 import { OdsCharts } from './odsCharts.ts';
 import { checkboxCells, checkboxControl, checkboxForm, Form, formsElement, Ooo } from './odsCheckboxes.ts';
-import { odfCellAddress, odfRangeAddress } from './odsContentShared.ts';
+import { appendParagraphText, odfCellAddress, odfRangeAddress } from './odsContentShared.ts';
 import { addDatabaseRanges } from './odsDatabaseRanges.ts';
 import type { ForeignXml } from './odsPackage.ts';
 import { OdsPreserved } from './odsPreserved.ts';
@@ -48,10 +48,15 @@ const NO_VALIDATIONS: ValidationTargets = [];
  * captured on read are re-emitted verbatim in their original position relative to the tables, and
  * so is the table, cell and named-expression content kept by `OdsPreserved`.
  */
-export function writeContentXml(workbook: Workbook, foreign: readonly ForeignXml[]): XmlDocument {
+export function writeContentXml(
+  workbook: Workbook,
+  foreign: readonly ForeignXml[],
+  reservedStyleNames: ReadonlySet<string> = new Set(),
+): XmlDocument {
   const autoStyles = new XmlElement(Office('automatic-styles'));
   const preserved = OdsPreserved.workbook(workbook);
-  const reserved = new Set<string>();
+  // Generated names must not reuse a preserved automatic style's name, nor any styles.xml name.
+  const reserved = new Set<string>(reservedStyleNames);
   for (const style of preserved?.automaticStyles ?? []) {
     const name = style.attr(Style('name'));
     if (name !== null) reserved.add(name);
@@ -106,6 +111,32 @@ interface SheetWriter {
   readonly lastColumn: number;
   /** Checkbox cells (by `cellKey`) and the id of the control each gets. */
   readonly checkboxes: ReadonlyMap<number, string>;
+  /** The merges covering each row, asked for in increasing row order. */
+  readonly merges: MergeSweep;
+}
+
+/**
+ * The merges that cover a row, for rows visited top to bottom: merges start being reported at
+ * their top row and stop after their bottom one, so each row costs the merges open there, not a
+ * scan of every merge in the sheet.
+ */
+class MergeSweep {
+  private readonly sorted: readonly MergedRegion[];
+  private next = 0;
+  private open: MergedRegion[] = [];
+
+  constructor(merges: readonly MergedRegion[]) {
+    this.sorted = [...merges].sort((a, b) => a.range.top - b.range.top);
+  }
+
+  at(row: number): readonly MergedRegion[] {
+    while (this.next < this.sorted.length && this.sorted[this.next]!.range.top <= row) {
+      this.open.push(this.sorted[this.next++]!);
+    }
+    if (this.open.some((m) => m.range.bottom < row))
+      this.open = this.open.filter((m) => m.range.bottom >= row);
+    return this.open;
+  }
 }
 
 /** What may come before `office:forms` in a table (ODF 1.3 §9.1.2); everything else comes after. */
@@ -155,7 +186,8 @@ function writeTable(
   for (const [index, model] of sheet.columns) if (!model.isDefault) lastColumn = Math.max(lastColumn, index);
 
   writeColumns(table, sheet, lastColumn, registry);
-  writeRows(table, { sheet, registry, validations, lastColumn, checkboxes }, lastRow);
+  const merges = new MergeSweep(sheet.merges);
+  writeRows(table, { sheet, registry, validations, lastColumn, checkboxes, merges }, lastRow);
 
   // A chart sheet embeds its chart as an ODF draw frame (the object was written by writeObjects).
   if (sheet.isChartSheet) OdsCharts.injectFrame(table, sheet);
@@ -319,14 +351,23 @@ function rowLayout(
   return model ? `${model.height}|${model.hidden}|${model.styleId}` : '';
 }
 
-/** A row's identity for folding: null when any cell holds content (values are never folded). */
+/**
+ * A row's identity for folding: null when any cell holds content (values are never folded) or
+ * anchors a merge (each anchor starts its own merge; repeated, LibreOffice keeps only the first).
+ */
 function rowSignature(row: XmlElement): string | null {
   let signature = attributeSignature(row, 'number-rows-repeated');
   for (const cell of row.elements()) {
-    if (cell.nodes.length > 0) return null;
+    if (cell.nodes.length > 0 || isSpanned(cell)) return null;
     signature += `|${cell.local}${attributeSignature(cell, '')}`;
   }
   return signature;
+}
+
+function isSpanned(cell: XmlElement): boolean {
+  return (
+    cell.attr(Table('number-columns-spanned')) !== null || cell.attr(Table('number-rows-spanned')) !== null
+  );
 }
 
 function attributeSignature(element: XmlElement, skip: string): string {
@@ -358,7 +399,7 @@ function writeRow(w: SheetWriter, row: number, cellColumns: readonly number[]): 
   }
 
   const validations = w.validations.filter((v) => v.range.top <= row && row <= v.range.bottom);
-  const merges = sheet.merges.filter((m) => m.range.top <= row && row <= m.range.bottom);
+  const merges = w.merges.at(row);
   const validationAt = (column: number): string | null => {
     for (let i = validations.length - 1; i >= 0; i--) {
       const v = validations[i]!;
@@ -408,7 +449,9 @@ function writeRow(w: SheetWriter, row: number, cellColumns: readonly number[]): 
   let previousSignature: string | null = null;
   for (const cell of cells) {
     const signature =
-      cell.nodes.length === 0 ? cell.local + attributeSignature(cell, 'number-columns-repeated') : null;
+      cell.nodes.length === 0 && !isSpanned(cell)
+        ? cell.local + attributeSignature(cell, 'number-columns-repeated')
+        : null;
     if (previous && signature !== null && signature === previousSignature) {
       const total = repeatOf(previous) + repeatOf(cell);
       previous.setAttr(Table('number-columns-repeated'), total);
@@ -497,7 +540,8 @@ function writeCellContent(element: XmlElement, cell: Cell, registry: StyleRegist
       element.setAttr(Office('value-type'), 'string');
       // One text:p per line: ODF has no newline inside a paragraph (a conformant reader collapses
       // it to a space). The reader joins paragraphs with "\n".
-      lines = value.value.split('\n');
+      // A pasted Windows line end ("\r\n") or a lone "\r" is a line break too, not a stray character.
+      lines = value.value.replace(/\r\n?/g, '\n').split('\n');
       break;
     case 'error':
       element.setAttr(Office('value-type'), 'string');
@@ -522,49 +566,6 @@ function writeCellContent(element: XmlElement, cell: Cell, registry: StyleRegist
     }
     element.add(paragraph);
   });
-}
-
-/**
- * Append a line of cell text the way ODF white-space handling (ODF 6.1.2) reads it back: a reader
- * collapses runs of spaces and drops tabs, so a run of n spaces is a space plus `text:s c=n-1` (a
- * leading space is all `text:s`), and a tab is `text:tab`. Plain text stays plain.
- */
-function appendParagraphText(target: XmlElement, line: string): void {
-  if (!/ {2}|^ | $|\t/.test(line)) {
-    if (line.length > 0) target.add(line);
-    if (target.nodes.length === 0) target.add(new XmlText(''));
-    return;
-  }
-  // Mixed content from here on: the empty text node keeps the writer from indenting it.
-  target.add(new XmlText(''));
-  let i = 0;
-  while (i < line.length) {
-    const c = line[i]!;
-    if (c === '\t') {
-      target.add(new XmlElement(Text('tab')));
-      i++;
-      continue;
-    }
-    if (c === ' ') {
-      let n = 1;
-      while (line[i + n] === ' ') n++;
-      // Only a space between words survives as itself; leading, trailing and after-tab ones do not.
-      const literal = i > 0 && line[i - 1] !== '\t' && i + n < line.length ? 1 : 0;
-      if (literal) target.add(' ');
-      const rest = n - literal;
-      if (rest > 0) {
-        const s = new XmlElement(Text('s'));
-        if (rest > 1) s.setAttr(Text('c'), rest);
-        target.add(s);
-      }
-      i += n;
-      continue;
-    }
-    let j = i;
-    while (j < line.length && line[j] !== ' ' && line[j] !== '\t') j++;
-    target.add(line.slice(i, j));
-    i = j;
-  }
 }
 
 /**

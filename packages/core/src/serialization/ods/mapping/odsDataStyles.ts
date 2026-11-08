@@ -269,9 +269,13 @@ function numberElement(core: string, kind: NumberFormatKind): XmlElement {
       .setAttr(NumberX('min-numerator-digits'), countPlaceholders(core, slash - 1, -1))
       .setAttr(NumberX('min-denominator-digits'), countPlaceholders(core, slash + 1, +1));
   }
+  const decimals = decimalPlaces(core);
   const number = new XmlElement(NumberX('number'))
-    .setAttr(NumberX('decimal-places'), decimalPlaces(core))
-    .setAttr(NumberX('min-integer-digits'), 1);
+    .setAttr(NumberX('decimal-places'), decimals)
+    .setAttr(NumberX('min-integer-digits'), integerZeros(core));
+  // `0.0#`: one decimal always shown, a second only when it is not zero.
+  const minDecimals = minDecimalPlaces(core);
+  if (minDecimals !== decimals) number.setAttr(NumberX('min-decimal-places'), minDecimals);
   if (core.includes(',') || kind === 'currency')
     number.setAttr(NumberX('grouping'), core.includes(',') ? 'true' : 'false');
   return number;
@@ -292,6 +296,26 @@ function integerDigits(code: string): number {
     if (c === '0') count++;
   }
   return Math.max(1, count);
+}
+
+/** The `0`s before the decimal point of a plain number core: `00000` → 5, `#,###` → 0. */
+function integerZeros(code: string): number {
+  let count = 0;
+  for (const c of code) {
+    if (c === '.') break;
+    if (c === '0') count++;
+  }
+  return count;
+}
+
+/** The `0`s after the decimal point: the decimals always shown (`0.0#` → 1). */
+function minDecimalPlaces(code: string): number {
+  const dot = code.indexOf('.');
+  if (dot < 0) return 0;
+  let count = 0;
+  for (let i = dot + 1; i < code.length && (code[i] === '0' || code[i] === '#' || code[i] === '?'); i++)
+    if (code[i] === '0') count++;
+  return count;
 }
 
 function decimalPlaces(code: string): number {
@@ -491,12 +515,24 @@ function numericCode(style: XmlElement): string {
 
 /** The numeric part of a code — `#,##0.00` — from a `number:number` element. */
 function numberCore(number: XmlElement): string {
-  const decimals = readDigits(number, 'decimal-places', 0);
+  const decimals = Math.min(readDigits(number, 'decimal-places', 0), MAX_DIGITS);
+  const minDecimals = Math.min(readDigits(number, 'min-decimal-places', decimals), decimals);
   const grouping = number.attr(NumberX('grouping')) === 'true';
-  const minInteger = readDigits(number, 'min-integer-digits', 1);
-  const integer = grouping ? (minInteger === 0 ? '#,###' : '#,##0') : minInteger === 0 ? '#' : '0';
-  return decimals > 0 ? integer + '.' + '0'.repeat(decimals) : integer;
+  const minInteger = Math.min(readDigits(number, 'min-integer-digits', 1), MAX_DIGITS);
+  let integer: string;
+  if (grouping) {
+    // `#,##0`, `#,###`, `00,000`: the zeros padded with `#` to one full group, a comma before the last three.
+    const digits = '#'.repeat(Math.max(0, 4 - minInteger)) + '0'.repeat(minInteger);
+    integer = digits.slice(0, -3) + ',' + digits.slice(-3);
+  } else {
+    integer = minInteger === 0 ? '#' : '0'.repeat(minInteger);
+  }
+  if (decimals === 0) return integer;
+  return integer + '.' + '0'.repeat(minDecimals) + '#'.repeat(decimals - minDecimals);
 }
+
+/** A file asking for more digits than any number has is capped, not expanded into a huge code. */
+const MAX_DIGITS = 30;
 
 function currencySymbolCode(symbol: XmlElement): string {
   const text = symbol.value;

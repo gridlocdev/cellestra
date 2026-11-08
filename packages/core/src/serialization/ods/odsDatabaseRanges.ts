@@ -4,6 +4,7 @@ import {
   type FilterSpec,
   type SortLevel,
   type SortSpec,
+  type Table as DataTable,
 } from '../../data/types.ts';
 import { OpenFormulaTranslator } from '../../formulas/openFormulaTranslator.ts';
 import { CellAddress } from '../../model/cellAddress.ts';
@@ -11,6 +12,7 @@ import { CellRange } from '../../model/cellRange.ts';
 import type { Workbook } from '../../model/workbook.ts';
 import { XmlElement } from '../../xml/index.ts';
 import { odfRangeAddress } from './odsContentShared.ts';
+import { OdsPreserved } from './odsPreserved.ts';
 import { CellestraNs, OdsXmlNames as N, Table } from './odsXmlNames.ts';
 
 /**
@@ -52,6 +54,7 @@ export function addDatabaseRanges(spreadsheet: XmlElement, workbook: Workbook): 
         t.hasHeader,
         t.filter ?? null,
         t.sort ?? null,
+        OdsPreserved.databaseRangeSource(t) ?? null,
       );
       // Facts ODF has no attribute for ride along as cellestra:* foreign attributes, only when on.
       if (t.hasHeaderColumn) element.setAttr(CellestraNs(N.headerColumn), 'true');
@@ -69,6 +72,7 @@ export function addDatabaseRanges(spreadsheet: XmlElement, workbook: Workbook): 
           hasHeader,
           sheet.activeFilterSpec,
           sheet.activeSort,
+          OdsPreserved.databaseRangeSource(sheet.activeFilter) ?? null,
         ),
       );
     }
@@ -85,6 +89,7 @@ function writeDatabaseRange(
   hasHeader: boolean,
   filter: FilterSpec | null,
   sort: SortSpec | null,
+  source: XmlElement | null,
 ): XmlElement {
   const element = new XmlElement(Table(N.databaseRange))
     .setAttr(Table(N.targetRangeAddress), odfRangeAddress(range.withSheet(sheetName), sheetName))
@@ -92,9 +97,53 @@ function writeDatabaseRange(
     .setAttr(Table(N.containsHeader), hasHeader ? 'true' : 'false')
     .setAttr(Table('name'), name);
 
-  if (sort && sort.levels.length > 0) element.add(writeSort(sort, range.left));
-  if (filter && filter.columns.size > 0) element.add(writeFilter(filter, range.left));
+  if (source) {
+    // A range read from a file keeps what the model does not own. A range LibreOffice made for a
+    // sort has no filter buttons (the attribute's default is false), and must not gain them.
+    element.setAttr(Table(N.displayFilterButtons), source.attr(Table(N.displayFilterButtons)) ?? 'false');
+    for (const a of source.attributes) {
+      if (a.name.uri === CellestraNs.uri) continue;
+      if (a.name.uri === Table.uri && OWNED_ATTRIBUTES.has(a.name.local)) continue;
+      element.setAttr(a.name, a.value);
+    }
+  }
+
+  // ODF order: a data source, then the filter, the sort, and subtotal rules.
+  const kept = source?.elements().filter((e) => !e.is(Table(N.sort)) && !e.is(Table(N.filter))) ?? [];
+  const isSource = (e: XmlElement): boolean => e.uri === Table.uri && e.local.startsWith('database-source');
+  for (const e of kept) if (isSource(e)) element.add(e.clone());
+  if (filter && filter.columns.size > 0) {
+    const written = writeFilter(filter, range.left);
+    copyUnowned(source?.element(Table(N.filter)) ?? null, written);
+    element.add(written);
+  }
+  if (sort && sort.levels.length > 0) {
+    const written = writeSort(sort, range.left);
+    const sourceSort = source?.element(Table(N.sort)) ?? null;
+    copyUnowned(sourceSort, written);
+    // A key's data type (text, number, a user list) stays with its field.
+    for (const by of written.elements(Table(N.sortBy))) {
+      const field = by.attr(Table(N.fieldNumber));
+      const from = sourceSort?.elements(Table(N.sortBy)).find((b) => b.attr(Table(N.fieldNumber)) === field);
+      copyUnowned(from ?? null, by);
+    }
+    element.add(written);
+  }
+  for (const e of kept) if (!isSource(e)) element.add(e.clone());
   return element;
+}
+
+/** The database-range attributes the model owns (written from it, never copied from the file). */
+const OWNED_ATTRIBUTES: ReadonlySet<string> = new Set([
+  N.targetRangeAddress,
+  N.containsHeader,
+  N.displayFilterButtons,
+  'name',
+]);
+
+/** Copy `from`'s attributes that `to` does not already carry. */
+function copyUnowned(from: XmlElement | null, to: XmlElement): void {
+  for (const a of from?.attributes ?? []) if (to.attr(a.name) === null) to.setAttr(a.name, a.value);
 }
 
 function writeSort(sort: SortSpec, rangeLeft: number): XmlElement {
@@ -200,18 +249,21 @@ function readDatabaseRange(element: XmlElement, workbook: Workbook): void {
 
     // A named database range is a Cellestra table; merge filter/sort onto it (or add it).
     const existing = sheet.tables.find((t) => t.name === name);
+    let added: DataTable | null = null;
     if (existing) {
-      sheet.replaceTable(existing, { ...existing, filter, sort, hasHeaderColumn, hasBandedRows });
+      added = { ...existing, filter, sort, hasHeaderColumn, hasBandedRows };
+      sheet.replaceTable(existing, added);
     } else if (!sheet.tables.some((t) => t.range.intersects(localRange))) {
-      sheet.addTable(
-        makeTable(name, localRange, { hasHeader, filter, sort, hasHeaderColumn, hasBandedRows }),
-      );
+      added = makeTable(name, localRange, { hasHeader, filter, sort, hasHeaderColumn, hasBandedRows });
+      sheet.addTable(added);
     }
+    if (added) OdsPreserved.setDatabaseRangeSource(added, element.clone());
   } else {
     // An anonymous database range is the sheet-level AutoFilter region.
     sheet.activeFilter = localRange;
     sheet.activeFilterSpec = filter;
     sheet.activeSort = sort;
+    OdsPreserved.setDatabaseRangeSource(localRange, element.clone());
   }
 
   // The C# reader reapplies the filter here (FilterEngine.Apply) so filtered rows come back hidden.

@@ -1,7 +1,7 @@
 import { ChartDocument } from '@cellestra/charts';
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
-import { tryParseXml, XmlElement } from '../../xml/index.ts';
+import { tryParseXml, XmlElement, type XmlName } from '../../xml/index.ts';
 import { formatUpTo3 } from './odsContentShared.ts';
 import type { OdsPackage } from './odsPackage.ts';
 import { Draw, Office, Svg, Table, Xlink } from './odsXmlNames.ts';
@@ -80,27 +80,18 @@ export const OdsCharts = {
   },
 
   /**
-   * If `table` is a chart sheet — it embeds a chart object and holds no data of its own — parse the
-   * chart from `pkg`, attach it to `sheet`, and return the object's href. Returns null otherwise:
-   * a chart object in a sheet with data is an embedded chart, preserved as a shape, and must not
-   * turn the sheet into a chart sheet (which would drop its cells on the next save).
+   * If `table` is a chart sheet — exactly what `injectFrame` writes: one `draw:frame` holding one
+   * chart `draw:object`, anchored in A1, and nothing else (no data, no other shapes, no
+   * `table:shapes`) — parse the chart from `pkg`, attach it to `sheet`, and return the object's
+   * href. Returns null otherwise: a chart in a sheet with anything else on it is an embedded chart,
+   * preserved with the rest of the sheet, and must not turn the sheet into a chart sheet (which
+   * would drop its cells and shapes on the next save).
    */
   readChartSheet(table: XmlElement, pkg: OdsPackage | null, sheet: Worksheet): string | null {
     if (!pkg) return null;
-
-    let reference: string | null = null;
-    for (const object of table.descendants(Draw('object'))) {
-      const href = object.attr(Xlink('href'));
-      if (href) {
-        reference = href;
-        break;
-      }
-    }
+    const frame = chartSheetFrame(table);
+    const reference = frame?.element(Draw('object'))?.attr(Xlink('href')) ?? null;
     if (reference === null) return null;
-
-    for (const cell of table.descendants(Table('table-cell'))) {
-      if (cell.attr(Office('value-type')) !== null || cell.attr(Table('formula')) !== null) return null;
-    }
 
     const dir = objectDirectory(reference);
     const xml = pkg.getText(`${dir}/content.xml`);
@@ -114,12 +105,50 @@ export const OdsCharts = {
     sheet.chart = chart;
     return reference;
   },
-
-  /** True when `element` holds a `draw:object` pointing at `href`. */
-  containsObject(element: XmlElement, href: string): boolean {
-    return element.descendants(Draw('object')).some((o) => o.attr(Xlink('href')) === href);
-  },
 } as const;
+
+const GRID: readonly XmlName[] = [
+  Table('table-column'),
+  Table('table-columns'),
+  Table('table-column-group'),
+  Table('table-header-columns'),
+  Table('table-row'),
+  Table('table-rows'),
+  Table('table-row-group'),
+  Table('table-header-rows'),
+];
+
+/**
+ * The chart frame of a table shaped like a Cellestra chart sheet, or null. The table's children
+ * are its grid only; no cell holds a value, a formula or any element, except A1 (the first cell of
+ * the first row), which holds just the frame. The frame holds one `draw:object` and at most the
+ * replacement image LibreOffice adds beside it.
+ */
+function chartSheetFrame(table: XmlElement): XmlElement | null {
+  let frame: XmlElement | null = null;
+  let firstRow = true;
+  for (const child of table.elements()) {
+    if (!GRID.some((g) => child.is(g))) return null;
+    for (const row of child.is(Table('table-row')) ? [child] : child.descendants(Table('table-row'))) {
+      let firstCell = firstRow;
+      firstRow = false;
+      for (const cell of row.elements()) {
+        const isFirst = firstCell;
+        firstCell = false;
+        if (cell.attr(Office('value-type')) !== null || cell.attr(Table('formula')) !== null) return null;
+        const content = cell.elements();
+        if (content.length === 0) continue;
+        if (!isFirst || content.length !== 1 || !content[0]!.is(Draw('frame'))) return null;
+        frame = content[0]!;
+      }
+    }
+  }
+  if (!frame) return null;
+  const parts = frame.elements();
+  const objects = parts.filter((e) => e.is(Draw('object')));
+  if (objects.length !== 1 || parts.some((e) => !e.is(Draw('object')) && !e.is(Draw('image')))) return null;
+  return frame;
+}
 
 /** "./Object 1" or "Object 1/" → "Object 1". */
 function objectDirectory(reference: string): string {
