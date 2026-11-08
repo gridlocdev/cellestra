@@ -8,7 +8,7 @@ import type { FunctionRegistry } from '../functions/functionRegistry.ts';
 import { RangeValues } from '../functions/rangeValues.ts';
 import { Coercion } from './coercion.ts';
 import type { EvaluationContext } from './evaluationContext.ts';
-import { ValueComparer } from './valueComparer.ts';
+import { approxAdd, approxSub, ValueComparer } from './valueComparer.ts';
 
 /** Guard against non-finite results, which surface as #NUM! (as in LibreOffice Calc). */
 function finite(value: number): CellValue {
@@ -115,9 +115,9 @@ export class Evaluator implements FunctionEvaluator {
     const right = this.evaluate(node.right);
     switch (node.operator) {
       case 'add':
-        return arithmetic(left, right, (a, b) => a + b);
+        return arithmetic(left, right, approxAdd);
       case 'subtract':
-        return arithmetic(left, right, (a, b) => a - b);
+        return arithmetic(left, right, approxSub);
       case 'multiply':
         return arithmetic(left, right, (a, b) => a * b);
       case 'divide':

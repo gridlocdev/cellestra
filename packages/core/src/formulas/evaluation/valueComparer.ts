@@ -18,16 +18,50 @@ function blankAs(other: CellValue): CellValue {
 }
 
 const EPSILON = Math.pow(2, -48);
+/** Half of the 15th significant decimal digit, the precision Calc displays numbers to. */
+const HALF_15TH_SIGNIFICAND = 5e-15;
+
+/** 10^exponent, correctly rounded like the literal table LibreOffice uses (`getN10Exp`). */
+const powerOfTen = (exponent: number): number => Number(`1e${exponent}`);
+
+/** An integer a double holds exactly (below 2^53). Expects a non-negative value. */
+const isRepresentableInteger = (absValue: number): boolean =>
+  absValue < 2 ** 53 && Number.isInteger(absValue);
 
 /**
- * Equal within a relative tolerance of 2^-48, like LibreOffice's `rtl::math::approxEqual`, so binary
- * noise does not break equality: 0.1+0.2 = 0.3. Zero equals only zero.
+ * Equal within LibreOffice's `rtl::math::approxEqual` (sal/rtl/math.cxx), so binary noise does not
+ * break equality: 0.1+0.2 = 0.3. The tolerance is the larger of 2^-48 relative to the smaller
+ * magnitude and half the 15th significant decimal digit of it. Zero equals only zero, values of
+ * opposite sign never match, and two different integers a double holds exactly never match
+ * (1E15 ≠ 1E15+1).
  */
 export function approxEqual(a: number, b: number): boolean {
   if (a === b) return true;
-  if (a === 0 || b === 0 || !Number.isFinite(a) || !Number.isFinite(b)) return false;
+  if (a === 0 || b === 0 || a < 0 !== b < 0) return false;
   const d = Math.abs(a - b);
-  return d < Math.abs(a) * EPSILON && d < Math.abs(b) * EPSILON;
+  if (!Number.isFinite(d)) return false;
+  const absA = Math.abs(a);
+  const absB = Math.abs(b);
+  const min = Math.min(absA, absB);
+  const threshold = Math.max(min * EPSILON, powerOfTen(Math.floor(Math.log10(min))) * HALF_15TH_SIGNIFICAND);
+  if (d >= threshold) return false;
+  return !(isRepresentableInteger(absA) && isRepresentableInteger(absB));
+}
+
+/**
+ * a + b, but 0 when the operands have opposite signs and cancel within `approxEqual`, so
+ * 0.1+0.2-0.3 is exactly 0. LibreOffice's `rtl::math::approxAdd` (include/rtl/math.hxx), which
+ * Calc's + operator uses (ScInterpreter::CalculateAddSub, sc/source/core/tool/interpr5.cxx).
+ */
+export function approxAdd(a: number, b: number): number {
+  if (((a < 0 && b > 0) || (b < 0 && a > 0)) && approxEqual(a, -b)) return 0;
+  return a + b;
+}
+
+/** a − b, but 0 when the operands share a sign and are equal within `approxEqual`: `rtl::math::approxSub`. */
+export function approxSub(a: number, b: number): number {
+  if (((a < 0 && b < 0) || (a > 0 && b > 0)) && approxEqual(a, b)) return 0;
+  return a - b;
 }
 
 /** .NET OrdinalIgnoreCase: compare upper-cased UTF-16 code units. */

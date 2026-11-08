@@ -5,6 +5,7 @@ import { Coercion } from '../evaluation/coercion.ts';
 import { CriteriaMatcher } from './criteriaMatcher.ts';
 import { defineFunction, type FormulaFunction, type FunctionEvaluator } from './formulaFunction.ts';
 import { Arg, createMetadata, type FunctionCategory } from './functionMetadata.ts';
+import { KahanSum } from './kahanSum.ts';
 import { collectNumbers, isFailure, readInt, readNumber, roundHalfAway, roundScaled } from './helpers.ts';
 import type { RangeValues } from './rangeValues.ts';
 
@@ -27,6 +28,42 @@ function aggregate(
         : CellValue.error(CellError.number('The result is not a finite number.'));
     },
   );
+}
+
+/**
+ * The numbers of SUM/AVERAGE-style arguments, compensated-summed in Calc's order: the arguments
+ * from last to first (Calc pops them off its stack) and each range column by column, top to bottom.
+ * Order matters: SUM(0.2,-1E16,1E16) is 0.2 in Calc, SUM(1E16,-1E16,0.2) is 0.
+ */
+function sumArguments(
+  ev: FunctionEvaluator,
+  args: readonly Expr[],
+): { sum: number; count: number } | CellValue {
+  const groups: number[][] = [];
+  for (const arg of args) {
+    const nums: number[] = [];
+    const range = arg.kind === 'reference' ? null : ev.tryEvaluateRange(arg);
+    if (range) {
+      for (let c = 0; c < range.usedColumnCount; c++) {
+        for (let r = 0; r < range.usedRowCount; r++) {
+          const value = range.get(r, c);
+          if (value.kind === 'error') return value;
+          if (value.kind === 'number') nums.push(value.value);
+        }
+      }
+    } else {
+      const error = collectNumbers(ev, [arg], nums);
+      if (error) return error;
+    }
+    groups.push(nums);
+  }
+  const total = new KahanSum();
+  let count = 0;
+  for (let g = groups.length - 1; g >= 0; g--) {
+    for (const n of groups[g]!) total.add(n);
+    count += groups[g]!.length;
+  }
+  return { sum: total.get(), count };
 }
 
 function unary(name: string, summary: string, example: string, op: (n: number) => number): FormulaFunction {
@@ -111,10 +148,11 @@ function sumOrCountIf(args: readonly Expr[], ev: FunctionEvaluator, sum: boolean
   // it, then count the empty remainder in one step if the criteria match an empty cell.
   const rows = Math.min(range.rowCount, Math.max(range.reach.rows, sumRange?.reach.rows ?? 0));
   const columns = Math.min(range.columnCount, Math.max(range.reach.columns, sumRange?.reach.columns ?? 0));
-  let total = 0;
+  const total = new KahanSum();
   let count = 0;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < columns; c++) {
+  // Column by column, as Calc walks a range: the order decides what compensated summation cancels.
+  for (let c = 0; c < columns; c++) {
+    for (let r = 0; r < rows; r++) {
       const cell = range.get(r, c);
       // An error in the criteria range never matches (Calc), so it does not poison the result.
       if (cell.kind === 'error' || !matcher.matches(cell)) continue;
@@ -126,18 +164,32 @@ function sumOrCountIf(args: readonly Expr[], ev: FunctionEvaluator, sum: boolean
         ? ev.context.getCell(sumRange.range.sheet, sumRange.range.top + r, sumRange.range.left + c)
         : cell;
       if (target.kind === 'error') return target;
-      if (target.kind === 'number') total += target.value;
+      if (target.kind === 'number') total.add(target.value);
     }
   }
   if (matcher.matches(CellValue.empty)) count += range.rowCount * range.columnCount - rows * columns;
-  return CellValue.number(sum ? total : count);
+  return CellValue.number(sum ? total.get() : count);
 }
 
 /** The math & statistics functions. */
 export function mathFunctions(): FormulaFunction[] {
   return [
-    aggregate('SUM', 'math', 'Adds all the numbers in a range or list.', 'SUM(A1:A10)', (nums) =>
-      nums.reduce((a, b) => a + b, 0),
+    defineFunction(
+      createMetadata(
+        'SUM',
+        'math',
+        'Adds all the numbers in a range or list.',
+        'number',
+        'SUM(A1:A10)',
+        Arg.number('number', { repeatable: true }),
+      ),
+      (args, ev) => {
+        const result = sumArguments(ev, args);
+        if (!('sum' in result)) return result;
+        return Number.isFinite(result.sum)
+          ? CellValue.number(result.sum)
+          : CellValue.error(CellError.number('The result is not a finite number.'));
+      },
     ),
     aggregate('PRODUCT', 'math', 'Multiplies all the numbers given.', 'PRODUCT(A1:A5)', (nums) =>
       nums.length === 0 ? 0 : nums.reduce((a, b) => a * b, 1),
@@ -152,12 +204,11 @@ export function mathFunctions(): FormulaFunction[] {
         Arg.number('number', { repeatable: true }),
       ),
       (args, ev) => {
-        const nums: number[] = [];
-        const error = collectNumbers(ev, args, nums);
-        if (error) return error;
-        return nums.length === 0
+        const result = sumArguments(ev, args);
+        if (!('sum' in result)) return result;
+        return result.count === 0
           ? CellValue.error(CellError.divideByZero('AVERAGE has no numeric values.'))
-          : CellValue.number(nums.reduce((a, b) => a + b, 0) / nums.length);
+          : CellValue.number(result.sum / result.count);
       },
     ),
     aggregate('MIN', 'statistical', 'Returns the smallest number.', 'MIN(A1:A10)', (nums) =>
