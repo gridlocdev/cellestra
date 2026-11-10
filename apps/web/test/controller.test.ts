@@ -406,3 +406,20 @@ describe('createTable', () => {
     expect(sheet.getValue(3, 0)).toEqual(CellValue.number(1));
   });
 });
+
+describe('zoom', () => {
+  it('opens a file at its saved zoom, and writes the zoom back without marking it modified', async () => {
+    const app = await makeApp();
+    expect(app.zoom.value).toBe(1);
+    const zoomed = Workbook.createNew();
+    zoomed.settings.zoom = 150;
+    app.session.load(OdsWriter.write(zoomed, null), null, 'z.ods');
+    expect(app.zoom.value).toBe(1.5);
+    app.zoom.value = 0.8;
+    expect(app.session.workbook.peek().settings.zoom).toBe(80);
+    expect(app.session.modified.peek()).toBe(false);
+    app.session.newDocument();
+    expect(app.zoom.value).toBe(1);
+    expect(app.session.workbook.peek().settings.zoom).toBeNull();
+  });
+});

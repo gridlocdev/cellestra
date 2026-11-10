@@ -15,13 +15,15 @@ export function getHostLocale(): string {
 
 /**
  * Document-wide settings persisted in `.ods` `settings.xml`: locale (PRD §8.3 — document locale
- * when present, else the system's), calculation mode, active sheet.
+ * when present, else the system's), calculation mode, active sheet, zoom.
  */
 export class DocumentSettings {
   /** BCP 47 tag, or null = unspecified (fall back to the host locale). */
   locale: string | null = null;
   calculationMode: CalculationMode = 'automatic';
   activeSheetIndex = 0;
+  /** The view zoom in percent (Calc's `ZoomValue`), or null when the file had none. */
+  zoom: number | null = null;
 
   get effectiveLocale(): string {
     return this.locale ?? hostLocale;

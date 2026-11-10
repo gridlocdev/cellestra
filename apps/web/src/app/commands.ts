@@ -10,6 +10,7 @@ import {
 } from '@cellestra/core';
 import { CommandCatalog, type CommandSpec } from '@cellestra/ui';
 import type { AppController } from './controller.ts';
+import { MAX_ZOOM, MIN_ZOOM } from './controller.ts';
 
 /**
  * The one command catalog (PRD §9): the native menu, toolbar, ⌘K palette, and key bindings all read
@@ -361,7 +362,7 @@ export function buildCommands(app: AppController): CommandCatalog {
       shortcut: 'mod+=',
       alternates: ['mod++'],
       icon: 'zoom-in',
-      run: () => void (app.zoom.value = Math.min(4, round(app.zoom.value + 0.1))),
+      run: () => void (app.zoom.value = Math.min(MAX_ZOOM, round(app.zoom.value + 0.1))),
       global: true,
     },
     {
@@ -371,7 +372,7 @@ export function buildCommands(app: AppController): CommandCatalog {
       group: 'View',
       shortcut: 'mod+-',
       icon: 'zoom-out',
-      run: () => void (app.zoom.value = Math.max(0.25, round(app.zoom.value - 0.1))),
+      run: () => void (app.zoom.value = Math.max(MIN_ZOOM, round(app.zoom.value - 0.1))),
       global: true,
     },
     {

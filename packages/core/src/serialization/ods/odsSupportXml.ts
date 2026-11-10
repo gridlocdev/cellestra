@@ -15,6 +15,11 @@ const HORIZONTAL_SPLIT_POSITION_ITEM = 'HorizontalSplitPosition';
 const VERTICAL_SPLIT_POSITION_ITEM = 'VerticalSplitPosition';
 const POSITION_RIGHT_ITEM = 'PositionRight';
 const POSITION_BOTTOM_ITEM = 'PositionBottom';
+const ZOOM_TYPE_ITEM = 'ZoomType';
+const ZOOM_VALUE_ITEM = 'ZoomValue';
+/** Calc's zoom limits, in percent. */
+const MIN_ZOOM = 20;
+const MAX_ZOOM = 600;
 
 /** ODF/LibreOffice split mode: 0 none, 1 a movable split, 2 a freeze. Only 2 is a freeze. */
 const FROZEN_SPLIT_MODE = '2';
@@ -82,6 +87,11 @@ export const OdsSupportXml = {
     else {
       setItem(view, ACTIVE_TABLE_ITEM, 'string', activeSheetName(workbook));
       mergeTables(view, workbook);
+      const zoom = workbook.settings.zoom;
+      if (zoom !== null) {
+        setItem(view, ZOOM_TYPE_ITEM, 'short', '0');
+        setItem(view, ZOOM_VALUE_ITEM, 'int', String(zoom));
+      }
     }
     return new XmlDocument(root);
   },
@@ -90,6 +100,7 @@ export const OdsSupportXml = {
     const document = tryParseXml(settingsXml);
     if (!document) return;
     const root = document.root;
+    workbook.settings.zoom = readZoom(root);
 
     for (const entry of root.descendants(Config('config-item-map-entry'))) {
       const sheetName = entry.attr(Config('name'));
@@ -171,6 +182,11 @@ function freshSettings(workbook: Workbook): XmlDocument {
     tables(workbook),
     configItem(ACTIVE_TABLE_ITEM, 'string', activeSheet),
   );
+  if (workbook.settings.zoom !== null)
+    view.add(
+      configItem(ZOOM_TYPE_ITEM, 'short', '0'),
+      configItem(ZOOM_VALUE_ITEM, 'int', String(workbook.settings.zoom)),
+    );
 
   const itemSet = new XmlElement(Config('config-item-set'))
     .setAttr(Config('name'), VIEW_SETTINGS)
@@ -213,13 +229,19 @@ function mergeTables(view: XmlElement, workbook: Workbook): void {
     const name = entry.attr(Config('name'));
     if (name === null || !workbook.findSheet(name)) map.remove(entry);
   }
+  const zoom = workbook.settings.zoom;
   for (const sheet of workbook.worksheets) {
     const entry = named(map, Config('config-item-map-entry'), sheet.name);
     const columns = Math.max(0, sheet.frozenColumns);
     const rows = Math.max(0, sheet.frozenRows);
     if (!entry) {
-      if (columns > 0 || rows > 0) map.add(tableEntry(sheet.name, columns, rows));
+      if (columns > 0 || rows > 0 || zoom !== null) map.add(tableEntry(sheet.name, columns, rows, zoom));
       continue;
+    }
+    // Calc zooms each sheet on its own; Cellestra has one zoom, so every sheet gets it.
+    if (zoom !== null) {
+      setItem(entry, ZOOM_TYPE_ITEM, 'short', '0');
+      setItem(entry, ZOOM_VALUE_ITEM, 'int', String(zoom));
     }
     const was = {
       columns: frozenLines(entry, HORIZONTAL_SPLIT_MODE_ITEM, HORIZONTAL_SPLIT_POSITION_ITEM),
@@ -238,16 +260,20 @@ function mergeTables(view: XmlElement, workbook: Workbook): void {
  */
 function tables(workbook: Workbook): XmlElement {
   const map = new XmlElement(Config('config-item-map-named')).setAttr(Config('name'), TABLES_ITEM);
+  const zoom = workbook.settings.zoom;
   for (const sheet of workbook.worksheets) {
-    if (sheet.frozenRows <= 0 && sheet.frozenColumns <= 0) continue;
-    map.add(tableEntry(sheet.name, sheet.frozenColumns, sheet.frozenRows));
+    if (sheet.frozenRows <= 0 && sheet.frozenColumns <= 0 && zoom === null) continue;
+    map.add(tableEntry(sheet.name, Math.max(0, sheet.frozenColumns), Math.max(0, sheet.frozenRows), zoom));
   }
   return map;
 }
 
 /** One sheet's `Tables` entry: its split modes and positions for a freeze of `columns` × `rows`. */
-function tableEntry(name: string, columns: number, rows: number): XmlElement {
-  return new XmlElement(Config('config-item-map-entry')).setAttr(Config('name'), name).add(
+function tableEntry(name: string, columns: number, rows: number, zoom: number | null = null): XmlElement {
+  const entry = new XmlElement(Config('config-item-map-entry')).setAttr(Config('name'), name);
+  if (zoom !== null)
+    entry.add(configItem(ZOOM_TYPE_ITEM, 'short', '0'), configItem(ZOOM_VALUE_ITEM, 'int', String(zoom)));
+  return entry.add(
     configItem(HORIZONTAL_SPLIT_MODE_ITEM, 'short', columns > 0 ? FROZEN_SPLIT_MODE : NO_SPLIT_MODE),
     configItem(VERTICAL_SPLIT_MODE_ITEM, 'short', rows > 0 ? FROZEN_SPLIT_MODE : NO_SPLIT_MODE),
     configItem(HORIZONTAL_SPLIT_POSITION_ITEM, 'int', String(columns)),
@@ -322,4 +348,28 @@ function mediaTypeFor(part: string): string {
   if (lower.endsWith('.png')) return 'image/png';
   if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
   return 'application/octet-stream';
+}
+
+/**
+ * The zoom a file opens at, in percent: the active sheet's own `ZoomValue` (Calc zooms per sheet),
+ * else the view's. Null when neither is there or it is out of Calc's range.
+ */
+function readZoom(root: XmlElement): number | null {
+  const viewSet = root
+    .descendants(Config('config-item-set'))
+    .find((e) => e.attr(Config('name')) === VIEW_SETTINGS);
+  const view = viewSet
+    ? named(viewSet, Config('config-item-map-indexed'), VIEWS_ITEM)?.element(Config('config-item-map-entry'))
+    : null;
+  if (!view) return null;
+  const active = named(view, Config('config-item'), ACTIVE_TABLE_ITEM)?.value ?? null;
+  const tablesMap = named(view, Config('config-item-map-named'), TABLES_ITEM);
+  const sheetEntry =
+    active === null || !tablesMap ? null : named(tablesMap, Config('config-item-map-entry'), active);
+  for (const holder of [sheetEntry, view]) {
+    const text = holder ? named(holder, Config('config-item'), ZOOM_VALUE_ITEM)?.value : undefined;
+    const value = text === undefined ? NaN : Number.parseInt(text, 10);
+    if (Number.isFinite(value) && value >= MIN_ZOOM && value <= MAX_ZOOM) return value;
+  }
+  return null;
 }

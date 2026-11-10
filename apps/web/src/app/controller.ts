@@ -133,6 +133,9 @@ const RECOVERY_INTERVAL_MS = 30_000;
 const RECOVERY_IDLE_MS = 3_000;
 /** How much bigger than raw CSS px the grid draws at 100% zoom. */
 const BASE_GRID_ZOOM = 1.3;
+/** The zoom range the zoom commands allow, as fractions (25%–400%). */
+export const MIN_ZOOM = 0.25;
+export const MAX_ZOOM = 4;
 const THEME_KEY = 'cellestra.theme';
 const LAYOUT_KEY = 'cellestra.layout';
 const RIBBON_COLLAPSED_KEY = 'cellestra.ribbonCollapsed';
@@ -275,6 +278,17 @@ export class AppController {
         if (this.#keepSelection) return;
         this.selection.select(0, 0);
       }
+    });
+    // A file opens at the zoom it was saved with (100% when it has none)…
+    effect(() => {
+      const saved = this.session.workbook.value.settings.zoom;
+      this.zoom.value = saved === null ? 1 : Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, saved / 100));
+    });
+    // …and saves the one in use. Zooming isn't an edit: it doesn't mark the document modified.
+    effect(() => {
+      const percent = Math.round(this.zoom.value * 100);
+      const settings = this.session.workbook.peek().settings;
+      if (settings.zoom !== null || percent !== 100) settings.zoom = percent;
     });
   }
 
