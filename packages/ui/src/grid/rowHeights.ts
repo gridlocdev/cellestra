@@ -1,5 +1,5 @@
 import { Defaults, StylePool, type CellStyle, type CellValue, type Worksheet } from '@cellestra/core';
-import { CELL_PAD_Y } from './render.ts';
+import { CELL_PAD_Y, rotatedBox } from './render.ts';
 
 const PT_TO_PX = 96 / 72;
 /**
@@ -19,6 +19,8 @@ export interface RowMeasure {
   /** Lines `text` wraps to in `width` px with `style`'s font. */
   wrappedLines(text: string, style: CellStyle, width: number): number;
   columnWidth(column: number): number;
+  /** Width of one line of `text` in `style`'s font; rotated text needs it to size its row. */
+  textWidth?(text: string, style: CellStyle): number;
 }
 
 /**
@@ -116,6 +118,13 @@ export class ContentHeights {
     if (need === undefined) {
       need = textHeight(style.font.sizePoints);
       this.#single.set(id, need);
+    }
+    const rotation = style.alignment.rotation ?? 0;
+    if (rotation !== 0 && this.#m.textWidth) {
+      const lines = this.#m.display(value, style).split('\n');
+      const width = Math.max(...lines.map((t) => this.#m.textWidth!(t, style)));
+      const height = style.font.sizePoints * PT_TO_PX * LINE_FACTOR * lines.length;
+      return Math.ceil(rotatedBox(width, height, rotation).height + 2 * CELL_PAD_Y);
     }
     if (breaks > 1 && !style.alignment.wrapText)
       need = Math.max(need, textHeight(style.font.sizePoints, breaks));

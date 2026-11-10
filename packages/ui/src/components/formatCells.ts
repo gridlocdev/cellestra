@@ -98,6 +98,8 @@ export interface FormatCellsValues {
   readonly horizontal: HorizontalAlignment | null;
   readonly vertical: VerticalAlignment | null;
   readonly wrapText: boolean | null;
+  /** Text rotation in degrees counter-clockwise, 0–359. */
+  readonly rotation: number | null;
   readonly borderStyle: BorderLineStyle;
   readonly borderColor: ArgbColor;
   readonly borderEdges: BorderEdgesOn;
@@ -161,6 +163,7 @@ export function seedFormatCells(current: CellStyle, styles: readonly CellStyle[]
     horizontal: !allSame(all, (s) => s.alignment.horizontal),
     vertical: !allSame(all, (s) => s.alignment.vertical),
     wrapText: !allSame(all, (s) => s.alignment.wrapText),
+    rotation: !allSame(all, (s) => s.alignment.rotation ?? 0),
     borderStyle: !allSame(all, (s) => s.border, sameBorder),
     borderColor: !allSame(all, (s) => s.border, sameBorder),
     borderEdges: !allSame(all, (s) => s.border, sameBorder),
@@ -179,6 +182,7 @@ export function seedFormatCells(current: CellStyle, styles: readonly CellStyle[]
     horizontal: pick('horizontal', current.alignment.horizontal),
     vertical: pick('vertical', current.alignment.vertical),
     wrapText: pick('wrapText', current.alignment.wrapText),
+    rotation: pick('rotation', current.alignment.rotation ?? 0),
     borderStyle: BorderEdges.isVisible(edge) ? edge.style : 'thin',
     borderColor: Argb.isTransparent(edge.color) ? Argb.black : edge.color,
     borderEdges: {
@@ -216,6 +220,13 @@ export function parseFontSize(text: string): number | null {
   const n = Number.parseFloat(text);
   if (!Number.isFinite(n)) return null;
   return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, n));
+}
+
+/** Degrees typed in the dialog, turned into [0, 360); null when not a number. */
+export function parseRotation(text: string): number | null {
+  const n = Math.round(Number.parseFloat(text));
+  if (!Number.isFinite(n)) return null;
+  return ((n % 360) + 360) % 360;
 }
 
 /** The preset index for a code, or -1 when it is a custom code. */
@@ -296,6 +307,7 @@ export function buildFormatTransform(state: FormatCellsState): (style: CellStyle
   const horizontal = has('horizontal') ? v.horizontal : null;
   const vertical = has('vertical') ? v.vertical : null;
   const wrapText = has('wrapText') ? v.wrapText : null;
+  const rotation = has('rotation') ? v.rotation : null;
   const borderTouched = has('borderStyle') || has('borderColor') || has('borderEdges');
   /**
    * Per cell, so a mixed selection keeps what wasn't touched: changing only the line style restyles
@@ -333,6 +345,11 @@ export function buildFormatTransform(state: FormatCellsState): (style: CellStyle
     if (horizontal !== null) alignment = { ...alignment, horizontal };
     if (vertical !== null) alignment = { ...alignment, vertical };
     if (wrapText !== null) alignment = { ...alignment, wrapText };
+    if (rotation !== null && rotation !== (alignment.rotation ?? 0)) {
+      // Not rotated is the absence of both keys, so an unrotated style matches the default.
+      const { rotation: _r, rotationAlign: _a, ...rest } = alignment;
+      alignment = rotation === 0 ? rest : { ...alignment, rotation };
+    }
 
     const border = borderTouched ? borderFor(style.border) : null;
     const changed =

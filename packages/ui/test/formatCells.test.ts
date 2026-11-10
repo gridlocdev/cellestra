@@ -7,6 +7,7 @@ import {
   formatSample,
   nextTriState,
   parseFontSize,
+  parseRotation,
   presetIndex,
   seedFormatCells,
 } from '../src/components/formatCells.ts';
@@ -157,6 +158,22 @@ describe('dialog helpers', () => {
     const back = editFormatCells(editFormatCells(seed, { bold: true }), { bold: null });
     expect(back.touched.has('bold')).toBe(false);
     expect(buildFormatTransform(back)(base)).toBe(base);
+  });
+
+  it('sets and clears text rotation', () => {
+    const seed = seedFormatCells(CellStyles.default, [CellStyles.default]);
+    expect(seed.values.rotation).toBe(0);
+    const turned = buildFormatTransform(editFormatCells(seed, { rotation: parseRotation('-90') }))(
+      CellStyles.default,
+    );
+    expect(turned.alignment.rotation).toBe(270);
+    const back = buildFormatTransform(editFormatCells(seed, { rotation: 0 }))({
+      ...turned,
+      alignment: { ...turned.alignment, rotationAlign: 'bottom' },
+    });
+    expect(back.alignment).toEqual(CellStyles.default.alignment);
+    expect(parseRotation('abc')).toBeNull();
+    expect(parseRotation('405')).toBe(45);
   });
 
   it('clamps font sizes and finds presets', () => {

@@ -264,6 +264,11 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         return wrap(ctx, text, width).length;
       },
       columnWidth: (c) => sheet.columns.get(c)?.width ?? Defaults.columnWidth,
+      textWidth: (text, style) => {
+        if (!ctx) return text.length * style.font.sizePoints * 0.6;
+        ctx.font = fontCss(style);
+        return ctx.measureText(text).width;
+      },
     });
     const prev = s.content;
     const next = s.heights.rows;

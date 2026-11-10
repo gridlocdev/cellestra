@@ -446,6 +446,11 @@ function drawCellText(
       : h;
   const pad = CELL_PAD_X * v.zoom;
   const lineHeight = px * 1.2;
+  const rotation = style.alignment.rotation ?? 0;
+  if (rotation !== 0) {
+    drawRotatedText(ctx, shown.text.split('\n'), rect, rotation, align, style.alignment.vertical, px, v.zoom);
+    return;
+  }
   const lines = style.alignment.wrapText ? wrap(ctx, shown.text, rect.w - 2 * pad) : shown.text.split('\n');
 
   // Numbers that don't fit show ### (PRD §8.8), text spills or is clipped.
@@ -493,6 +498,60 @@ function drawCellText(
     y += lineHeight;
   }
   ctx.restore();
+}
+
+/**
+ * Text turned `degrees` counter-clockwise, clipped to its cell and never spilling. The turned block's
+ * bounding box is placed in the cell by the cell's alignment, as Calc does: 90° text reads bottom to
+ * top, 270° top to bottom. Wrapping is not applied (only typed line breaks).
+ */
+function drawRotatedText(
+  ctx: CanvasRenderingContext2D,
+  lines: readonly string[],
+  rect: Rect,
+  degrees: number,
+  align: 'left' | 'center' | 'right',
+  vAlign: CellStyle['alignment']['vertical'],
+  px: number,
+  zoom: number,
+): void {
+  const lineHeight = px * 1.2;
+  const w = Math.max(...lines.map((t) => ctx.measureText(t).width));
+  const h = lines.length * lineHeight;
+  const { width: bw, height: bh } = rotatedBox(w, h, degrees);
+  const padX = CELL_PAD_X * zoom;
+  const padY = CELL_PAD_Y * zoom;
+  const cx =
+    align === 'left'
+      ? rect.x + padX + bw / 2
+      : align === 'right'
+        ? rect.x + rect.w - padX - bw / 2
+        : rect.x + rect.w / 2;
+  const cy =
+    vAlign === 'top'
+      ? rect.y + padY + bh / 2
+      : vAlign === 'middle'
+        ? rect.y + rect.h / 2
+        : rect.y + rect.h - padY - bh / 2;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(rect.x, rect.y, rect.w, rect.h);
+  ctx.clip();
+  ctx.translate(cx, cy);
+  ctx.rotate((-degrees * Math.PI) / 180);
+  ctx.textAlign = align;
+  ctx.textBaseline = 'top';
+  const x = align === 'left' ? -w / 2 : align === 'right' ? w / 2 : 0;
+  lines.forEach((text, i) => ctx.fillText(text, x, -h / 2 + i * lineHeight + (lineHeight - px) / 2));
+  ctx.restore();
+}
+
+/** The upright bounding box of a `w` × `h` block turned `degrees`. */
+export function rotatedBox(w: number, h: number, degrees: number): { width: number; height: number } {
+  const t = (degrees * Math.PI) / 180;
+  const c = Math.abs(Math.cos(t));
+  const s = Math.abs(Math.sin(t));
+  return { width: w * c + h * s, height: w * s + h * c };
 }
 
 function spillRect(

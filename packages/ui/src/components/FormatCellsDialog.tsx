@@ -22,6 +22,7 @@ import {
   formatSample,
   nextTriState,
   parseFontSize,
+  parseRotation,
   presetIndex,
   seedFormatCells,
   type BorderEdgesOn,
@@ -175,6 +176,21 @@ export function FormatCellsDialog(props: {
           value={v.wrapText}
           onClick={() => edit({ wrapText: nextTriState(v.wrapText, varies.wrapText) })}
         />
+        <div class="cs-fc-row">
+          <label for="cs-fc-rotation">Rotation</label>
+          <input
+            id="cs-fc-rotation"
+            type="number"
+            min={-360}
+            max={360}
+            step={15}
+            placeholder={varies.rotation ? VARIES : undefined}
+            value={v.rotation ?? ''}
+            title="Degrees counter-clockwise: 90 reads bottom to top, 270 top to bottom"
+            onChange={(e) => edit({ rotation: parseRotation((e.target as HTMLInputElement).value) })}
+          />
+          <span>°</span>
+        </div>
       </fieldset>
 
       <fieldset class="cs-fc-section">

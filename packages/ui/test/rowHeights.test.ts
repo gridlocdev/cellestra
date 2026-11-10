@@ -45,6 +45,19 @@ describe('contentRowHeights', () => {
     expect(contentRowHeights(wrap.sheet, wrap.wb.styles, measure).get(0)).toBe(textHeight(10, 4));
   });
 
+  it('grows a row to fit rotated text, by how far it is turned', () => {
+    const m: RowMeasure = { ...measure, textWidth: (text) => text.length * 6 };
+    const turned = (degrees: number) => {
+      const t = styled((s) => ({ ...s, alignment: { ...s.alignment, rotation: degrees } }));
+      t.put(0, 0, 'x'.repeat(20)); // 120px wide
+      return contentRowHeights(t.sheet, t.wb.styles, m).get(0) ?? Defaults.rowHeight;
+    };
+    expect(turned(90)).toBe(120 + 2 * 2);
+    expect(turned(270)).toBe(120 + 2 * 2);
+    expect(turned(45)).toBeGreaterThan(Defaults.rowHeight);
+    expect(turned(45)).toBeLessThan(turned(90));
+  });
+
   it('counts typed line breaks, and leaves merged cells alone', () => {
     const wb = Workbook.createNew();
     const sheet = wb.worksheets[0]!;
