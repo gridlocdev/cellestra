@@ -131,6 +131,8 @@ export interface DataTarget {
 const RECOVERY_INTERVAL_MS = 30_000;
 /** A recovery snapshot is also taken this long after the last edit, so a pause in typing is safe. */
 const RECOVERY_IDLE_MS = 3_000;
+/** How much bigger than raw CSS px the grid draws at 100% zoom. */
+const BASE_GRID_ZOOM = 1.3;
 const THEME_KEY = 'cellestra.theme';
 const LAYOUT_KEY = 'cellestra.layout';
 const RIBBON_COLLAPSED_KEY = 'cellestra.ribbonCollapsed';
@@ -178,7 +180,10 @@ export class AppController {
   readonly sheetPickerOpen = signal(false);
   readonly recentOpen = signal(false);
   readonly recents = signal<RecentEntry[]>([]);
+  /** The zoom the user sees and sets: 1 is 100%. */
   readonly zoom = signal(1);
+  /** The scale the grid draws at: 100% shows cells at a comfortable reading size, not raw CSS px. */
+  readonly gridZoom = computed(() => this.zoom.value * BASE_GRID_ZOOM);
   readonly showFormulas = signal(false);
   readonly theme = signal<Theme>((localStorage.getItem(THEME_KEY) as Theme | null) ?? 'system');
   readonly prefersDark = signal(matchMedia('(prefers-color-scheme: dark)').matches);

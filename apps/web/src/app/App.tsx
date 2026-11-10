@@ -248,7 +248,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
           <Grid
             host={host}
             selection={app.selection}
-            zoom={app.zoom}
+            zoom={app.gridZoom}
             palette={app.palette}
             showFormulas={app.showFormulas}
             controller={app.grid}
