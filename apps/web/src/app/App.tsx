@@ -424,8 +424,15 @@ function Footer({ app }: { readonly app: AppController }) {
         onSelect={(i) => {
           // An open cell edit belongs to the sheet it was typed on.
           if (app.grid.current?.commitEdit() ?? true) s.setActiveSheet(i);
+          // The tab button took focus with the click: hand the keyboard back to the grid so arrows
+          // and typing act on the new sheet's active cell.
+          queueMicrotask(() => app.grid.current?.focus());
         }}
-        onAdd={() => s.addSheet()}
+        onAdd={() => {
+          if (!(app.grid.current?.commitEdit() ?? true)) return;
+          s.addSheet();
+          queueMicrotask(() => app.grid.current?.focus());
+        }}
         onRename={(i, name) => s.renameSheet(i, name)}
         onMove={(from, to) => s.moveSheet(from, to)}
         onMenu={(index, x, y) => setMenu({ index, x, y })}

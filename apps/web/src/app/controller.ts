@@ -1544,9 +1544,27 @@ export class AppController {
       return this.info('That range overlaps an existing table.');
     let n = 1;
     while (sheet.tables.some((t) => t.name.toLowerCase() === `table${n}`)) n++;
-    const t: Table = { name: `Table${n}`, range: r, hasHeader: looksLikeHeader(sheet, r) };
-    this.run(DataEditCommands.createStyledTable(this.session.workbook.peek(), this.sheetName, t));
-    this.selection.select(r.top, r.left);
+    // Every table gets a header row, so its columns always have filter and sort arrows. A first
+    // row of labels is that header; otherwise the labels (Column 1, …) go in a new row above the
+    // data: the empty row just above when there is one, else a row inserted there.
+    let range = r;
+    let insert: EditCommand | null = null;
+    if (!looksLikeHeader(sheet, r)) {
+      const above = r.top - 1;
+      const free =
+        above >= 0 &&
+        rowIsBlank(sheet, above, r.left, r.right) &&
+        !sheet.tables.some((t) => t.range.top <= above && t.range.bottom >= above);
+      if (free) range = CellRange.fromBounds(above, r.left, r.bottom, r.right);
+      else {
+        insert = new StructuralEditCommand(this.sheetName, 'row', 'insert', r.top, 1);
+        range = CellRange.fromBounds(r.top, r.left, r.bottom + 1, r.right);
+      }
+    }
+    const t: Table = { name: `Table${n}`, range, hasHeader: true };
+    const create = DataEditCommands.createStyledTable(this.session.workbook.peek(), this.sheetName, t);
+    this.run(insert ? EditCommands.composite('Create Table', [insert, create]) : create);
+    this.selection.select(range.top, range.left);
   }
 
   /** ⌘A: inside a table, the table first; pressed again (or outside one), the whole sheet. */
@@ -1929,20 +1947,20 @@ function range(from: number, to: number): number[] {
 }
 
 /** A first row of all text over a column that isn't all text reads as a header. */
+/** A first row of text labels (no numbers, dates or formulas' results other than text) is a header. */
 function looksLikeHeader(sheet: Worksheet, region: CellRange): boolean {
-  if (region.rowCount < 2) return false;
   let anyText = false;
   for (let c = region.left; c <= region.right; c++) {
     const v = sheet.getValue(region.top, c);
     if (v.kind !== 'text' && v.kind !== 'empty') return false;
     if (v.kind === 'text') anyText = true;
   }
-  if (!anyText) return false;
-  for (let c = region.left; c <= region.right; c++) {
-    const below = sheet.getValue(region.top + 1, c);
-    if (below.kind !== 'text' && below.kind !== 'empty') return true;
-  }
-  return false;
+  return anyText;
+}
+
+function rowIsBlank(sheet: Worksheet, row: number, left: number, right: number): boolean {
+  for (let c = left; c <= right; c++) if (sheet.getValue(row, c).kind !== 'empty') return false;
+  return true;
 }
 
 function splitNasId(id: string): [string, string] {

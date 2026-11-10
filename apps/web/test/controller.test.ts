@@ -361,3 +361,48 @@ describe('auto-save', () => {
     expect(errors).toHaveLength(1); // reported once, not on every tick
   });
 });
+
+describe('createTable', () => {
+  async function tableFrom(rows: (string | number)[][], top = 0) {
+    const app = await makeApp();
+    const sheet = app.session.activeSheet.peek();
+    rows.forEach((r, i) =>
+      r.forEach((v, c) =>
+        sheet.setValue(top + i, c, typeof v === 'number' ? CellValue.number(v) : CellValue.text(v)),
+      ),
+    );
+    app.selection.select(top, 0);
+    app.createTable();
+    return { app, sheet, table: sheet.tables[0]! };
+  }
+
+  it('uses a first row of text labels as the header, even over text data', async () => {
+    const { table } = await tableFrom([
+      ['Name', 'City'],
+      ['Ann', 'Oslo'],
+    ]);
+    expect(table.hasHeader).toBe(true);
+    expect(table.range.toString()).toBe('A1:B2');
+  });
+
+  it('puts labels in a new row when the data starts with numbers', async () => {
+    const { app, sheet, table } = await tableFrom([
+      [1, 2],
+      [3, 4],
+    ]);
+    expect(table.hasHeader).toBe(true);
+    expect(table.range.toString()).toBe('A1:B3');
+    expect(sheet.getValue(0, 0)).toEqual(CellValue.text('Column 1'));
+    expect(sheet.getValue(1, 0)).toEqual(CellValue.number(1));
+    app.session.undo();
+    expect(sheet.tables).toHaveLength(0);
+    expect(sheet.getValue(0, 0)).toEqual(CellValue.number(1));
+  });
+
+  it('uses the blank row above the data for the labels', async () => {
+    const { sheet, table } = await tableFrom([[1, 2]], 3);
+    expect(table.range.toString()).toBe('A3:B4');
+    expect(sheet.getValue(2, 1)).toEqual(CellValue.text('Column 2'));
+    expect(sheet.getValue(3, 0)).toEqual(CellValue.number(1));
+  });
+});
