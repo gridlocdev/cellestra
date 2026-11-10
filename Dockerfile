@@ -11,7 +11,7 @@ RUN pnpm install --frozen-lockfile --filter @cellestra/web...
 COPY tsconfig.base.json ./
 COPY packages packages
 COPY apps/web apps/web
-RUN pnpm --filter @cellestra/web build
+RUN VITE_CELLESTRA_NAS=1 pnpm --filter @cellestra/web build
 
 FROM node:22-alpine
 ENV NODE_ENV=production PORT=8787 CELLESTRA_STATIC=/app/web CELLESTRA_ROOTS="Documents=/data"

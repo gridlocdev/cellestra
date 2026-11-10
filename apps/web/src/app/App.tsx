@@ -767,7 +767,12 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
             <strong>Cellestra</strong> — a spreadsheet for OpenDocument (.ods) files.
           </p>
           <p>
-            Runs entirely on your device: in the browser, from your NAS, or as a desktop app. MIT licensed.
+            {app.native
+              ? 'A desktop app that works on files on this computer.'
+              : app.nasAvailable.value
+                ? 'Runs in your browser, with files in folders on your NAS.'
+                : 'Runs entirely in your browser; files stay on this computer.'}{' '}
+            MIT licensed.
           </p>
         </Dialog>
       )}

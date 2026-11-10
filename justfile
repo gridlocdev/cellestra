@@ -14,7 +14,7 @@ default:
 [group('run')]
 run-web:
     mkdir -p "{{ nas_data }}"
-    pnpm --parallel --filter @cellestra/server --filter @cellestra/web run dev
+    VITE_CELLESTRA_NAS=1 pnpm --parallel --filter @cellestra/server --filter @cellestra/web run dev
 
 # NAS file server only (http://localhost:8787), serving ./.nas-data; restarts when its source changes.
 [group('run')]
@@ -29,7 +29,7 @@ run-desktop: build-web
 
 # The built web client served by the NAS server, as it runs on a NAS (http://localhost:8787).
 [group('run')]
-preview-web: build-web
+preview-web: build-web-nas
     mkdir -p "{{ nas_data }}"
     CELLESTRA_ROOTS="Sample={{ nas_data }}" CELLESTRA_STATIC="{{ justfile_directory() }}/apps/web/dist" node apps/server/src/main.ts
 
@@ -51,6 +51,11 @@ build:
 [group('build')]
 build-web:
     pnpm --filter @cellestra/web build
+
+# Build the web client for the NAS server (shows NAS open/save; `build-web` leaves it out).
+[group('build')]
+build-web-nas:
+    VITE_CELLESTRA_NAS=1 pnpm --filter @cellestra/web build
 
 # Regenerate the app icon files in apps/desktop/build from assets/icon.svg (needs Inkscape; .icns needs macOS).
 [group('build')]

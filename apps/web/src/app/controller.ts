@@ -72,6 +72,12 @@ import {
 
 import type { ChartDefinition } from '@cellestra/charts';
 
+/**
+ * Built to be served by the NAS server (`VITE_CELLESTRA_NAS=1`). Other builds (desktop, a plain
+ * static web build) never look for the server, so no NAS command, setting or dialog shows.
+ */
+export const NAS_BUILD = import.meta.env.VITE_CELLESTRA_NAS === '1';
+
 export type Theme = 'system' | 'light' | 'dark';
 
 /** The one modal at a time. Promise-backed dialogs resolve through `resolve`. */
@@ -300,11 +306,11 @@ export class AppController {
     });
   }
 
-  /** Detect the NAS server, wire Electron, offer crash recovery, open a file passed by the OS. */
+  /** Detect the NAS server (NAS builds only), wire Electron, offer crash recovery, open a file passed by the OS. */
   async start(): Promise<void> {
     try {
       if (!this.native) {
-        this.nasAvailable.value = (await this.nas.info()) !== null;
+        if (NAS_BUILD) this.nasAvailable.value = (await this.nas.info()) !== null;
         addEventListener('beforeunload', (e) => {
           if (this.session.modified.peek()) e.preventDefault();
         });
@@ -764,7 +770,9 @@ export class AppController {
   }
 
   async refreshRecents(): Promise<void> {
-    this.recents.value = await recentFiles();
+    // A NAS file listed on this origin by an earlier NAS build can't be opened without the server.
+    const nas = this.nasAvailable.peek();
+    this.recents.value = (await recentFiles()).filter((r) => nas || r.ref.store !== 'nas');
   }
 
   async snapshot(): Promise<void> {

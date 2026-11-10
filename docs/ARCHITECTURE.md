@@ -51,6 +51,7 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
 - **Commands.** `CommandCatalog` is the one list of commands. The toolbar, ⌘K, the shortcut dispatcher and the Electron menu bar (sent over IPC) all read it. Shortcuts are written once as `mod+shift+k` and formatted for each platform.
 - **Files.** `FileStore` has three implementations, and the UI only ever sees the interface.
   - Conflict detection uses an ETag (NAS) or the file's mtime (native).
+  - The NAS store exists only in a NAS build (`VITE_CELLESTRA_NAS=1`: the Docker image, `just build-web-nas`, `just run-web`, `just preview-web`). A NAS build still shows NAS open and save only after the server answers `/api/info`. Every other build, the desktop app included, never contacts the server and shows nothing about a NAS.
   - IndexedDB keeps the recent files (including browser file handles) and a crash-recovery snapshot.
 
 ## Server (`apps/server`)

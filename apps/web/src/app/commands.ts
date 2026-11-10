@@ -10,7 +10,7 @@ import {
 } from '@cellestra/core';
 import { CommandCatalog, type CommandSpec } from '@cellestra/ui';
 import type { AppController } from './controller.ts';
-import { MAX_ZOOM, MIN_ZOOM } from './controller.ts';
+import { MAX_ZOOM, MIN_ZOOM, NAS_BUILD } from './controller.ts';
 
 /**
  * The one command catalog (PRD §9): the native menu, toolbar, ⌘K palette, and key bindings all read
@@ -88,7 +88,8 @@ export function buildCommands(app: AppController): CommandCatalog {
       group: 'File',
       icon: 'file-up',
       run: () => app.openLocal(),
-      hidden: !!app.native,
+      // Only a NAS build has a second place to open from; elsewhere Open already uploads.
+      hidden: !NAS_BUILD || !!app.native,
       enabled: () => app.nasAvailable.value,
     },
     {
