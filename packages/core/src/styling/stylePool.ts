@@ -33,6 +33,21 @@ export class StylePool {
     return this.list[id] ?? CellStyles.default;
   }
 
+  /**
+   * Put `style` at `id`, keeping the id, so every cell and line using it changes with it (a
+   * structural edit moving a conditional map's base cell). Another id may then hold an equal style;
+   * `intern` keeps answering with whichever it already knew.
+   */
+  replace(id: number, style: CellStyle): void {
+    const old = this.list[id];
+    if (old === undefined || id === StylePool.defaultId) return;
+    const oldKey = styleKey(old);
+    if (this.index.get(oldKey) === id) this.index.delete(oldKey);
+    this.list[id] = style;
+    const key = styleKey(style);
+    if (!this.index.has(key)) this.index.set(key, id);
+  }
+
   mutate(baseId: number, change: (s: CellStyle) => CellStyle): number {
     return this.intern(change(this.get(baseId)));
   }

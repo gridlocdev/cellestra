@@ -8,6 +8,12 @@ import type { NamedRange } from '../model/namedRange.ts';
 import { SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
+import {
+  captureStyleMaps,
+  restoreStyleMaps,
+  transformStyleMaps,
+  type StyleMapSnapshot,
+} from './styleMapReferences.ts';
 
 /**
  * A reference fix-up, the same one formulas get: rewrite `expr` as seen from `homeSheet` (the sheet
@@ -28,6 +34,7 @@ interface SheetReferences {
 export interface ReferenceSnapshot {
   readonly names: readonly NamedRange[];
   readonly sheets: ReadonlyMap<string, SheetReferences>;
+  readonly styleMaps: StyleMapSnapshot;
 }
 
 const key = (name: string): string => name.toLowerCase();
@@ -43,12 +50,13 @@ export function captureReferences(workbook: Workbook): ReferenceSnapshot {
       chart: s.chart ? cloneChart(s.chart) : null,
     });
   }
-  return { names: [...workbook.namedRanges], sheets };
+  return { names: [...workbook.namedRanges], sheets, styleMaps: captureStyleMaps(workbook) };
 }
 
 /** Put back what `captureReferences` saw; sheets are matched by (current) name. */
 export function restoreReferences(workbook: Workbook, snapshot: ReferenceSnapshot): void {
   workbook.replaceNamedRanges(snapshot.names);
+  restoreStyleMaps(workbook, snapshot.styleMaps);
   for (const s of workbook.worksheets) {
     const saved = snapshot.sheets.get(key(s.name));
     if (!saved) continue;
@@ -157,7 +165,7 @@ function transformChart(
 /**
  * Apply a reference fix-up to everything outside cell formulas that names cells: named-range targets,
  * data validations (target and list source), each sheet's AutoFilter range and criteria columns, its
- * sort keys, and chart ranges. A validation whose target was deleted goes, and so does a name whose
+ * sort keys, chart ranges, and conditional maps' base cells and conditions. A validation whose target was deleted goes, and so does a name whose
  * target was deleted (as a chart series whose values were).
  */
 export function transformReferences(
@@ -179,6 +187,7 @@ export function transformReferences(
   workbook.replaceNamedRanges(names);
 
   for (const s of workbook.worksheets) transformSheetReferences(s, transform, chartHome ?? s.name);
+  transformStyleMaps(workbook, transform);
 }
 
 /** A chart's unqualified reference means the first data sheet (ChartDataResolver's rule). */
