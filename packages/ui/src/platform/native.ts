@@ -25,6 +25,10 @@ export interface DocumentState {
   readonly dirty: boolean;
   readonly path: string | null;
 }
+export interface PrintPaper {
+  readonly width: number;
+  readonly height: number;
+}
 export interface CellestraNative {
   readonly platform: string;
   openDialog(): Promise<NativeFile | null>;
@@ -47,6 +51,10 @@ export interface CellestraNative {
   /** The close (or quit) was cancelled; the window stays open. */
   cancelClose(): void;
   watch(path: string | null): void;
+  /** Print a document through the system print dialog; false when cancelled. Optional: older builds. */
+  print?(html: string, paper: PrintPaper): Promise<boolean>;
+  /** Save a document as PDF where the user picks; the path, or null when cancelled. */
+  exportPdf?(html: string, suggestedName: string): Promise<string | null>;
   onCommand(cb: (id: string) => void): () => void;
   onOpenFile(cb: (path: string) => void): () => void;
   onCloseRequested(cb: () => void): () => void;

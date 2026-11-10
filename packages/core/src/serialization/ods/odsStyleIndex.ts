@@ -169,7 +169,7 @@ export class OdsStyleIndex {
 }
 
 /** A length in cm or inches → cm; null for anything else. */
-function parseLength(value: string | null): number | null {
+export function parseLength(value: string | null): number | null {
   if (value === null) return null;
   const lower = value.trim().toLowerCase();
   if (lower.endsWith('cm')) return parseInvariantFloat(lower.slice(0, -2));

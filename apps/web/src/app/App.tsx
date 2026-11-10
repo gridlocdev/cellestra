@@ -6,6 +6,7 @@ import {
   Dialog,
   FormatCellsDialog,
   ConditionalFormatDialog,
+  PageSetupDialog,
   FormulaBar,
   Grid,
   Icon,
@@ -776,6 +777,18 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
           styles={d.styles}
           locale={s.locale}
           onApply={(transform) => app.style('Format Cells', transform)}
+          onClose={() => {
+            app.dialog.value = null;
+            refocus();
+          }}
+        />
+      )}
+      {d?.kind === 'pageSetup' && (
+        <PageSetupDialog
+          sheetName={app.sheetName}
+          current={app.sheet.pageSetup}
+          onApply={(setup) => app.setPageSetup(setup)}
+          onPrint={(setup) => void app.print(false, setup)}
           onClose={() => {
             app.dialog.value = null;
             refocus();

@@ -9,6 +9,7 @@ import { bumpLineLayout, Column, lineLayoutGeneration, Row } from './lines.ts';
 import type { MergedRegion } from './mergedRegion.ts';
 import { cellKey, keyColumn, keyRow, SheetDimensions } from './sheetDimensions.ts';
 import { Defaults } from '../defaults.ts';
+import type { PageSetup } from './pageSetup.ts';
 
 const DEFAULT_STYLE_ID = 0;
 
@@ -44,6 +45,8 @@ export class Worksheet {
   activeFilter: CellRange | null = null;
   activeFilterSpec: FilterSpec | null = null;
   activeSort: SortSpec | null = null;
+  /** How the sheet prints; null for the default page (A4, as LibreOffice). */
+  pageSetup: PageSetup | null = null;
 
   constructor(name: string) {
     this.name = name;
@@ -378,6 +381,7 @@ export class Worksheet {
     copy.activeFilter = this.activeFilter;
     copy.activeFilterSpec = this.activeFilterSpec;
     copy.activeSort = this.activeSort;
+    copy.pageSetup = this.pageSetup;
     copy.chart = this.chart ? cloneChart(this.chart) : null;
     return copy;
   }

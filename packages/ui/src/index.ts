@@ -21,3 +21,7 @@ export * from './charts/ChartSvg.tsx';
 export * from './charts/ChartSheetView.tsx';
 export * from './components/conditionalFormats.ts';
 export { ConditionalFormatDialog } from './components/ConditionalFormatDialog.tsx';
+export * from './print/printHtml.ts';
+export * from './print/printFrame.ts';
+export * from './components/pageSetupForm.ts';
+export { PageSetupDialog } from './components/PageSetupDialog.tsx';

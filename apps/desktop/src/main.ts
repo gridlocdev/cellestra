@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from 'electron';
 import type { MenuItemConstructorOptions } from 'electron';
-import { readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
@@ -9,6 +10,7 @@ import {
   type DocumentState,
   type NativeFile,
   type NativeMenuItem,
+  type PrintPaper,
   type SavedFile,
 } from './bridge.ts';
 import {
@@ -261,7 +263,66 @@ function toTemplate(items: readonly NativeMenuItem[], win: BrowserWindow): MenuI
   });
 }
 
+/**
+ * Load a print document in a hidden, script-less window and hand it to `use`. The document goes
+ * through a temporary file: a data: URL that long would be refused.
+ */
+async function withPrintWindow<T>(html: string, use: (win: BrowserWindow) => Promise<T>): Promise<T> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'cellestra-print-'));
+  const file = path.join(dir, 'print.html');
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false },
+  });
+  // The document is ours and self-contained: nothing in it may navigate or open anything.
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  try {
+    await writeFile(file, html, 'utf8');
+    await win.loadFile(file);
+    return await use(win);
+  } finally {
+    win.destroy();
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 function registerIpc(): void {
+  ipcMain.handle(Channels.print, async (e, html: unknown, paper: PrintPaper) => {
+    if (!trusted(e) || typeof html !== 'string') forbidden();
+    const width = Math.round(Number(paper?.width) * 1000);
+    const height = Math.round(Number(paper?.height) * 1000);
+    const pageSize =
+      width > 0 && height > 0 ? { width: Math.min(width, height), height: Math.max(width, height) } : 'A4';
+    return withPrintWindow(
+      html,
+      (win) =>
+        new Promise<boolean>((resolve) =>
+          win.webContents.print({ printBackground: true, pageSize, landscape: width > height }, (ok) =>
+            resolve(ok),
+          ),
+        ),
+    );
+  });
+  ipcMain.handle(Channels.exportPdf, async (e, html: unknown, suggestedName: unknown) => {
+    if (!trusted(e) || typeof html !== 'string') forbidden();
+    const win = fromEvent(e);
+    const opts = {
+      defaultPath: String(suggestedName),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    };
+    const result = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+    if (result.canceled || !result.filePath) return null;
+    const target = result.filePath.toLowerCase().endsWith('.pdf')
+      ? result.filePath
+      : `${result.filePath}.pdf`;
+    const pdf = await withPrintWindow(html, (w) =>
+      w.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true }),
+    );
+    await writeAtomic(target, pdf);
+    return target;
+  });
+
   ipcMain.handle(Channels.openDialog, async (e) => {
     if (!trusted(e)) forbidden();
     const win = fromEvent(e);

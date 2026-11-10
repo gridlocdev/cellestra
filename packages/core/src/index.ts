@@ -11,6 +11,7 @@ export * from './model/lines.ts';
 export * from './model/documentSettings.ts';
 export * from './model/namedRange.ts';
 export * from './model/mergedRegion.ts';
+export * from './model/pageSetup.ts';
 export * from './model/worksheet.ts';
 export * from './model/workbook.ts';
 export * from './data/index.ts';

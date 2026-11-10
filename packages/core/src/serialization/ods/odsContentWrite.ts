@@ -19,6 +19,7 @@ import { appendParagraphText, odfCellAddress, odfRangeAddress } from './odsConte
 import { addDatabaseRanges } from './odsDatabaseRanges.ts';
 import type { ForeignXml } from './odsPackage.ts';
 import { OdsPreserved } from './odsPreserved.ts';
+import { NO_PAGE_PLAN, isGeneratedTableStyle, type PagePlan } from './odsPageSetup.ts';
 import { StyleRegistry } from './odsStyleRegistry.ts';
 import { addContentValidations } from './odsValidation.ts';
 import {
@@ -53,16 +54,20 @@ export function writeContentXml(
   foreign: readonly ForeignXml[],
   reservedStyleNames: ReadonlySet<string> = new Set(),
   commonStyles: XmlElement[] | null = null,
+  pages: PagePlan = NO_PAGE_PLAN,
 ): XmlDocument {
   const autoStyles = new XmlElement(Office('automatic-styles'));
   const preserved = OdsPreserved.workbook(workbook);
   // Generated names must not reuse a preserved automatic style's name, nor any styles.xml name.
   const reserved = new Set<string>(reservedStyleNames);
   for (const style of preserved?.automaticStyles ?? []) {
+    // Table styles an earlier save wrote for page setups are written again below, renamed.
+    if (isGeneratedTableStyle(style)) continue;
     const name = style.attr(Style('name'));
     if (name !== null) reserved.add(name);
     autoStyles.add(style.clone());
   }
+  for (const style of pages.tableStyles) autoStyles.add(style.clone());
   const registry = new StyleRegistry(workbook.styles, autoStyles, reserved, reservedStyleNames, commonStyles);
 
   const spreadsheet = new XmlElement(Office('spreadsheet'));
@@ -75,7 +80,7 @@ export function writeContentXml(
 
   workbook.worksheets.forEach((sheet, index) => {
     spreadsheet.add(
-      writeTable(workbook, sheet, index, registry, validationNames.get(sheet.name) ?? NO_VALIDATIONS),
+      writeTable(workbook, sheet, index, registry, validationNames.get(sheet.name) ?? NO_VALIDATIONS, pages),
     );
   });
 
@@ -149,10 +154,13 @@ function writeTable(
   sheetIndex: number,
   registry: StyleRegistry,
   validations: ValidationTargets,
+  pages: PagePlan,
 ): XmlElement {
   const table = new XmlElement(Table('table')).setAttr(Table('name'), sheet.name);
   const preserved = OdsPreserved.table(sheet);
   for (const a of preserved?.attributes ?? []) table.setAttr(a.name, a.value);
+  const pageStyle = pages.tableStyleNames.get(sheet);
+  if (pageStyle !== undefined) table.setAttr(Table('style-name'), pageStyle);
 
   // Checkbox cells save as form controls: one form for the sheet's checkboxes, joined to the
   // file's own `office:forms` when it has one so its other controls are kept.

@@ -37,6 +37,8 @@ import {
   type Worksheet,
   ConditionalStyles,
   type Workbook,
+  SetPageSetupCommand,
+  type PageSetup,
 } from '@cellestra/core';
 import {
   BrowserStore,
@@ -53,6 +55,8 @@ import {
   forgetRecent,
   lightPalette,
   nativeBridge,
+  printHtml,
+  printInFrame,
   orphanedRecoveries,
   recentFiles,
   rememberRecent,
@@ -102,6 +106,7 @@ export type DialogState =
     }
   | { readonly kind: 'shortcuts' }
   | { readonly kind: 'conditionalFormats' }
+  | { readonly kind: 'pageSetup' }
   | { readonly kind: 'about' }
   | { readonly kind: 'settings' }
   | { readonly kind: 'formatCells'; readonly styles: ReturnType<AppController['selectionStyles']> }
@@ -883,6 +888,62 @@ export class AppController {
     if (!c || c.workbook !== workbook || c.version !== version)
       this.#conditional = { workbook, version, styles: new ConditionalStyles(workbook) };
     return this.#conditional!.styles.resolve(style, this.sheetName, row, column);
+  }
+
+  // ── Printing ─────────────────────────────────────────────────────────────
+
+  setPageSetup(setup: PageSetup): void {
+    this.run(new SetPageSetupCommand(this.sheetName, setup));
+  }
+
+  /** The active sheet (or just the selection) laid out in pages, or null for a chart sheet. */
+  #printDocument(selectionOnly: boolean, setup: PageSetup | null = this.sheet.pageSetup) {
+    const sheet = this.sheet;
+    if (sheet.isChartSheet) {
+      this.info('Chart sheets can’t be printed yet. Print a sheet with cells instead.');
+      return null;
+    }
+    const r = this.range;
+    return printHtml({
+      sheet,
+      styles: this.session.workbook.peek().styles,
+      setup,
+      range: selectionOnly ? { top: r.top, left: r.left, bottom: r.bottom, right: r.right } : null,
+      display: (value, style) => this.session.display(value, style),
+      conditional: (style, row, column) => this.conditionalStyle(style, row, column),
+      title: `${this.session.title.peek().replace(/\.[^.]+$/, '')} — ${sheet.name}`,
+    });
+  }
+
+  /** Print the active sheet, or the selection, through the system's (or browser's) print dialog. */
+  async print(selectionOnly = false, setup?: PageSetup): Promise<void> {
+    const doc = this.#printDocument(selectionOnly, setup);
+    if (!doc) return;
+    try {
+      if (this.native?.print) {
+        await this.native.print(doc.html, { width: doc.setup.paperWidth, height: doc.setup.paperHeight });
+      } else await printInFrame(doc.html);
+    } catch (e) {
+      this.error(e);
+    }
+  }
+
+  /** Save the active sheet as a PDF (in a browser: the print dialog, where Save as PDF is). */
+  async exportPdf(): Promise<void> {
+    const doc = this.#printDocument(false);
+    if (!doc) return;
+    try {
+      if (this.native?.exportPdf) {
+        const base = this.session.title.peek().replace(/\.[^.]+$/, '');
+        const saved = await this.native.exportPdf(doc.html, `${base}.pdf`);
+        if (saved) this.info(`Exported ${saved.split(/[\\/]/).pop()}`);
+        return;
+      }
+      this.info('Choose “Save as PDF” as the printer to save a PDF.');
+      await printInFrame(doc.html);
+    } catch (e) {
+      this.error(e);
+    }
   }
 
   get sheetName(): string {

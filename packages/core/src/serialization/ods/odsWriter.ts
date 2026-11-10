@@ -3,6 +3,8 @@ import { XmlElement, serializeXml, tryParseXml, type XmlDocument } from '../../x
 import { writeContentXml } from './odsContentWrite.ts';
 import { OdsCharts } from './odsCharts.ts';
 import { OdsPackage } from './odsPackage.ts';
+import { OdsPageSetup, NO_PAGE_PLAN } from './odsPageSetup.ts';
+import { OdsPreserved } from './odsPreserved.ts';
 import { OdsSupportXml } from './odsSupportXml.ts';
 import { CONDITIONAL_STYLE_PREFIX } from './odsStyleRegistry.ts';
 import { Fo, OdsXmlNames as N, NumberNs, Office, Style } from './odsXmlNames.ts';
@@ -31,17 +33,22 @@ export const OdsWriter = {
         ? OdsSupportXml.buildStyles()
         : tryParseXml(stylesText, { preserveWhitespace: true });
     const stripped = styles ? dropConditionalStyles(styles) : false;
+    // Page layouts first: the master pages they add are names the content writer must not reuse.
+    const pages = styles
+      ? OdsPageSetup.write(workbook, styles, OdsPreserved.workbook(workbook)?.automaticStyles ?? [])
+      : NO_PAGE_PLAN;
     const reservedStyleNames = styles ? styleNames(styles) : new Set<string>();
+    for (const s of pages.tableStyles) reservedStyleNames.add(s.attr(Style('name'))!);
     // Named styles conditional formats apply; null when styles.xml can't be read (left as it was).
     const commonStyles: XmlElement[] | null = styles ? [] : null;
     pkg.setText(
       N.contentPart,
       serializeXml(
-        writeContentXml(workbook, pkg.foreignSpreadsheetChildren, reservedStyleNames, commonStyles),
+        writeContentXml(workbook, pkg.foreignSpreadsheetChildren, reservedStyleNames, commonStyles, pages),
         flat,
       ),
     );
-    if (styles && (stylesText === null || stripped || commonStyles!.length > 0)) {
+    if (styles && (stylesText === null || stripped || pages.stylesChanged || commonStyles!.length > 0)) {
       let officeStyles = styles.root.element(Office('styles'));
       if (!officeStyles) {
         // Schema order: office:font-face-decls, then office:styles.

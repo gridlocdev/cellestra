@@ -1,6 +1,6 @@
 // Sandboxed preload: may only require('electron'), so channel names are inlined here.
 // Keep them in step with `Channels` in bridge.ts.
-import type { DocumentState, NativeFile, NativeMenuItem, SavedFile } from './bridge.ts';
+import type { DocumentState, NativeFile, NativeMenuItem, PrintPaper, SavedFile } from './bridge.ts';
 
 // A sandboxed preload is CommonJS and can only reach Electron through require().
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/consistent-type-imports
@@ -30,6 +30,10 @@ contextBridge.exposeInMainWorld('cellestraNative', {
   confirmClose: (): void => ipcRenderer.send('cellestra:confirm-close'),
   cancelClose: (): void => ipcRenderer.send('cellestra:cancel-close'),
   watch: (path: string | null): void => ipcRenderer.send('cellestra:watch', path),
+  print: (html: string, paper: PrintPaper): Promise<boolean> =>
+    ipcRenderer.invoke('cellestra:print', html, paper),
+  exportPdf: (html: string, suggestedName: string): Promise<string | null> =>
+    ipcRenderer.invoke('cellestra:export-pdf', html, suggestedName),
   onCommand: (cb: (id: string) => void) => on('cellestra:command', cb),
   onOpenFile: (cb: (path: string) => void) => on('cellestra:open-file', cb),
   onCloseRequested: (cb: () => void) =>

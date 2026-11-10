@@ -13,6 +13,7 @@ export * from './formatBlock.ts';
 export * from './formulaRewrite.ts';
 export * from './hiddenLines.ts';
 export * from './inputParser.ts';
+export * from './pageSetupCommand.ts';
 export * from './pasteBlockCommand.ts';
 export * from './pastePlanner.ts';
 export * from './renameSheetCommand.ts';

@@ -356,6 +356,16 @@ function FileTab(ctx: Ctx) {
           <Small {...ctx} id="file.exportCsv" label="Export CSV" />
         </Col>
       </Group>
+      <Group label="Print">
+        <div class="rb-row">
+          <Big {...ctx} id="file.print" label="Print" />
+          <Col>
+            <Small {...ctx} id="file.pageSetup" label="Page setup" />
+            <Small {...ctx} id="file.printSelection" label="Print selection" />
+            <Small {...ctx} id="file.exportPdf" label="Export PDF" />
+          </Col>
+        </div>
+      </Group>
       <Group label="Options">
         <Big {...ctx} id="app.preferences" label="Settings" />
       </Group>

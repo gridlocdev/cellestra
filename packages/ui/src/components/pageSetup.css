@@ -1,0 +1,49 @@
+/* Page Setup dialog (PageSetupDialog.tsx). */
+.cs-page-setup {
+  width: 520px;
+}
+.cs-page-setup fieldset {
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  margin: 0 0 10px;
+  padding: 6px 10px 8px;
+}
+.cs-page-setup legend {
+  padding: 0 4px;
+  color: var(--cs-text-2);
+  font-size: 12px;
+}
+.cs-page-setup .cs-ps-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.cs-page-setup .cs-ps-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.cs-page-setup .cs-ps-margins {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.cs-page-setup .cs-ps-margins label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+.cs-page-setup .cs-ps-margins input {
+  width: 100%;
+  min-width: 0;
+}
+.cs-page-setup .cs-ps-small {
+  width: 56px;
+}
+.cs-page-setup .cs-ps-error {
+  color: var(--cs-danger, #c00);
+  margin: 8px 0 0;
+}

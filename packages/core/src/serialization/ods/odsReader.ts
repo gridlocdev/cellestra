@@ -3,6 +3,7 @@ import { Workbook } from '../../model/workbook.ts';
 import { parseXml, tryParseXml } from '../../xml/index.ts';
 import { readContentXml } from './odsContentRead.ts';
 import { OdsPackage } from './odsPackage.ts';
+import { OdsPageSetup } from './odsPageSetup.ts';
 import { OdsSupportXml } from './odsSupportXml.ts';
 import { OdsXmlNames as N } from './odsXmlNames.ts';
 
@@ -37,6 +38,7 @@ export const OdsReader = {
       // Whitespace is kept: a data style's `<number:text> </number:text>` is the space in "d mmmm".
       const styles = stylesXml === null ? null : tryParseXml(stylesXml, { preserveWhitespace: true });
       readContentXml(document, workbook, pkg.foreignSpreadsheetChildren, pkg, styles);
+      OdsPageSetup.read(workbook, document.root, styles?.root ?? null);
     }
 
     // A valid spreadsheet always has at least one sheet.

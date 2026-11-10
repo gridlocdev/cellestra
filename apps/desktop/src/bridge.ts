@@ -36,6 +36,12 @@ export interface DocumentState {
   readonly path: string | null;
 }
 
+/** The paper a print job uses, as the page setup gives it (mm, as the page lies). */
+export interface PrintPaper {
+  readonly width: number;
+  readonly height: number;
+}
+
 export const Channels = {
   openDialog: 'cellestra:open-dialog',
   readFile: 'cellestra:read-file',
@@ -50,6 +56,8 @@ export const Channels = {
   /** Sent by the preload as soon as a close request arrives: proves the renderer is alive. */
   closeAck: 'cellestra:close-ack',
   watch: 'cellestra:watch',
+  print: 'cellestra:print',
+  exportPdf: 'cellestra:export-pdf',
   // main → renderer
   command: 'cellestra:command',
   openFile: 'cellestra:open-file',
