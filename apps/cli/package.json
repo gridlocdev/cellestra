@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "description": "cellestra — the command-line toolkit for .ods workbooks (scripts, CI, and agents).",
+  "description": "cellestra \u2014 the command-line toolkit for .ods workbooks (scripts, CI, and agents).",
   "bin": {
     "cellestra": "./bin/cellestra.mjs"
   },
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@cellestra/charts": "workspace:*",
-    "@cellestra/core": "workspace:*"
+    "@cellestra/core": "workspace:*",
+    "@cellestra/ui": "workspace:*"
   }
 }

@@ -50,6 +50,7 @@ import {
   width,
 } from './commands/layout.ts';
 import { copy, fill, filter, move, paint } from './commands/range.ts';
+import { conditional, pageSetup, print } from './commands/printing.ts';
 import { man, schema, skill } from './commands/reference.ts';
 
 export const ROOT_DESCRIPTION =
@@ -128,6 +129,10 @@ export function buildRoot(version: string): CommandSpec {
       freeze,
       clear,
       settings,
+      conditional,
+      pageSetup,
+      // Printing — the headless face of File ▸ Export PDF.
+      print,
       // Chart sheets — the headless face of Insert ▸ Chart Sheet.
       chart,
       charts,

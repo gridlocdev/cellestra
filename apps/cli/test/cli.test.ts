@@ -1307,6 +1307,134 @@ describe('review fixes', () => {
   });
 });
 
+describe('rotation, conditional formats, page setup and print', () => {
+  const book = () => {
+    const ods = path2('book.ods');
+    run('new', ods);
+    writeFileSync(path2('d.csv'), 'Item,Q1\nA,5\nB,15\n');
+    run('put', ods, 'A1', '--from', path2('d.csv'), '-i');
+    return ods;
+  };
+
+  it('style --rotation turns text and 0 takes it off', () => {
+    const ods = book();
+    expect(run('style', ods, 'A1:B1', '--rotation', '450', '-i').exit).toBe(0);
+    expect(json(run('get', ods, 'B1', '--json').out).style.rotation).toBe(90);
+    run('style', ods, 'A1:B1', '--rotation', '0', '-i');
+    expect(json(run('get', ods, 'B1', '--json').out)).not.toHaveProperty('style');
+  });
+
+  it('conditional adds, replaces and clears rules, and they survive a save', () => {
+    const ods = book();
+    expect(run('conditional', ods, 'B2:B3', '--when', '>', '--value', '10', '-i').exit).toBe(0);
+    run(
+      'conditional',
+      ods,
+      'B2:B3',
+      '--when',
+      'between',
+      '--value',
+      '1',
+      '--value2',
+      '6',
+      '--format',
+      'yellow',
+      '-i',
+    );
+    expect(json(run('get', ods, 'B3', '--json').out).style.conditional).toEqual([
+      { when: '>', value: '10', format: 'light-red' },
+      { when: 'between', value: '1', value2: '6', format: 'yellow' },
+    ]);
+    run(
+      'conditional',
+      ods,
+      'B2:B3',
+      '--when',
+      'formula',
+      '--value',
+      '=B2>B$2',
+      '--format',
+      'bold',
+      '--replace',
+      '-i',
+    );
+    const rules = json(run('get', ods, 'B3', '--json').out).style.conditional;
+    expect(rules).toHaveLength(1);
+    expect(rules[0].when).toBe('formula');
+    expect(rules[0].value).toBe('=B2>B$2');
+    expect(run('conditional', ods, 'B2:B3', '--clear', '-i').exit).toBe(0);
+    expect(json(run('get', ods, 'B3', '--json').out)).not.toHaveProperty('style');
+    expect(run('conditional', ods, 'B2', '--when', 'sometimes', '-i').exit).not.toBe(0);
+  });
+
+  it('page-setup patches the setup and sheets reports it', () => {
+    const ods = book();
+    run(
+      'page-setup',
+      ods,
+      '--paper',
+      'letter',
+      '--orientation',
+      'landscape',
+      '--fit-width',
+      '1',
+      '--gridlines',
+      '-i',
+    );
+    run('page-setup', ods, '--margins', '15', '--center', 'both', '-i');
+    const setup = json(run('sheets', ods, '--json').out)[0].pageSetup;
+    expect(setup).toMatchObject({
+      paper: 'letter',
+      orientation: 'landscape',
+      margins: 15,
+      fitWidth: 1,
+      fitHeight: 0,
+      gridlines: true,
+      center: 'both',
+    });
+    expect(run('page-setup', ods, '--margins', '200', '-i').exit).not.toBe(0);
+    run('page-setup', ods, '--reset', '-i');
+    expect(json(run('sheets', ods, '--json').out)[0]).not.toHaveProperty('pageSetup');
+  });
+
+  it('apply takes conditional and page-setup ops', () => {
+    const ods = book();
+    const ops = path2('ops.json');
+    writeFileSync(
+      ops,
+      JSON.stringify([
+        { op: 'conditional', range: 'B2:B3', rules: [{ when: '<', value: 10, format: 'green' }] },
+        { op: 'page-setup', paper: '200x300', pages: 2, headers: true },
+        { op: 'style', range: 'A1', rotation: 45 },
+      ]),
+    );
+    expect(run('apply', ods, ops, '-i').exit).toBe(0);
+    expect(json(run('get', ods, 'B2', '--json').out).style.conditional[0].format).toBe('green');
+    expect(json(run('get', ods, 'A1', '--json').out).style.rotation).toBe(45);
+    expect(json(run('sheets', ods, '--json').out)[0].pageSetup).toMatchObject({
+      paper: '200x300',
+      pages: 2,
+      headers: true,
+    });
+  });
+
+  it('print writes printable HTML with the setup and the rules applied', () => {
+    const ods = book();
+    run('page-setup', ods, '--paper', 'a5', '--headers', '-i');
+    run('conditional', ods, 'B2:B3', '--when', '>', '--value', '10', '-i');
+    const r = run('print', ods, '-');
+    expect(r.exit).toBe(0);
+    expect(r.out).toContain('size:148mm 210mm');
+    expect(r.out).toMatch(/>15</);
+    expect(r.out.toLowerCase()).toContain('#ffc7ce');
+    const out = path2('p.html');
+    const j = json(run('print', ods, out, '--range', 'A1:A3', '--json').out);
+    expect(j).toMatchObject({ output: out, pages: 1, format: 'html' });
+    expect(readFileSync(out, 'utf8')).not.toMatch(/>15</);
+    expect(run('print', ods, path2('p.txt')).exit).not.toBe(0);
+  });
+});
+
 describe('isExpectedError', () => {
   it('treats user and file-system errors as expected, and runtime bugs as bugs', () => {
     const fsError = Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' });

@@ -22,9 +22,16 @@ Formatting
                  "font":"Helvetica Neue", "size":12, "color":"#1A1A1A", "fill":"#EEEEEE",
                  "align":"center", "valign":"middle", "wrap":true,      align: general|left|center|right; valign: top|middle|bottom
                  "format":"#,##0.00", "border":"thin", "borderColor":"#000000",  border: none|thin|medium|thick|dashed|dotted|double
+                 "rotation":90,     text angle in degrees (0-359, counter-clockwise; 0 removes it)
                  "checkbox":true}   a TRUE/FALSE checkbox (empty cells become FALSE; false removes it; saved
                                     as a linked form:checkbox, so LibreOffice shows it too)
                  Only the keys you give change; "fill": null removes a fill; "format":"General" resets.
+  {"op":"conditional", "range":"B2:D20", "rules":[{"when":">", "value":100, "format":"light-red"},
+                                                  {"when":"between", "value":1, "value2":10, "format":"yellow"},
+                                                  {"when":"formula", "value":"=B2<AVERAGE($B$2:$B$20)", "format":"bold"}]}
+                 rules replace the range's rules ([] removes them); "add":true appends to the existing ones.
+                 when: > < >= <= = != between not-between formula; value/value2: a number, text or "=formula"
+                 (relative to the range's top-left cell); format: light-red (default) | yellow | green | red-text | bold
   {"op":"width",  "columns":"B:D", "width": 120, "sheet":"Sheet1"}
   {"op":"height", "rows":"1", "height": 28}
   {"op":"freeze", "rows":1, "columns":0}                      0/0 unfreezes
@@ -35,6 +42,11 @@ Structure
   {"op":"add-sheet", "name":"Data", "at":1, "ifMissing":true}   at: 1-based position; ifMissing: no error if it exists
   {"op":"rename-sheet", "name":"Sheet1", "to":"Data"}   {"op":"delete-sheet", "name":"Old"}
   {"op":"duplicate-sheet", "name":"Sheet1", "as":"Copy"}   {"op":"move-sheet", "name":"Data", "to":1}
+  {"op":"page-setup", "sheet":"Data", "paper":"a4|letter|legal|a3|a5|tabloid|210x297", "orientation":"portrait|landscape",
+                      "margins":20 or {"top":20,"bottom":20,"left":15,"right":15},   millimetres
+                      "scale":100  or  "fitWidth":1, "fitHeight":0  or  "pages":2,    0 = any number of pages that way
+                      "gridlines":true, "headers":true, "center":"none|horizontal|vertical|both",
+                      "order":"down-then-over|over-then-down", "reset":true}   only the keys you give change
   {"op":"settings", "locale":"en-US", "calc":"automatic|manual", "activeSheet":"Data"}
   {"op":"insert-rows", "at":3, "count":2}   {"op":"delete-rows", "at":3, "count":1}      (1-based)
   {"op":"insert-cols", "at":"B", "count":1} {"op":"delete-cols", "at":"B"}
@@ -80,7 +92,8 @@ Cell (the one shape used everywhere a cell appears: get, cat.cells, find.matches
    "format": "0.00",         only when the number format is not General
    "style": {"bold": true, "fill": "#EEEEEE", "align": "center", "border": "thin"}}
                              only what differs from the default, using the same keys as apply's style op
-                             (bold, italic, underline, strikethrough, font, size, color, fill, align, valign, wrap, border, borderColor, checkbox)
+                             (bold, italic, underline, strikethrough, font, size, color, fill, align, valign, wrap, rotation, border, borderColor, checkbox,
+                              conditional: [{"when","value","value2","format"}…])
 
 Edit report (set, apply, sort, chart, clean-up, … — anything that writes, with --json)
   {"ok": true,
@@ -104,11 +117,13 @@ Reads
   sheets    → [{"name","usedRange","rows","columns","cells","chart","frozenRows","frozenColumns",
                 "tables":[{"name","range","header","headerColumn","bandedRows"}], "merges":["A1:D1"],
                 "widths":{"A":120}, "heights":{"1":28}, "hiddenColumns":["C"], "hiddenRows":["5"],
-                "validations":[{"range","kind","operator","value1","value2","list","source","response"}]}…]   (absent keys = default)
+                "validations":[{"range","kind","operator","value1","value2","list","source","response"}],
+                "pageSetup":{"paper","orientation","margins","scale"|"fitWidth","fitHeight"|"pages","gridlines","headers","center","order"}}…]   (absent keys = default)
   info      → {"file", "sheets": […], "namedRanges": [{"name","target","scope"}…], "locale", "calculation", "populatedCells"}
   stats     → {"sheet","range","count","numeric","sum","average","min","max"}
   functions → [{"name","signature","category","returns","summary","arguments":[{"name","kind","required","repeatable","description"}],"example"}…]
   name list → [{"name","target","scope"}…]
+  print     → {"output", "sheet", "pages", "format": "pdf"|"html"}
   man       → the whole command tree
 
 Contract

@@ -19,7 +19,7 @@ const editOptions = [inPlaceOpt, outputOpt, jsonOpt] as const;
 
 export const style: CommandSpec = {
   name: 'style',
-  description: 'Format a range: font, fill, alignment, number format, border',
+  description: 'Format a range: font, fill, alignment, rotation, number format, border',
   args: [
     fileArg(),
     { name: 'range', description: 'Range (or cell, name, table) to format, e.g. Sheet1.A1:D1' },
@@ -42,6 +42,11 @@ export const style: CommandSpec = {
     { name: '--fill', description: 'Background, #RRGGBB (or none)' },
     { name: '--align', description: 'general | left | center | right' },
     { name: '--valign', description: 'top | middle | bottom' },
+    {
+      name: '--rotation',
+      description: 'Text rotation in degrees counter-clockwise (90 reads upward, 0 = none)',
+      type: 'number',
+    },
     { name: '--number-format', description: 'Number format code, e.g. "#,##0.00" or General' },
     {
       name: '--border',
@@ -65,6 +70,7 @@ export const style: CommandSpec = {
       fill: p.str('--fill'),
       align: p.str('--align'),
       valign: p.str('--valign'),
+      rotation: p.num('--rotation'),
       format: p.str('--number-format'),
       border: p.str('--border'),
       borderColor: p.str('--border-color'),

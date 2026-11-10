@@ -19,6 +19,7 @@ import {
 } from '@cellestra/core';
 import type { Console } from './io.ts';
 import { toJson } from './json.ts';
+import { conditionalReport, pageSetupReport } from '../commands/printing.ts';
 
 /**
  * One cell as a script or an agent wants to see it: the address, the typed value, the display
@@ -110,7 +111,10 @@ export function styleReport(style: CellStyle): StyleReport | null {
   if (style.alignment.horizontal !== 'general') d['align'] = style.alignment.horizontal;
   if (style.alignment.vertical !== 'bottom') d['valign'] = style.alignment.vertical;
   if (style.alignment.wrapText) d['wrap'] = true;
+  if (style.alignment.rotation) d['rotation'] = style.alignment.rotation;
   if (style.checkbox) d['checkbox'] = true;
+  const rules = conditionalReport(style);
+  if (rules) d['conditional'] = rules;
   if (Borders.hasAnyEdge(style.border)) {
     const b = style.border;
     const uniform = sameEdge(b.left, b.right) && sameEdge(b.right, b.top) && sameEdge(b.top, b.bottom);
@@ -168,6 +172,7 @@ export function sheetReport(sheet: Worksheet): Record<string, unknown> {
     hiddenColumns: hidden(sheet.columns, (i) => SheetDimensions.columnToLetters(i)),
     hiddenRows: hidden(sheet.rows, (i) => String(i + 1)),
     validations: sheet.validations.length > 0 ? sheet.validations.map(validationReport) : null,
+    pageSetup: pageSetupReport(sheet.pageSetup),
   };
 }
 

@@ -58,6 +58,7 @@ import {
   parseRowSpan,
   parseSortLevels,
 } from './parsers.ts';
+import { conditionalOp, pageSetupOp } from './printing.ts';
 import { copyOrMove, fill, filter, paint } from './rangeOps.ts';
 
 /**
@@ -284,6 +285,11 @@ function run(session: EditSession, op: Op, kind: string): void {
       return clear(session, op);
     case 'style':
       return style(session, op);
+    case 'conditional':
+      return conditionalOp(session, op);
+    case 'page-setup':
+    case 'pagesetup':
+      return pageSetupOp(session, op);
     case 'width':
       return width(session, op);
     case 'height':
@@ -620,6 +626,17 @@ function style(session: EditSession, op: Op): void {
   }
   const wrap = op.bool('wrap');
   if (wrap !== null) align({ wrapText: wrap });
+  const rotation = op.number('rotation');
+  if (rotation !== null) {
+    if (!Number.isFinite(rotation)) throw new CliError('"rotation" must be a number of degrees.');
+    const degrees = ((Math.round(rotation) % 360) + 360) % 360;
+    // As in Format Cells: unrotated is the absence of both keys, so it matches the default style.
+    changes.push((s) => {
+      if ((s.alignment.rotation ?? 0) === degrees) return s;
+      const { rotation: _r, rotationAlign: _a, ...rest } = s.alignment;
+      return { ...s, alignment: degrees === 0 ? rest : { ...s.alignment, rotation: degrees } };
+    });
+  }
   const format = op.string('format');
   if (format !== null) changes.push((s) => ({ ...s, numberFormat: { code: format } }));
   if (op.present('border')) {
@@ -648,7 +665,7 @@ function style(session: EditSession, op: Op): void {
   const checkbox = op.bool('checkbox');
   if (changes.length === 0 && checkbox === null) {
     throw new CliError(
-      'a style op needs at least one of: bold, italic, underline, strikethrough, font, size, color, fill, align, valign, wrap, format, border, checkbox.',
+      'a style op needs at least one of: bold, italic, underline, strikethrough, font, size, color, fill, align, valign, wrap, rotation, format, border, checkbox.',
     );
   }
 

@@ -6,7 +6,9 @@
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/styles.css",
+    "./conditional-formats": "./src/components/conditionalFormats.ts",
+    "./print": "./src/print/printHtml.ts"
   },
   "dependencies": {
     "@cellestra/charts": "workspace:*",
