@@ -5,6 +5,7 @@ import {
   CommandMenu,
   Dialog,
   FormatCellsDialog,
+  ConditionalFormatDialog,
   FormulaBar,
   Grid,
   Icon,
@@ -95,6 +96,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       version: s.version,
       cellsChangedSince: (sheet, version) => s.cellsChangedSince(sheet, version),
       display: (value: CellValue, style) => ({ text: s.display(value, style) }),
+      conditionalStyle: (style, row, column) => app.conditionalStyle(style, row, column),
       editText: (row, column) => s.editText(row, column),
       draft: (text) => (draft.value = text),
       commit: (row, column, text) => app.commit(row, column, text),
@@ -774,6 +776,17 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
           styles={d.styles}
           locale={s.locale}
           onApply={(transform) => app.style('Format Cells', transform)}
+          onClose={() => {
+            app.dialog.value = null;
+            refocus();
+          }}
+        />
+      )}
+      {d?.kind === 'conditionalFormats' && (
+        <ConditionalFormatDialog
+          current={app.activeStyle}
+          base={{ sheet: app.sheetName, row: app.ranges[0]!.top, column: app.ranges[0]!.left }}
+          onApply={(transform) => app.style('Conditional Formatting', transform)}
           onClose={() => {
             app.dialog.value = null;
             refocus();

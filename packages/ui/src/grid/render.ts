@@ -36,6 +36,8 @@ export interface RenderInput {
   readonly selection: RenderSelection;
   /** Formatted text for a cell's value (number formats, dates, locale). */
   readonly display: (value: CellValue, style: CellStyle) => DisplayText;
+  /** Conditional formats: the style a cell shows, for styles with conditional maps. */
+  readonly conditional?: (style: CellStyle, row: number, column: number) => CellStyle;
   /** Hide the content of the cell under the inline editor. */
   readonly editing?: { row: number; column: number } | null;
   readonly showFormulas?: boolean;
@@ -65,7 +67,8 @@ export interface GridOverlay {
 
 /** The style a cell draws with: its own, with any hover preview applied over it. */
 function styleAt(input: RenderInput, row: number, column: number, id: number): CellStyle {
-  const style = input.styles.get(id);
+  let style = input.styles.get(id);
+  if (style.conditionalMaps?.length && input.conditional) style = input.conditional(style, row, column);
   const p = input.overlay?.stylePreview;
   if (!p) return style;
   for (const r of p.ranges)

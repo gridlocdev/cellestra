@@ -1,0 +1,51 @@
+/* Conditional Formatting dialog (ConditionalFormatDialog.tsx). */
+.cs-conditional {
+  width: 560px;
+}
+.cs-conditional .cs-cf-note,
+.cs-conditional .cs-cf-empty {
+  margin: 0 0 10px;
+  color: var(--cs-text-2);
+  font-size: 12px;
+}
+.cs-conditional .cs-cf-rules {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+.cs-conditional .cs-cf-rule {
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  margin: 0 0 8px;
+  padding: 6px 10px;
+}
+.cs-conditional .cs-cf-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.cs-conditional .cs-cf-line select {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.cs-conditional .cs-cf-line input {
+  flex: 1 1 0;
+  min-width: 80px;
+}
+.cs-conditional .cs-cf-sample {
+  padding: 2px 8px;
+  border: 1px solid var(--cs-border);
+  border-radius: 3px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cs-conditional .cs-cf-tools {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+.cs-conditional .cs-cf-error {
+  color: var(--cs-danger, #c00);
+  margin: 8px 0 0;
+}

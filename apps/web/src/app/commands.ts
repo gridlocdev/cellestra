@@ -867,6 +867,14 @@ export function buildCommands(app: AppController): CommandCatalog {
       icon: 'settings-2',
       run: () => (app.dialog.value = { kind: 'formatCells', styles: app.selectionStyles() }),
     },
+    {
+      id: 'format.conditional',
+      title: 'Conditional Formatting…',
+      description: 'Format cells by their values: highlight big numbers, matching text, or a formula',
+      group: 'Format',
+      icon: 'highlighter',
+      run: () => (app.dialog.value = { kind: 'conditionalFormats' }),
+    },
 
     // Data
     {

@@ -61,6 +61,11 @@ function writtenStyles(bytes: Uint8Array): { byName: Map<string, XmlElement>; ce
   for (const s of root.element(Office('automatic-styles'))!.elements(Style('style'))) {
     if (s.attr(Style('family')) === 'table-cell') byName.set(s.attr(Style('name'))!, s);
   }
+  // Conditional formats apply named styles, which a save writes into styles.xml.
+  const styles = parseXml(readEntry(bytes, OdsXmlNames.stylesPart)).root.element(Office('styles'));
+  for (const s of styles?.elements(Style('style')) ?? []) {
+    if (s.attr(Style('family')) === 'table-cell') byName.set(s.attr(Style('name'))!, s);
+  }
   const cellStyleNames = root
     .descendants(Table('table-cell'))
     .map((c) => c.attr(Table('style-name')))
@@ -201,12 +206,28 @@ describe('cell style protection, rotation and maps', () => {
     expect(styleKey(styleOf(reopened, 0))).toBe(styleKey(before));
   });
 
-  it('a common style a map names is written as an automatic style when styles.xml is not kept', () => {
+  it('a common style a map names is written as a named style when styles.xml is not kept', () => {
     const { workbook } = readOdsWithPackage(
       buildOds(['<style:map style:condition="cell-content()&gt;5" style:apply-style-name="Good"/>']),
     );
     const saved = writeOds(workbook); // no source package: styles.xml is generated afresh
     const { byName, cellStyleNames } = writtenStyles(saved);
+    const target = byName.get(cellStyleNames[0]!)!.element(Style('map'))!.attr(Style('apply-style-name'))!;
+    expect(byName.has(target)).toBe(true);
+  });
+
+  it('saving again rewrites the named styles maps apply instead of adding more', () => {
+    const bytes = buildOds(
+      ['<style:map style:condition="cell-content()=1" style:apply-style-name="ceRed"/>'],
+      '<style:style style:name="ceRed" style:family="table-cell"><style:text-properties fo:color="#ff0000"/></style:style>',
+    );
+    const once = resave(bytes);
+    const twice = resave(once);
+    const count = (b: Uint8Array) =>
+      (readEntry(b, OdsXmlNames.stylesPart).match(/CellestraCond/g) ?? []).length;
+    expect(count(once)).toBe(1);
+    expect(count(twice)).toBe(1);
+    const { byName, cellStyleNames } = writtenStyles(twice);
     const target = byName.get(cellStyleNames[0]!)!.element(Style('map'))!.attr(Style('apply-style-name'))!;
     expect(byName.has(target)).toBe(true);
   });

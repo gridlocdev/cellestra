@@ -19,3 +19,5 @@ export { FormatCellsDialog } from './components/FormatCellsDialog.tsx';
 export * from './components/formatCells.ts';
 export * from './charts/ChartSvg.tsx';
 export * from './charts/ChartSheetView.tsx';
+export * from './components/conditionalFormats.ts';
+export { ConditionalFormatDialog } from './components/ConditionalFormatDialog.tsx';

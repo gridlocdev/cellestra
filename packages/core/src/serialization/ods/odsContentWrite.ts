@@ -52,6 +52,7 @@ export function writeContentXml(
   workbook: Workbook,
   foreign: readonly ForeignXml[],
   reservedStyleNames: ReadonlySet<string> = new Set(),
+  commonStyles: XmlElement[] | null = null,
 ): XmlDocument {
   const autoStyles = new XmlElement(Office('automatic-styles'));
   const preserved = OdsPreserved.workbook(workbook);
@@ -62,7 +63,7 @@ export function writeContentXml(
     if (name !== null) reserved.add(name);
     autoStyles.add(style.clone());
   }
-  const registry = new StyleRegistry(workbook.styles, autoStyles, reserved, reservedStyleNames);
+  const registry = new StyleRegistry(workbook.styles, autoStyles, reserved, reservedStyleNames, commonStyles);
 
   const spreadsheet = new XmlElement(Office('spreadsheet'));
 

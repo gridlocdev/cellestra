@@ -1,10 +1,11 @@
 import type { Workbook } from '../../model/workbook.ts';
-import { serializeXml, tryParseXml } from '../../xml/index.ts';
+import { XmlElement, serializeXml, tryParseXml, type XmlDocument } from '../../xml/index.ts';
 import { writeContentXml } from './odsContentWrite.ts';
 import { OdsCharts } from './odsCharts.ts';
 import { OdsPackage } from './odsPackage.ts';
 import { OdsSupportXml } from './odsSupportXml.ts';
-import { OdsXmlNames as N, Style } from './odsXmlNames.ts';
+import { CONDITIONAL_STYLE_PREFIX } from './odsStyleRegistry.ts';
+import { Fo, OdsXmlNames as N, NumberNs, Office, Style } from './odsXmlNames.ts';
 
 /**
  * Writes a `Workbook` to `.ods` bytes. Regenerates content.xml, settings.xml, and the manifest from
@@ -24,18 +25,44 @@ export const OdsWriter = {
     // Never indented: whitespace between the spans of a `text:p` (a cell, a comment, a shape's
     // text) is text to a reader, and a reader cannot tell indentation from it.
     const flat = { indent: false } as const;
-    const reservedStyleNames = styleNames(pkg.getText(N.stylesPart));
+    const stylesText = pkg.getText(N.stylesPart);
+    const styles =
+      stylesText === null
+        ? OdsSupportXml.buildStyles()
+        : tryParseXml(stylesText, { preserveWhitespace: true });
+    const stripped = styles ? dropConditionalStyles(styles) : false;
+    const reservedStyleNames = styles ? styleNames(styles) : new Set<string>();
+    // Named styles conditional formats apply; null when styles.xml can't be read (left as it was).
+    const commonStyles: XmlElement[] | null = styles ? [] : null;
     pkg.setText(
       N.contentPart,
-      serializeXml(writeContentXml(workbook, pkg.foreignSpreadsheetChildren, reservedStyleNames), flat),
+      serializeXml(
+        writeContentXml(workbook, pkg.foreignSpreadsheetChildren, reservedStyleNames, commonStyles),
+        flat,
+      ),
     );
+    if (styles && (stylesText === null || stripped || commonStyles!.length > 0)) {
+      let officeStyles = styles.root.element(Office('styles'));
+      if (!officeStyles) {
+        // Schema order: office:font-face-decls, then office:styles.
+        officeStyles = new XmlElement(Office('styles'));
+        styles.root.addFirst(officeStyles);
+        const fonts = styles.root.element(Office('font-face-decls'));
+        if (fonts && styles.root.remove(fonts)) styles.root.addFirst(fonts);
+      }
+      if (commonStyles!.length > 0) {
+        styles.root.declare(Style.prefix, Style.uri).declare(Fo.prefix, Fo.uri);
+        if (commonStyles!.some((e) => e.uri === NumberNs.uri))
+          styles.root.declare(NumberNs.prefix, NumberNs.uri);
+        for (const e of commonStyles!) officeStyles.add(e);
+      }
+      pkg.setText(N.stylesPart, serializeXml(styles, flat));
+    }
     pkg.setText(
       N.settingsPart,
       serializeXml(OdsSupportXml.buildSettings(workbook, pkg.getText(N.settingsPart)), flat),
     );
 
-    if (!pkg.contains(N.stylesPart))
-      pkg.setText(N.stylesPart, serializeXml(OdsSupportXml.buildStyles(), flat));
     if (!pkg.contains(N.metaPart)) pkg.setText(N.metaPart, serializeXml(OdsSupportXml.buildMeta(), flat));
 
     // The manifest lists every part (regenerated to match the final contents), plus a directory
@@ -56,14 +83,23 @@ export const OdsWriter = {
  * (`ce1`, `N0`) must not reuse one: LibreOffice resolves a data style by name across both parts,
  * so a generated `N0` beside the page styles' own `N0` shows one of them with the other's format.
  */
-function styleNames(stylesXml: string | null): Set<string> {
+function styleNames(styles: XmlDocument): Set<string> {
   const names = new Set<string>();
-  const root =
-    stylesXml === null ? null : (tryParseXml(stylesXml, { preserveWhitespace: false })?.root ?? null);
-  if (!root) return names;
-  for (const e of root.descendants()) {
+  for (const e of styles.root.descendants()) {
     const name = e.attr(Style('name'));
     if (name !== null) names.add(name);
   }
   return names;
+}
+
+/** Remove the named styles an earlier save wrote for conditional formats; true when there were any. */
+function dropConditionalStyles(styles: XmlDocument): boolean {
+  const officeStyles = styles.root.element(Office('styles'));
+  if (!officeStyles) return false;
+  let dropped = false;
+  for (const e of officeStyles.elements(Style('style'))) {
+    if (e.attr(Style('name'))?.startsWith(CONDITIONAL_STYLE_PREFIX))
+      dropped = officeStyles.remove(e) || dropped;
+  }
+  return dropped;
 }

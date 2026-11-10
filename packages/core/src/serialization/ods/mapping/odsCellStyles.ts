@@ -39,6 +39,13 @@ export interface MapStyleTarget {
   readonly common: boolean;
 }
 
+/**
+ * The prefix of the common styles a save writes for conditional formats whose applied style has no
+ * name of its own (LibreOffice applies only named styles). They are dropped from styles.xml and
+ * written again on every save, so edited or deleted rules leave none behind.
+ */
+export const CONDITIONAL_STYLE_PREFIX = 'CellestraCond';
+
 /** Maps a `CellStyle` to an ODF table-cell automatic style and back. */
 export const OdsCellStyles = {
   /** `maps` are the style's `conditionalMaps` with each applied style's name as it is written. */
@@ -198,7 +205,9 @@ export const OdsCellStyles = {
         return [
           {
             condition,
-            applyStyleName: target === null || target.common ? name : null,
+            // A style an earlier save generated has no name worth keeping: the next save writes it again.
+            applyStyleName:
+              target === null || (target.common && !name.startsWith(CONDITIONAL_STYLE_PREFIX)) ? name : null,
             applyStyle: target?.style ?? null,
             baseCellAddress: map.attr(Style('base-cell-address')),
           },

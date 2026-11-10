@@ -35,6 +35,8 @@ import {
   type SortSpec,
   type Table,
   type Worksheet,
+  ConditionalStyles,
+  type Workbook,
 } from '@cellestra/core';
 import {
   BrowserStore,
@@ -99,6 +101,7 @@ export type DialogState =
       readonly resolve: (choice: 'csv' | 'ods' | 'cancel') => void;
     }
   | { readonly kind: 'shortcuts' }
+  | { readonly kind: 'conditionalFormats' }
   | { readonly kind: 'about' }
   | { readonly kind: 'settings' }
   | { readonly kind: 'formatCells'; readonly styles: ReturnType<AppController['selectionStyles']> }
@@ -868,6 +871,18 @@ export class AppController {
 
   get sheet(): Worksheet {
     return this.session.activeSheet.peek();
+  }
+
+  #conditional: { workbook: Workbook; version: number; styles: ConditionalStyles } | null = null;
+
+  /** The style a cell shows with its conditional formats applied (made fresh after each change). */
+  conditionalStyle(style: CellStyle, row: number, column: number): CellStyle {
+    const workbook = this.session.workbook.peek();
+    const version = this.session.version.peek();
+    const c = this.#conditional;
+    if (!c || c.workbook !== workbook || c.version !== version)
+      this.#conditional = { workbook, version, styles: new ConditionalStyles(workbook) };
+    return this.#conditional!.styles.resolve(style, this.sheetName, row, column);
   }
 
   get sheetName(): string {

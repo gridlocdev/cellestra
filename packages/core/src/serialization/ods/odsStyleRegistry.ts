@@ -1,10 +1,12 @@
 import { NumberFormats, type CellStyleMap, type NumberFormat } from '../../styling/cellStyle.ts';
 import type { StylePool } from '../../styling/stylePool.ts';
 import { XmlElement } from '../../xml/index.ts';
-import { OdsCellStyles, type WrittenStyleMap } from './mapping/odsCellStyles.ts';
+import { CONDITIONAL_STYLE_PREFIX, OdsCellStyles, type WrittenStyleMap } from './mapping/odsCellStyles.ts';
 import { OdsDataStyles } from './mapping/odsDataStyles.ts';
 import { formatUpTo3, pxToCm } from './odsContentShared.ts';
 import { Style } from './odsXmlNames.ts';
+
+export { CONDITIONAL_STYLE_PREFIX };
 
 /** Write side: interns cell/data/column/row automatic styles into `office:automatic-styles`. */
 export class StyleRegistry {
@@ -15,6 +17,9 @@ export class StyleRegistry {
   private readonly columnStyleNames = new Map<number, string>();
   private readonly rowStyleNames = new Map<number, string>();
   private next = 0;
+  private readonly commonStyles: XmlElement[] | null;
+  private readonly commonStyleNames = new Map<number, string>();
+  private readonly commonDataStyleNames = new Map<string, string>();
 
   /** Names already used by preserved automatic styles and by styles.xml, which generated names must not take. */
   private readonly reserved: ReadonlySet<string>;
@@ -26,8 +31,11 @@ export class StyleRegistry {
     autoStyles: XmlElement,
     reserved: ReadonlySet<string> = new Set(),
     commonNames: ReadonlySet<string> = new Set(),
+    /** Where named styles for conditional formats go (styles.xml's `office:styles`); null writes them as automatic styles. */
+    commonStyles: XmlElement[] | null = null,
   ) {
     this.styles = styles;
+    this.commonStyles = commonStyles;
     this.autoStyles = autoStyles;
     this.reserved = reserved;
     this.commonNames = commonNames;
@@ -77,7 +85,34 @@ export class StyleRegistry {
     ) {
       return map.applyStyleName;
     }
-    return map.applyStyle === null ? null : this.cellStyle(this.styles.intern(map.applyStyle));
+    if (map.applyStyle === null) return null;
+    const id = this.styles.intern(map.applyStyle);
+    return this.commonStyles === null ? this.cellStyle(id) : this.commonStyle(id);
+  }
+
+  /** A named (common) cell style for styles.xml, with its data style beside it. */
+  private commonStyle(styleId: number): string {
+    const existing = this.commonStyleNames.get(styleId);
+    if (existing !== undefined) return existing;
+    const style = this.styles.get(styleId);
+    let dataStyleName: string | null = null;
+    if (!NumberFormats.isGeneral(style.numberFormat)) {
+      dataStyleName = this.commonDataStyleNames.get(style.numberFormat.code) ?? null;
+      if (dataStyleName === null) {
+        const name = this.nextName('N');
+        const elements = OdsDataStyles.build(name, style.numberFormat);
+        if (elements.length > 0) {
+          this.commonStyles!.push(...elements);
+          this.commonDataStyleNames.set(style.numberFormat.code, name);
+          dataStyleName = name;
+        }
+      }
+    }
+    const name = this.nextName(CONDITIONAL_STYLE_PREFIX);
+    // Its own maps are not written: an applied style's maps never apply.
+    this.commonStyles!.push(OdsCellStyles.build(name, { ...style, conditionalMaps: [] }, dataStyleName));
+    this.commonStyleNames.set(styleId, name);
+    return name;
   }
 
   private dataStyle(format: NumberFormat): string | null {

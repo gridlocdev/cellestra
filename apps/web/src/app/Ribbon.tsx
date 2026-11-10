@@ -283,6 +283,7 @@ function HomeTab(ctx: Ctx) {
             label="Format"
             items={[
               'format.cells',
+              'format.conditional',
               '|',
               'format.columnWidth',
               'format.rowHeight',

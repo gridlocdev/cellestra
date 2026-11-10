@@ -18,6 +18,7 @@ export * from './styling/color.ts';
 export * from './styling/contrast.ts';
 export * from './styling/cellStyle.ts';
 export * from './styling/stylePool.ts';
+export * from './styling/conditionalStyles.ts';
 export * from './styling/numberFormatParser.ts';
 export * from './styling/numberFormatCode.ts';
 export * from './styling/textMeasurer.ts';

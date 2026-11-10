@@ -51,6 +51,11 @@ export interface GridHost {
    */
   cellsChangedSince?(sheet: string, version: number): readonly { row: number; column: number }[] | null;
   display(value: CellValue, style: CellStyle): DisplayText;
+  /**
+   * The style a cell shows once its conditional formats are applied (`style` when none holds).
+   * Only called for styles that carry conditional maps.
+   */
+  conditionalStyle?(style: CellStyle, row: number, column: number): CellStyle;
   /** What the inline editor starts with (`=SUM(A1:A3)` for formulas, the raw input otherwise). */
   editText(row: number, column: number): string;
   /**
@@ -344,6 +349,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       palette: palette.value,
       selection: sel,
       display: (val, style) => host.display(val, style),
+      conditional: host.conditionalStyle?.bind(host),
       editing,
       showFormulas: showFormulas?.value ?? false,
     });
