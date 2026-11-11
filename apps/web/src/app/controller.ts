@@ -60,7 +60,7 @@ import {
   orphanedRecoveries,
   recentFiles,
   rememberRecent,
-  rotatedBox,
+  rotatedCellBox,
   saveRecovery,
   type CellestraNative,
   type DocumentRef,
@@ -1412,17 +1412,18 @@ export class AppController {
         width = Math.max(...text.split('\n').map((line) => ctx.measureText(line).width));
         measured.set(key, width);
       }
-      // Turned text takes the width of its upright bounding box: a 90° heading needs only its
-      // line height, a 45° one its diagonal. Same box the grid draws and sizes rows with.
+      // Flat text gets 6px each side. Turned text takes the width of its upright bounding box,
+      // padding included: a 90° heading needs only its line height, a 45° one its diagonal.
+      // Same box the grid draws and sizes rows with.
       if (rotation !== 0) {
         const lines = text.split('\n').length;
-        width = rotatedBox(width, style.font.sizePoints * (4 / 3) * 1.2 * lines, rotation).width;
-      }
+        width = rotatedCellBox(width, style.font.sizePoints * (4 / 3) * 1.2 * lines, rotation).width;
+      } else width += 12;
       if (width > (widths.get(column) ?? 0)) widths.set(column, width);
     }
     const cmds = [...widths]
       .sort((a, b) => a[0] - b[0])
-      .map(([c, width]) => EditCommands.setColumnWidth(this.sheetName, c, Math.ceil(width + 12)));
+      .map(([c, width]) => EditCommands.setColumnWidth(this.sheetName, c, Math.ceil(width)));
     this.run(each('Autofit Columns', cmds));
   }
 

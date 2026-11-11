@@ -521,21 +521,13 @@ function drawRotatedText(
   const lineHeight = px * 1.2;
   const w = Math.max(...lines.map((t) => ctx.measureText(t).width));
   const h = lines.length * lineHeight;
-  const { width: bw, height: bh } = rotatedBox(w, h, degrees);
-  const padX = CELL_PAD_X * zoom;
-  const padY = CELL_PAD_Y * zoom;
+  // The padding turns with the text: its ends keep the same gap as flat text's ends, so 90° text
+  // stops short of the row's top and bottom lines.
+  const { width: bw, height: bh } = rotatedBox(w + 2 * CELL_PAD_X * zoom, h + 2 * CELL_PAD_Y * zoom, degrees);
   const cx =
-    align === 'left'
-      ? rect.x + padX + bw / 2
-      : align === 'right'
-        ? rect.x + rect.w - padX - bw / 2
-        : rect.x + rect.w / 2;
+    align === 'left' ? rect.x + bw / 2 : align === 'right' ? rect.x + rect.w - bw / 2 : rect.x + rect.w / 2;
   const cy =
-    vAlign === 'top'
-      ? rect.y + padY + bh / 2
-      : vAlign === 'middle'
-        ? rect.y + rect.h / 2
-        : rect.y + rect.h - padY - bh / 2;
+    vAlign === 'top' ? rect.y + bh / 2 : vAlign === 'middle' ? rect.y + rect.h / 2 : rect.y + rect.h - bh / 2;
   ctx.save();
   ctx.beginPath();
   ctx.rect(rect.x, rect.y, rect.w, rect.h);
@@ -547,6 +539,18 @@ function drawRotatedText(
   const x = align === 'left' ? -w / 2 : align === 'right' ? w / 2 : 0;
   lines.forEach((text, i) => ctx.fillText(text, x, -h / 2 + i * lineHeight + (lineHeight - px) / 2));
   ctx.restore();
+}
+
+/**
+ * The upright room a cell's turned text needs, padding included: the text's `width` × `height` with
+ * the cell padding added along it (so the ends get CELL_PAD_X), then turned `degrees`.
+ */
+export function rotatedCellBox(
+  width: number,
+  height: number,
+  degrees: number,
+): { width: number; height: number } {
+  return rotatedBox(width + 2 * CELL_PAD_X, height + 2 * CELL_PAD_Y, degrees);
 }
 
 /** The upright bounding box of a `w` × `h` block turned `degrees`. */

@@ -52,8 +52,8 @@ describe('contentRowHeights', () => {
       t.put(0, 0, 'x'.repeat(20)); // 120px wide
       return contentRowHeights(t.sheet, t.wb.styles, m).get(0) ?? Defaults.rowHeight;
     };
-    expect(turned(90)).toBe(120 + 2 * 2);
-    expect(turned(270)).toBe(120 + 2 * 2);
+    expect(turned(90)).toBe(120 + 2 * 5); // the padding turns with the text
+    expect(turned(270)).toBe(120 + 2 * 5);
     expect(turned(45)).toBeGreaterThan(Defaults.rowHeight);
     expect(turned(45)).toBeLessThan(turned(90));
   });
