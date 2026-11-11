@@ -1,4 +1,4 @@
-import { CellValue, EditCommands, OdsWriter, Workbook } from '@cellestra/core';
+import { CellRange, CellValue, EditCommands, OdsWriter, Workbook } from '@cellestra/core';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DocumentRef, FileStore, OpenedDocument } from '@cellestra/ui';
 import type { AppController as Controller } from '../src/app/controller.ts';
@@ -421,5 +421,35 @@ describe('zoom', () => {
     app.session.newDocument();
     expect(app.zoom.value).toBe(1);
     expect(app.session.workbook.peek().settings.zoom).toBeNull();
+  });
+});
+
+describe('autofit columns', () => {
+  it('fits rotated text by its turned box, even when it wraps', async () => {
+    // A fake canvas: every character is 10px wide.
+    Object.assign(document, {
+      createElement: () => ({
+        getContext: () => ({ font: '', measureText: (t: string) => ({ width: t.length * 10 }) }),
+      }),
+    });
+    const app = await makeApp();
+    const sheet = app.session.activeSheet.peek();
+    for (const c of [0, 1, 2, 3]) sheet.setValue(0, c, CellValue.text('Quarterly total'));
+    const turn = (column: number, rotation: number, wrapText = false) => {
+      app.selection.select(0, column);
+      app.style('Rotate', (s) => ({ ...s, alignment: { ...s.alignment, rotation, wrapText } }));
+    };
+    turn(1, 90);
+    turn(2, 45);
+    turn(3, 90, true);
+    app.selection.select(0, 0);
+    app.autofitColumns(CellRange.parse('A1:D1'));
+    const [flat, up, slant, wrapped] = [0, 1, 2, 3].map((c) => sheet.getColumnWidth(c));
+    expect(flat).toBe(150 + 12);
+    expect(up).toBeLessThan(40); // one line's height, not 150px of text
+    expect(up).toBeGreaterThan(12);
+    expect(slant).toBeGreaterThan(up!);
+    expect(slant).toBeLessThan(flat!);
+    expect(wrapped).toBe(up);
   });
 });

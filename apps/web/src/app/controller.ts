@@ -60,6 +60,7 @@ import {
   orphanedRecoveries,
   recentFiles,
   rememberRecent,
+  rotatedBox,
   saveRecovery,
   type CellestraNative,
   type DocumentRef,
@@ -1394,7 +1395,9 @@ export class AppController {
       const styleId = sheet.effectiveStyleId(row, column);
       const style = wb.styles.get(styleId);
       // Wrapped text folds at the column's edge; measured flat it would ask for a paragraph's width.
-      if (style.alignment.wrapText) continue;
+      // Rotated text never wraps (the grid draws it unwrapped), so it is always measured.
+      const rotation = style.alignment.rotation ?? 0;
+      if (style.alignment.wrapText && rotation === 0) continue;
       let font = fonts.get(styleId);
       if (font === undefined) {
         font = `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${style.font.sizePoints * (4 / 3)}px ${style.font.family}, system-ui, sans-serif`;
@@ -1408,6 +1411,12 @@ export class AppController {
         // A multi-line value is as wide as its longest line.
         width = Math.max(...text.split('\n').map((line) => ctx.measureText(line).width));
         measured.set(key, width);
+      }
+      // Turned text takes the width of its upright bounding box: a 90° heading needs only its
+      // line height, a 45° one its diagonal. Same box the grid draws and sizes rows with.
+      if (rotation !== 0) {
+        const lines = text.split('\n').length;
+        width = rotatedBox(width, style.font.sizePoints * (4 / 3) * 1.2 * lines, rotation).width;
       }
       if (width > (widths.get(column) ?? 0)) widths.set(column, width);
     }
