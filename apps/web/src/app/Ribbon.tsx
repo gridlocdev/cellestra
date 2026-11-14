@@ -172,6 +172,8 @@ export function Ribbon({
 function HomeTab(ctx: Ctx) {
   const { app } = ctx;
   const st = app.activeStyle;
+  // A chart sheet has no cells to style (the command buttons disable themselves).
+  const off = app.session.activeSheet.value.isChartSheet;
   return (
     <>
       <Group label="Clipboard">
@@ -188,8 +190,8 @@ function HomeTab(ctx: Ctx) {
       <Group label="Font">
         <Stack>
           <div class="rb-row">
-            <FontFamilyBox app={app} style={st} />
-            <FontSizeBox app={app} style={st} />
+            <FontFamilyBox app={app} style={st} disabled={off} />
+            <FontSizeBox app={app} style={st} disabled={off} />
           </div>
           <div class="rb-row tight">
             <Tool {...ctx} id="format.bold" glyph={<b class="rb-g">B</b>} />
@@ -199,6 +201,7 @@ function HomeTab(ctx: Ctx) {
             <Sep />
             <ColorButton
               app={app}
+              disabled={off}
               kind="text"
               current={st.font.color}
               swatches={TEXT_COLORS}
@@ -206,6 +209,7 @@ function HomeTab(ctx: Ctx) {
             />
             <ColorButton
               app={app}
+              disabled={off}
               kind="fill"
               current={st.fill.background}
               swatches={FILL_COLORS}
@@ -252,7 +256,7 @@ function HomeTab(ctx: Ctx) {
 
       <Group label="Number">
         <Stack>
-          <NumberFormatBox app={app} style={st} />
+          <NumberFormatBox app={app} style={st} disabled={off} />
           <div class="rb-row tight">
             <Tool {...ctx} id="format.asCurrency" glyph={<span class="rb-g">$</span>} />
             <Tool {...ctx} id="format.asPercent" glyph={<span class="rb-g">%</span>} />
@@ -789,7 +793,13 @@ function refocus(app: AppController) {
   queueMicrotask(() => app.grid.current?.focus());
 }
 
-function FontFamilyBox({ app, style }: { readonly app: AppController; readonly style: CellStyle }) {
+interface BoxProps {
+  readonly app: AppController;
+  readonly style: CellStyle;
+  readonly disabled: boolean;
+}
+
+function FontFamilyBox({ app, style, disabled }: BoxProps) {
   const family = style.font.family;
   const families = FONT_FAMILIES.includes(family) ? FONT_FAMILIES : [family, ...FONT_FAMILIES];
   return (
@@ -798,6 +808,7 @@ function FontFamilyBox({ app, style }: { readonly app: AppController; readonly s
       style={{ width: '150px' }}
       aria-label="Font"
       title="Font"
+      disabled={disabled}
       value={family}
       onChange={(e) => {
         const next = e.currentTarget.value;
@@ -818,7 +829,7 @@ function FontFamilyBox({ app, style }: { readonly app: AppController; readonly s
  * The font size: type a size, or open the list, where hovering a size previews it on the
  * selection before anything is applied.
  */
-function FontSizeBox({ app, style }: { readonly app: AppController; readonly style: CellStyle }) {
+function FontSizeBox({ app, style, disabled }: BoxProps) {
   const size = style.font.sizePoints;
   const sizes = FONT_SIZES.includes(size) ? FONT_SIZES : [...FONT_SIZES, size].sort((a, b) => a - b);
   const [open, setOpen] = useState(false);
@@ -848,6 +859,7 @@ function FontSizeBox({ app, style }: { readonly app: AppController; readonly sty
             class="rb-dd rb-size-input"
             aria-label="Font size"
             title="Font size"
+            disabled={disabled}
             inputMode="decimal"
             value={text}
             onInput={(e) => setText(e.currentTarget.value)}
@@ -872,6 +884,7 @@ function FontSizeBox({ app, style }: { readonly app: AppController; readonly sty
             class="rb-size-open"
             aria-label="Font sizes"
             aria-haspopup="listbox"
+            disabled={disabled}
             aria-expanded={open}
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => (open ? close() : setOpen(true))}
@@ -902,7 +915,7 @@ function FontSizeBox({ app, style }: { readonly app: AppController; readonly sty
   );
 }
 
-function NumberFormatBox({ app, style }: { readonly app: AppController; readonly style: CellStyle }) {
+function NumberFormatBox({ app, style, disabled }: BoxProps) {
   const index = presetIndex(style.numberFormat.code);
   return (
     <select
@@ -910,6 +923,7 @@ function NumberFormatBox({ app, style }: { readonly app: AppController; readonly
       style={{ width: '150px' }}
       aria-label="Number format"
       title="Number format"
+      disabled={disabled}
       value={String(index)}
       onChange={(e) => {
         const preset = NUMBER_FORMAT_PRESETS[Number(e.currentTarget.value)];
@@ -939,6 +953,7 @@ function ColorButton(props: {
   readonly current: ArgbColor | null;
   readonly swatches: readonly string[];
   readonly resetLabel: string;
+  readonly disabled: boolean;
 }) {
   const { app, kind } = props;
   const [open, setOpen] = useState(false);
@@ -979,6 +994,7 @@ function ColorButton(props: {
           aria-label={label}
           aria-haspopup="dialog"
           aria-expanded={open}
+          disabled={props.disabled}
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => setOpen(!open)}
         >

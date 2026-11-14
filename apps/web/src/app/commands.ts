@@ -1133,7 +1133,7 @@ export function buildCommands(app: AppController): CommandCatalog {
   // A chart sheet shows no grid: cell, format, and data commands would write to an invisible A1.
   const onChart = () => s.activeSheet.value.isChartSheet;
   const gridOnly = (c: CommandSpec) =>
-    (GRID_GROUPS.has(c.group) && !GRID_EXEMPT.has(c.id)) || c.id === 'sheet.resetData';
+    (GRID_GROUPS.has(c.group) && !GRID_EXEMPT.has(c.id)) || GRID_EXTRA.has(c.id);
   const catalog = new CommandCatalog(
     specs.map((c) => {
       if (!gridOnly(c)) return c;
@@ -1187,6 +1187,8 @@ function insertNow(app: AppController, what: 'date' | 'time'): void {
 }
 
 const GRID_GROUPS = new Set(['Edit', 'Format', 'Data', 'Insert']);
+/** Commands outside those groups that only make sense on a sheet of cells. */
+const GRID_EXTRA = new Set(['sheet.resetData', 'file.exportCsv']);
 /** Edit/Insert commands that still make sense on a chart sheet. */
 const GRID_EXEMPT = new Set([
   'edit.undo',

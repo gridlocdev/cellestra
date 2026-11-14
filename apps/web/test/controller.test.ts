@@ -568,6 +568,24 @@ describe('name box', () => {
   });
 });
 
+describe('chart sheets', () => {
+  it('leave styles and CSV export alone', async () => {
+    const { buildCommands } = await import('../src/app/commands.ts');
+    const { createChart } = await import('@cellestra/charts');
+    const app = await makeApp();
+    const catalog = buildCommands(app);
+    const exportCsv = catalog.get('file.exportCsv')!;
+    expect(catalog.isEnabled(exportCsv)).toBe(true);
+    app.insertChartSheet(createChart());
+    expect(app.sheet.isChartSheet).toBe(true);
+    expect(catalog.isEnabled(exportCsv)).toBe(false);
+    const undoable = app.session.canUndo.peek();
+    app.style('Bold', (st) => ({ ...st, font: { ...st.font, bold: true } }));
+    expect(app.session.canUndo.peek()).toBe(undoable);
+    expect(app.sheet.find(0, 0)).toBeUndefined();
+  });
+});
+
 describe('zoom', () => {
   it('zooms by a pinch or ⌘-wheel factor, within the zoom range', async () => {
     const { wheelZoomFactor } = await import('../src/app/controller.ts');

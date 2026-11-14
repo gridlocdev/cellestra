@@ -1241,6 +1241,8 @@ export class AppController {
 
   style(label: string, change: (s: CellStyle) => CellStyle): void {
     this.stylePreview.value = null;
+    // A chart sheet shows no cells: a style would land on an invisible A1.
+    if (this.sheet.isChartSheet) return;
     const wb = this.session.workbook.peek();
     this.run(
       each(
