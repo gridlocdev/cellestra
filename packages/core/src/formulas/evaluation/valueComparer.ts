@@ -95,7 +95,7 @@ export function compareOrdinalIgnoreCase(a: string, b: string): number {
 }
 
 /** LibreOffice has no boolean type in comparisons: TRUE is 1 and FALSE is 0, so 1=TRUE() is TRUE. */
-const booleanAsNumber = (v: CellValue): CellValue =>
+export const booleanAsNumber = (v: CellValue): CellValue =>
   v.kind === 'boolean' ? CellValue.number(v.value ? 1 : 0) : v;
 
 function relational(a: CellValue, b: CellValue, predicate: (c: number) => boolean): CellValue {

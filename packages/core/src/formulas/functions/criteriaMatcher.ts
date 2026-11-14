@@ -1,5 +1,5 @@
 import { CellValue } from '../../values/cellValue.ts';
-import { approxEqual, compareOrdinalIgnoreCase } from '../evaluation/valueComparer.ts';
+import { approxEqual, booleanAsNumber, compareOrdinalIgnoreCase } from '../evaluation/valueComparer.ts';
 import { localeInfo } from '../evaluation/localeInfo.ts';
 import { parseNumberAny } from '../evaluation/valueParsing.ts';
 
@@ -15,9 +15,23 @@ function splitOperator(text: string): [Operator, string] {
 
 const asText = (v: CellValue): string => (v.kind === 'text' ? v.value : CellValue.toInvariantString(v));
 
+/** A cell's number for a numeric criterion: TRUE and FALSE count as 1 and 0, as in Calc. */
+function numberOf(value: CellValue): number | null {
+  const v = booleanAsNumber(value);
+  return v.kind === 'number' ? v.value : null;
+}
+
+/** The number a criteria operand stands for: a number, or TRUE/FALSE as 1/0. */
+function operandNumber(operand: string, locale: string): number | null {
+  const upper = operand.trim().toUpperCase();
+  if (upper === 'TRUE') return 1;
+  if (upper === 'FALSE') return 0;
+  return parseNumberAny(operand, localeInfo(locale));
+}
+
 function compareNumeric(value: CellValue, op: Operator, operand: number): boolean {
-  if (value.kind !== 'number') return op === '<>';
-  const v = value.value;
+  const v = numberOf(value);
+  if (v === null) return op === '<>';
   switch (op) {
     case '=':
       return approxEqual(v, operand);
@@ -101,18 +115,18 @@ export class CriteriaMatcher {
   }
 
   static build(criteria: CellValue, locale: string): CriteriaMatcher {
-    // An empty criteria cell means 0, as in Calc: it matches zeros, not blanks.
-    if (criteria.kind === 'number' || criteria.kind === 'empty') {
-      const target = criteria.kind === 'number' ? criteria.value : 0;
-      return new CriteriaMatcher((v) => v.kind === 'number' && approxEqual(v.value, target));
-    }
-    if (criteria.kind === 'boolean') {
-      const target = criteria.value;
-      return new CriteriaMatcher((v) => v.kind === 'boolean' && v.value === target);
+    // An empty criteria cell means 0, as in Calc: it matches zeros, not blanks. TRUE and FALSE
+    // are 1 and 0 on both sides.
+    if (criteria.kind === 'number' || criteria.kind === 'empty' || criteria.kind === 'boolean') {
+      const target = numberOf(criteria) ?? 0;
+      return new CriteriaMatcher((v) => {
+        const n = numberOf(v);
+        return n !== null && approxEqual(n, target);
+      });
     }
     const text = asText(criteria);
     const [op, operand] = splitOperator(text);
-    const numeric = parseNumberAny(operand, localeInfo(locale));
+    const numeric = operandNumber(operand, locale);
     if (numeric !== null) return new CriteriaMatcher((v) => compareNumeric(v, op, numeric));
     switch (op) {
       case '>':

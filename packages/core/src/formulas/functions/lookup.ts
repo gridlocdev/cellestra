@@ -2,7 +2,7 @@ import { CellRange } from '../../model/cellRange.ts';
 import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import type { Expr } from '../ast/expr.ts';
-import { approxEqual, ValueComparer } from '../evaluation/valueComparer.ts';
+import { approxEqual, booleanAsNumber, ValueComparer } from '../evaluation/valueComparer.ts';
 import { textPattern } from './criteriaMatcher.ts';
 import {
   defineFunction,
@@ -17,8 +17,8 @@ import type { RangeValues } from './rangeValues.ts';
 /**
  * The exact-match test of MATCH/VLOOKUP: plain value equality, never a criteria expression. Text is
  * compared case-insensitively with `*`/`?` wildcards (so ">3" only finds the text ">3"); numbers
- * match numbers within `approxEqual` and are never coerced from text; booleans match booleans.
- * Error cells never match.
+ * match numbers within `approxEqual` and are never coerced from text; TRUE and FALSE are the
+ * numbers 1 and 0, as in Calc. Error cells never match.
  */
 function exactMatcher(lookup: CellValue): (v: CellValue) => boolean {
   switch (lookup.kind) {
@@ -27,13 +27,13 @@ function exactMatcher(lookup: CellValue): (v: CellValue) => boolean {
       // A blank cell reads as "" here, so MATCH("", …, 0) finds the first blank.
       return (v) => (v.kind === 'text' ? test(v.value) : v.kind === 'empty' && test(''));
     }
-    case 'number': {
-      const target = lookup.value;
-      return (v) => v.kind === 'number' && approxEqual(v.value, target);
-    }
+    case 'number':
     case 'boolean': {
-      const target = lookup.value;
-      return (v) => v.kind === 'boolean' && v.value === target;
+      const target = lookup.kind === 'number' ? lookup.value : Number(lookup.value);
+      return (v) => {
+        const n = booleanAsNumber(v);
+        return n.kind === 'number' && approxEqual(n.value, target);
+      };
     }
     default:
       // A blank lookup value takes the shape of each cell it meets (0, "" or FALSE), as before.
@@ -41,9 +41,11 @@ function exactMatcher(lookup: CellValue): (v: CellValue) => boolean {
   }
 }
 
-/** Whether a sorted search compares `v` with `lookup`: only values of the same type do. */
+/** Whether a sorted search compares `v` with `lookup`: only values of the same type do, and TRUE/FALSE are numbers. */
 function sameType(v: CellValue, lookup: CellValue): boolean {
-  if (lookup.kind === 'empty') return v.kind === 'number';
+  const numeric = (c: CellValue): boolean => c.kind === 'number' || c.kind === 'boolean';
+  if (lookup.kind === 'empty') return numeric(v);
+  if (numeric(lookup)) return numeric(v);
   return v.kind === lookup.kind;
 }
 
@@ -69,7 +71,7 @@ function search(
   for (let i = 0; i < count; i++) {
     const v = read(i);
     if (!sameType(v, lookup)) continue;
-    const cmp = ValueComparer.compare(v, lookup);
+    const cmp = ValueComparer.compare(booleanAsNumber(v), booleanAsNumber(lookup));
     if (cmp instanceof CellError) return CellValue.error(cmp);
     const onSide = matchType > 0 ? cmp <= 0 : cmp >= 0;
     if (!onSide) break; // sorted assumption: once past the boundary, stop

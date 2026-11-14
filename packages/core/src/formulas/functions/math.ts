@@ -165,7 +165,9 @@ function sumOrCountIf(args: readonly Expr[], ev: FunctionEvaluator, sum: boolean
         ? ev.context.getCell(sumRange.range.sheet, sumRange.range.top + r, sumRange.range.left + c)
         : cell;
       if (target.kind === 'error') return target;
+      // A TRUE in the sum range adds 1, as in Calc, where a boolean cell is a number.
       if (target.kind === 'number') total.add(target.value);
+      else if (target.kind === 'boolean') total.add(target.value ? 1 : 0);
     }
   }
   if (matcher.matches(CellValue.empty)) count += range.rowCount * range.columnCount - rows * columns;
