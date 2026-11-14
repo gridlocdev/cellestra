@@ -31,6 +31,7 @@ import {
 } from '../infra/report.ts';
 import {
   launch,
+  csvDelimiter,
   load,
   readInputText,
   recalculate,
@@ -105,7 +106,7 @@ export const importCommand: CommandSpec = {
       let worksheet = workbook.findSheet(sheetName);
       if (!worksheet) worksheet = workbook.addSheet(sheetName);
       else clearSheet(worksheet);
-      fillFromCsv(workbook, worksheet, text, { delimiter: csv?.delimiter ?? ',', locale });
+      fillFromCsv(workbook, worksheet, text, { delimiter: csvDelimiter(p.arg('csv'), csv), locale });
       session.field('sheet', worksheet.name);
       session.field('range', worksheet.getUsedRange()?.toString() ?? null);
       session.note(`Imported ${worksheet.cellCount} cell(s) into '${worksheet.name}'.`);
@@ -187,7 +188,8 @@ export const exportCommand: CommandSpec = {
     const loaded = load(con, p.arg('file'), 'ods', null);
     recalculate(loaded.workbook);
     const worksheet = pickSheet(loaded.workbook, p.str('--sheet'));
-    saveText(con, writeCsv(loaded.workbook, worksheet, csv ?? CsvOptions.default), p.arg('output'));
+    const output = p.arg('output');
+    saveText(con, writeCsv(loaded.workbook, worksheet, { delimiter: csvDelimiter(output, csv) }), output);
     return 0;
   },
 };

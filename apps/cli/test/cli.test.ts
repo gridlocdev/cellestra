@@ -123,6 +123,24 @@ describe('basics', () => {
     expect(readFileSync(path2('out.tsv'), 'utf8')).toBe('x\t2\n');
   });
 
+  it('reads and writes .tsv files as tab-separated', () => {
+    const tsv = path2('in.tsv');
+    writeFileSync(tsv, 'Name\tScore\nAda, Lovelace\t90\n');
+    const ods = path2('out.ods');
+    expect(run('convert', tsv, ods).exit).toBe(0);
+    expect(run('get', ods, 'Sheet1.A2').out.trim()).toBe('Ada, Lovelace');
+    expect(run('get', ods, 'Sheet1.B2').out.trim()).toBe('90');
+
+    expect(run('convert', ods, path2('back.tsv')).exit).toBe(0);
+    expect(readFileSync(path2('back.tsv'), 'utf8')).toBe('Name\tScore\nAda, Lovelace\t90\n');
+
+    expect(run('export', ods, path2('export.tsv')).exit).toBe(0);
+    expect(readFileSync(path2('export.tsv'), 'utf8')).toBe('Name\tScore\nAda, Lovelace\t90\n');
+
+    expect(run('import', tsv, '--into', path2('book.ods'), '--sheet', 'T').exit).toBe(0);
+    expect(run('get', path2('book.ods'), 'T.B2').out.trim()).toBe('90');
+  });
+
   it('set refuses to write without --in-place or --output', () => {
     const ods = path2('book.ods');
     run('new', ods);

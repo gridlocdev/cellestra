@@ -36,6 +36,7 @@ import {
 } from '../infra/report.ts';
 import {
   detectFormat,
+  csvDelimiter,
   load,
   recalculate,
   saveOds,
@@ -92,7 +93,7 @@ export const convert: CommandSpec = {
       recalculate(loaded.workbook);
       saveText(
         con,
-        writeCsv(loaded.workbook, worksheet, { delimiter: csv?.delimiter ?? ',', locale }),
+        writeCsv(loaded.workbook, worksheet, { delimiter: csvDelimiter(outputPath, csv), locale }),
         outputPath,
       );
     }

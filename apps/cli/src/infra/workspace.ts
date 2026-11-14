@@ -71,6 +71,12 @@ export function detectFormat(path: string, explicit: WorkbookFormat | null): Wor
   }
 }
 
+/** The delimiter for a CSV path: an explicit --delimiter wins, else tab for .tsv, else comma. */
+export function csvDelimiter(path: string, csv: CsvOptions | null): string {
+  if (csv) return csv.delimiter;
+  return extname(path).toLowerCase() === '.tsv' ? '\t' : ',';
+}
+
 export function load(
   con: Console,
   path: string,
@@ -94,7 +100,7 @@ export function load(
   const text = readInputText(con, path);
   const book = Workbook.createNew();
   if (locale !== null) book.settings.locale = locale;
-  fillFromCsv(book, book.activeSheet, text, { delimiter: csv?.delimiter ?? ',', locale });
+  fillFromCsv(book, book.activeSheet, text, { delimiter: csvDelimiter(path, csv), locale });
   return { workbook: book, package: null };
 }
 
