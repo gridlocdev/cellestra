@@ -46,8 +46,11 @@ export class RecalculationEngine {
   readonly #functions: FunctionRegistry;
   readonly #clock: () => CivilDateTime;
   readonly #graph = new DependencyGraph();
-  /** Formula cells by key: their ref and parsed AST (null when unparseable). */
-  readonly #formulas = new Map<string, { ref: CellRef; ast: Expr | null }>();
+  /**
+   * Formula cells by key: their ref, parsed AST (null when unparseable), and whether the AST calls
+   * a function the registry doesn't have.
+   */
+  readonly #formulas = new Map<string, { ref: CellRef; ast: Expr | null; callsUnknown: boolean }>();
   readonly #volatile = new Map<string, CellRef>();
   /** The precedent ranges too large to expand into the graph, indexed by sheet, column and row. */
   readonly #largeRanges = new LargeRangeIndex();
@@ -157,7 +160,7 @@ export class RecalculationEngine {
   #registerFormula(cell: CellRef, formula: string): void {
     const key = CellRef.key(cell);
     const ast = this.#parseCached(formula);
-    this.#formulas.set(key, { ref: cell, ast });
+    this.#formulas.set(key, { ref: cell, ast, callsUnknown: ast !== null && this.#callsUnknown(ast) });
     if (!ast) {
       this.#graph.setPrecedents(cell, []);
       this.#volatile.delete(key);
@@ -172,6 +175,20 @@ export class RecalculationEngine {
     this.#setLargeRanges(key, largeRanges);
     if (ReferenceCollector.isVolatile(ast)) this.#volatile.set(key, cell);
     else this.#volatile.delete(key);
+  }
+
+  /** The expression calls a function the registry doesn't have (one only another app knows). */
+  #callsUnknown(expr: Expr): boolean {
+    switch (expr.kind) {
+      case 'call':
+        return !this.#functions.has(expr.name) || expr.args.some((a) => this.#callsUnknown(a));
+      case 'unary':
+        return this.#callsUnknown(expr.operand);
+      case 'binary':
+        return this.#callsUnknown(expr.left) || this.#callsUnknown(expr.right);
+      default:
+        return false;
+    }
   }
 
   #parseCached(formula: string): Expr | null {
@@ -269,13 +286,16 @@ export class RecalculationEngine {
   #evaluateCell(key: string): void {
     const entry = this.#formulas.get(key);
     if (!entry) return;
-    if (!entry.ast) {
-      // Keep a value the file cached (it came from an app that could read the formula); only a
-      // formula with nothing cached shows the parse failure.
+    if (!entry.ast || entry.callsUnknown) {
+      // Keep a value the file cached (it came from an app that could read the formula, or knows
+      // the function); only a formula with nothing cached, such as one just typed, shows the
+      // failure. Entering a formula leaves no cached value.
       const model = this.#workbook.findSheet(entry.ref.sheet)?.find(entry.ref.row, entry.ref.column);
       if (model && model.value.kind !== 'empty') return;
-      this.#writeResult(entry.ref, CellValue.error(CellError.value('The formula could not be parsed.')));
-      return;
+      if (!entry.ast) {
+        this.#writeResult(entry.ref, CellValue.error(CellError.value('The formula could not be parsed.')));
+        return;
+      }
     }
     const context = new WorkbookEvaluationContext(
       this.#workbook,

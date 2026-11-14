@@ -234,6 +234,36 @@ describe('RecalculationEngine', () => {
     expect(errorAt(sheet, 1, 0).token).toBe('#VALUE!');
   });
 
+  it('keeps the value a file cached for a formula calling a function it does not know', () => {
+    // LibreOffice computed it, so its result beats #NAME? (and a save writes it back).
+    const { workbook, sheet } = newBook();
+    sheet.setValue(0, 1, CellValue.number(5));
+    sheet.setFormula(0, 0, '1+NOSUCHFUNCTION(B1)', CellValue.number(42));
+    sheet.setFormula(1, 0, 'NOSUCHFUNCTION(B1)');
+    const engine = engineFor(workbook);
+    engine.recalculateAll();
+
+    expect(numberAt(sheet, 0, 0)).toBe(42);
+    expect(errorAt(sheet, 1, 0).token).toBe('#NAME?');
+
+    sheet.setValue(0, 1, CellValue.number(6));
+    engine.recordEdits([CellRef.of(sheet.name, 0, 1)]);
+    expect(numberAt(sheet, 0, 0)).toBe(42);
+  });
+
+  it('shows #NAME? for an unknown function once the formula is typed again', () => {
+    const { workbook, sheet } = newBook();
+    sheet.setFormula(0, 0, 'NOSUCHFUNCTION(1)', CellValue.number(42));
+    const engine = engineFor(workbook);
+    engine.recalculateAll();
+    expect(numberAt(sheet, 0, 0)).toBe(42);
+
+    // Entering a formula leaves no cached value.
+    sheet.setFormula(0, 0, 'NOSUCHFUNCTION(2)', CellValue.empty);
+    engine.recordEdits([CellRef.of(sheet.name, 0, 0)]);
+    expect(errorAt(sheet, 0, 0).token).toBe('#NAME?');
+  });
+
   it('SUMIF follows edits to the cells its sum range is reshaped onto', () => {
     const { workbook, sheet } = newBook();
     for (let r = 0; r < 3; r++) sheet.setValue(r, 0, CellValue.text('x'));
