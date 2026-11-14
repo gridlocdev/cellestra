@@ -54,6 +54,8 @@ const MAX_ROWS = SheetDimensions.maxRows;
 const STYLED_RUN_CELL_LIMIT = 1 << 16;
 /** The most cells one repeated run may create; past it the file is refused, not half-read. */
 const CONTENT_RUN_CELL_LIMIT = 1 << 22;
+/** The width of a LibreOffice sheet before 7.4: a run that reaches it reaches the end of the row. */
+const LEGACY_COLUMNS = 1024;
 
 /** Thrown when a file asks for more cells than can be held (a hostile or corrupt repeat count). */
 export class OdsContentTooLargeError extends Error {
@@ -654,11 +656,18 @@ function readCells(
 ): void {
   const cells = rowElement.elements().filter(isCellElement);
   let column = 0;
+  // The style every cell so far in the row has: undefined before the first, null once they differ.
+  let rowStyleBefore: number | null | undefined = undefined;
+  const passStyle = (styleId: number): void => {
+    if (rowStyleBefore === undefined) rowStyleBefore = styleId;
+    else if (rowStyleBefore !== styleId) rowStyleBefore = null;
+  };
   for (let index = 0; index < cells.length; index++) {
     if (column >= MAX_COLUMNS) break;
     const element = cells[index]!;
     const repeat = Math.min(readPositive(element, Table('number-columns-repeated')), MAX_COLUMNS - column);
     if (cellIsInert(element)) {
+      passStyle(StylePool.defaultId);
       column += repeat;
       continue;
     }
@@ -687,19 +696,32 @@ function readCells(
 
     if (hasContent || styled) {
       const lastInRow = index === cells.length - 1;
+      const big = area > STYLED_RUN_CELL_LIMIT;
+      // A row or column format would style every cell outside the run too, so a run only
+      // becomes one when it covers the whole row or column. A run too big to hold as cells is a
+      // format anyway, as it always was: a lossy read beats refusing the file.
+      const tooBigForCells = area > CONTENT_RUN_CELL_LIMIT;
+      const reachesRowEnd = column + repeat >= LEGACY_COLUMNS;
       if (
         !hasContent &&
         lastInRow &&
-        (area > STYLED_RUN_CELL_LIMIT || (column + repeat >= MAX_COLUMNS && repeat > 1))
+        (big || (column + repeat >= MAX_COLUMNS && repeat > 1)) &&
+        ((reachesRowEnd && (rowStyleBefore === undefined || rowStyleBefore === parsed.styleId)) ||
+          tooBigForCells)
       ) {
         // A styled run to the end of the row (LibreOffice writes one for a formatted whole row):
         // that is a row format, not 16384 cells.
         for (let r = row; r < row + rowCount; r++) sheet.getOrCreateRow(r).styleId = parsed.styleId!;
-      } else if (!hasContent && area > STYLED_RUN_CELL_LIMIT && trailingRows) {
+      } else if (
+        !hasContent &&
+        big &&
+        trailingRows &&
+        (columnStyledAbove(sheet, row, column, repeat, parsed.styleId!) || tooBigForCells)
+      ) {
         // A styled run down to the end of the sheet: that is a column format.
         columnFormats.push({ from: column, to: column + repeat, styleId: parsed.styleId! });
       } else {
-        if (area > CONTENT_RUN_CELL_LIMIT) {
+        if (tooBigForCells) {
           throw new OdsContentTooLargeError(
             `Sheet '${sheet.name}' repeats one cell over ${area} positions; the most a run may cover is ${CONTENT_RUN_CELL_LIMIT}.`,
           );
@@ -727,8 +749,27 @@ function readCells(
         }
       }
     }
+    passStyle(parsed.styleId ?? StylePool.defaultId);
     column += repeat;
   }
+}
+
+/**
+ * Every cell of `column … column + width - 1` above `row` already has `styleId` (the run's
+ * column format would not change them). Gives up (false) when that is too many cells to look at.
+ */
+function columnStyledAbove(
+  sheet: Worksheet,
+  row: number,
+  column: number,
+  width: number,
+  styleId: number,
+): boolean {
+  if (row * width > CONTENT_RUN_CELL_LIMIT) return false;
+  for (let c = column; c < column + width; c++) {
+    for (let r = 0; r < row; r++) if (sheet.effectiveStyleId(r, c) !== styleId) return false;
+  }
+  return true;
 }
 
 /**

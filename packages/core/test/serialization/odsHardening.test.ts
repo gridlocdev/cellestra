@@ -155,7 +155,7 @@ describe('ODS grid structure', () => {
   it('a styled run across a whole row becomes a style, not 16384 cells', () => {
     const bytes = ods(
       `<table:table table:name="Sheet1">
-        <table:table-row>${float(1)}<table:table-cell table:style-name="ce1" table:number-columns-repeated="16383"/></table:table-row>
+        <table:table-row><table:table-cell table:style-name="ce1" office:value-type="float" office:value="1"><text:p>1</text:p></table:table-cell><table:table-cell table:style-name="ce1" table:number-columns-repeated="16383"/></table:table-row>
       </table:table>`,
       {
         automaticStyles: `<style:style style:name="ce1" style:family="table-cell"><style:text-properties fo:font-weight="bold"/></style:style>`,
@@ -166,6 +166,37 @@ describe('ODS grid structure', () => {
     expect(sheet.cellCount).toBeLessThan(10);
     expect(workbook.styles.get(sheet.effectiveStyleId(0, 9000)).font.bold).toBe(true);
     expect(sheet.getValue(0, 0)).toEqual(CellValue.number(1));
+  });
+
+  it('a styled run down the whole column becomes a column style', () => {
+    const bytes = ods(
+      `<table:table table:name="Sheet1">
+        <table:table-row table:number-rows-repeated="1048576"><table:table-cell table:style-name="ce1"/><table:table-cell/></table:table-row>
+      </table:table>`,
+      {
+        automaticStyles: `<style:style style:name="ce1" style:family="table-cell"><style:text-properties fo:font-weight="bold"/></style:style>`,
+      },
+    );
+    const workbook = readOds(bytes);
+    const sheet = workbook.activeSheet;
+    expect(sheet.cellCount).toBe(0);
+    expect(workbook.styles.get(sheet.findColumn(0)!.styleId).font.bold).toBe(true);
+  });
+
+  it('a styled run to the end of a row after a cell styled otherwise stays cells', () => {
+    // A row format would restyle A1, which has the default style.
+    const bytes = ods(
+      `<table:table table:name="Sheet1">
+        <table:table-row>${float(1)}<table:table-cell table:style-name="ce1" table:number-columns-repeated="16383"/></table:table-row>
+      </table:table>`,
+      {
+        automaticStyles: `<style:style style:name="ce1" style:family="table-cell"><style:text-properties fo:font-weight="bold"/></style:style>`,
+      },
+    );
+    const workbook = readOds(bytes);
+    const sheet = workbook.activeSheet;
+    expect(workbook.styles.get(sheet.effectiveStyleId(0, 9000)).font.bold).toBe(true);
+    expect(workbook.styles.get(sheet.effectiveStyleId(0, 0)).font.bold).toBe(false);
   });
 
   it('reads deeply nested markup without recursion, and refuses absurd nesting quickly', () => {

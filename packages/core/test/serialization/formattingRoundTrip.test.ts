@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SheetDimensions } from '../../src/model/sheetDimensions.ts';
 import { Workbook } from '../../src/model/workbook.ts';
 import {
   Alignments,
@@ -162,5 +163,53 @@ describe('FormattingRoundTrip', () => {
     const sheet = reopened.findSheet('Sheet1')!;
     expect(reopened.styles.get(sheet.findRow(2)!.styleId).font.italic).toBe(true);
     expect(reopened.styles.get(sheet.effectiveStyleId(2, 5)).font.italic).toBe(true);
+  });
+});
+
+describe('Styled blank runs after a round trip', () => {
+  const bold: CellStyle = { ...CellStyles.default, font: { ...Fonts.default, bold: true } };
+  const red: CellStyle = {
+    ...CellStyles.default,
+    font: { ...Fonts.default, color: Argb.fromRgb(255, 0, 0) },
+  };
+
+  function styleAt(workbook: Workbook, row: number, column: number): CellStyle {
+    return workbook.styles.get(workbook.activeSheet.effectiveStyleId(row, column));
+  }
+
+  it('a block that starts past column A stays a block, not a row format', () => {
+    // C2:E30000 bold is one styled run per row, last in the row, over 90,000 cells.
+    const workbook = Workbook.createNew();
+    const boldId = workbook.styles.intern(bold);
+    const sheet = workbook.activeSheet;
+    for (let r = 1; r < 30000; r++) for (let c = 2; c <= 4; c++) sheet.getOrCreate(r, c).styleId = boldId;
+
+    const reopened = roundTrip(workbook);
+    expect(styleAt(reopened, 1, 2)).toMatchObject(bold);
+    expect(styleAt(reopened, 29999, 4)).toMatchObject(bold);
+    expect(styleAt(reopened, 1, 0)).toMatchObject(CellStyles.default);
+    expect(styleAt(reopened, 1, 1)).toMatchObject(CellStyles.default);
+    expect(styleAt(reopened, 500, 5)).toMatchObject(CellStyles.default);
+    expect(styleAt(reopened, 500, 100)).toMatchObject(CellStyles.default);
+  });
+
+  it('a run down to the last row that starts below the header leaves the header alone', () => {
+    // A red run down to the last row under a plain header in A1, next to a bold column B. The
+    // run is kept to 70,000 rows so the test stays quick.
+    const workbook = Workbook.createNew();
+    const sheet = workbook.activeSheet;
+    sheet.setValue(0, 0, CellValue.text('Name'));
+    const top = SheetDimensions.maxRows - 70_000;
+    const redId = workbook.styles.intern(red);
+    for (let r = top; r < SheetDimensions.maxRows; r++) sheet.getOrCreate(r, 0).styleId = redId;
+    sheet.getOrCreateColumn(1).styleId = workbook.styles.intern(bold);
+
+    const reopened = roundTrip(workbook);
+    expect(styleAt(reopened, 0, 0)).toMatchObject(CellStyles.default);
+    expect(styleAt(reopened, 1, 0)).toMatchObject(CellStyles.default);
+    expect(styleAt(reopened, top, 0)).toMatchObject(red);
+    expect(styleAt(reopened, SheetDimensions.maxRows - 1, 0)).toMatchObject(red);
+    expect(styleAt(reopened, 0, 1)).toMatchObject(bold);
+    expect(styleAt(reopened, 1, 2)).toMatchObject(CellStyles.default);
   });
 });
