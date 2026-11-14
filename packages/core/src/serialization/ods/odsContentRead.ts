@@ -169,9 +169,10 @@ function readTable(
     merges: [],
   };
 
-  readColumns(table, sheet, styles);
-  readRows(table, sheet, context);
-  addMerges(sheet, context.merges);
+  const grid = new TableGridReader(sheet, context);
+  for (const element of gridElements(table, Table('table-column'), COLUMN_GROUPS)) grid.column(element);
+  for (const element of gridElements(table, Table('table-row'), ROW_GROUPS)) grid.row(element);
+  grid.finish();
 
   // Everything else the table carries is kept as it was: its attributes (protection, print
   // ranges, its table style) and its unmodeled children (shapes, forms, conditional formats).
@@ -215,82 +216,155 @@ function defaultStyleIdOf(element: XmlElement, styles: OdsStyleIndex): number | 
   return id === StylePool.defaultId ? null : id;
 }
 
-function readColumns(table: XmlElement, sheet: Worksheet, styles: OdsStyleIndex): void {
-  let column = 0;
-  for (const element of gridElements(table, Table('table-column'), COLUMN_GROUPS)) {
-    if (column >= MAX_COLUMNS) break;
+/** A run of styled blank cells down to the end of the sheet, applied as a column format. */
+interface ColumnFormat {
+  readonly from: number;
+  readonly to: number;
+  readonly styleId: number;
+}
+
+/** A row element waiting for the rows after it, which decide whether it is trailing or padding. */
+interface HeldRow {
+  readonly element: XmlElement;
+  readonly row: number;
+  readonly repeat: number;
+}
+
+/**
+ * Consecutive inert rows laid out alike, held as one range: if nothing but them follows, they are
+ * the sheet's padding. `trailingFrom` is where the row element that reaches the sheet's last row starts, if one does.
+ */
+interface HeldInertRun {
+  readonly element: XmlElement;
+  readonly layout: string;
+  readonly from: number;
+  to: number;
+  trailingFrom: number | null;
+}
+
+/**
+ * Reads a table's grid one `table:table-column` and `table:table-row` element at a time, in
+ * document order, so the caller never needs the whole grid at once. A row is read once the next
+ * row arrives (or the table ends), because whether it is the last row, or part of the blank
+ * padding at the end of the sheet, changes how it is read.
+ */
+class TableGridReader {
+  private readonly sheet: Worksheet;
+  private readonly context: ReadContext;
+  private nextColumn = 0;
+  private nextRow = 0;
+  private held: HeldRow | HeldInertRun | null = null;
+  /** Column formats wait for the end of the table so the columns' own settings come first. */
+  private readonly columnFormats: ColumnFormat[] = [];
+
+  constructor(sheet: Worksheet, context: ReadContext) {
+    this.sheet = sheet;
+    this.context = context;
+  }
+
+  column(element: XmlElement): void {
+    const column = this.nextColumn;
+    if (column >= MAX_COLUMNS) return;
     const repeat = Math.min(readPositive(element, Table('number-columns-repeated')), MAX_COLUMNS - column);
+    this.nextColumn += repeat;
     const styleName = element.attr(Table('style-name'));
     const hidden = isHidden(element);
-    const width = styleName === null ? null : styles.columnWidth(styleName);
+    const width = styleName === null ? null : this.context.styles.columnWidth(styleName);
     // The column's default cell style: "this whole column is formatted like so".
-    const defaultStyleId = defaultStyleIdOf(element, styles);
-
-    if (width === null && !hidden && defaultStyleId === null) {
-      column += repeat;
-      continue;
-    }
-    for (let i = 0; i < repeat; i++, column++) {
-      const model = sheet.getOrCreateColumn(column);
+    const defaultStyleId = defaultStyleIdOf(element, this.context.styles);
+    if (width === null && !hidden && defaultStyleId === null) return;
+    for (let c = column; c < column + repeat; c++) {
+      const model = this.sheet.getOrCreateColumn(c);
       if (width !== null) model.width = width;
+      if (defaultStyleId !== null) model.styleId = defaultStyleId;
+      model.hidden = hidden;
+    }
+  }
+
+  row(element: XmlElement): void {
+    // Rows past the last one are not read, but still count when deciding what the padding is.
+    const row = Math.min(this.nextRow, MAX_ROWS);
+    const repeat = Math.min(readPositive(element, Table('number-rows-repeated')), MAX_ROWS - row);
+    this.nextRow = row + repeat;
+    const inert = rowIsInert(element);
+    const layout = inert ? rowLayout(element) : '';
+    const held = this.held;
+    if (held && 'layout' in held && inert && held.layout === layout) {
+      if (row + repeat >= MAX_ROWS && held.trailingFrom === null) held.trailingFrom = row;
+      held.to = row + repeat;
+      return;
+    }
+    if (held) this.readHeld(held, false);
+    const trailingFrom = row + repeat >= MAX_ROWS ? row : null;
+    this.held = inert
+      ? { element, layout, from: row, to: row + repeat, trailingFrom }
+      : { element, row, repeat };
+  }
+
+  /** The table is complete: read the rows still held, then the column formats and merges. */
+  finish(): void {
+    if (this.held) this.readHeld(this.held, true);
+    this.held = null;
+    for (const { from, to, styleId } of this.columnFormats) {
+      for (let c = from; c < to; c++) this.sheet.getOrCreateColumn(c).styleId = styleId;
+    }
+    addMerges(this.sheet, this.context.merges);
+  }
+
+  private readHeld(held: HeldRow | HeldInertRun, last: boolean): void {
+    if ('layout' in held) {
+      // A run that ends the table is the padding; LibreOffice pads sheets with runs like 1,048,000
+      // repeated rows of 1,024 blank cells, and the padding only ever carries the default row
+      // height, so a plain run there is skipped whole. So is the row that reaches the last row.
+      const trailingFrom = held.trailingFrom ?? held.to;
+      this.readInertRows(held.element, held.from, trailingFrom, last);
+      this.readInertRows(held.element, trailingFrom, held.to, true);
+      return;
+    }
+    const { element, row, repeat } = held;
+    if (repeat === 0) return;
+    this.applyRowLayout(element, row, row + repeat);
+    readCells(
+      element,
+      this.sheet,
+      row,
+      repeat,
+      last || row + repeat >= MAX_ROWS,
+      this.context,
+      this.columnFormats,
+    );
+  }
+
+  /** Inert rows `from … to - 1`: a plain run carries nothing (and with `skipHeight`, nor does its height). */
+  private readInertRows(element: XmlElement, from: number, to: number, skipHeight: boolean): void {
+    if (from >= to) return;
+    const styles = this.context.styles;
+    const styleName = element.attr(Table('style-name'));
+    const height = styleName === null ? null : styles.rowHeight(styleName);
+    if (!isHidden(element) && defaultStyleIdOf(element, styles) === null && (height === null || skipHeight))
+      return;
+    this.applyRowLayout(element, from, to);
+  }
+
+  private applyRowLayout(element: XmlElement, from: number, to: number): void {
+    const styles = this.context.styles;
+    const styleName = element.attr(Table('style-name'));
+    const hidden = isHidden(element);
+    const height = styleName === null ? null : styles.rowHeight(styleName);
+    const defaultStyleId = defaultStyleIdOf(element, styles);
+    if (height === null && !hidden && defaultStyleId === null) return;
+    for (let r = from; r < to; r++) {
+      const model = this.sheet.getOrCreateRow(r);
+      if (height !== null) model.height = height;
       if (defaultStyleId !== null) model.styleId = defaultStyleId;
       model.hidden = hidden;
     }
   }
 }
 
-function readRows(table: XmlElement, sheet: Worksheet, context: ReadContext): void {
-  const rows = gridElements(table, Table('table-row'), ROW_GROUPS);
-  const padding = paddingStart(rows);
-  let row = 0;
-  for (let index = 0; index < rows.length; index++) {
-    if (row >= MAX_ROWS) break;
-    const element = rows[index]!;
-    const repeat = Math.min(readPositive(element, Table('number-rows-repeated')), MAX_ROWS - row);
-    const styleName = element.attr(Table('style-name'));
-    const hidden = isHidden(element);
-    const height = styleName === null ? null : context.styles.rowHeight(styleName);
-    const defaultStyleId = defaultStyleIdOf(element, context.styles);
-    const trailing = index === rows.length - 1 || row + repeat >= MAX_ROWS;
-    const inert = rowIsInert(element);
-
-    // LibreOffice pads sheets with runs like 1,048,000 repeated rows of 1,024 blank cells; a plain
-    // run carries nothing, so skip it whole instead of visiting a billion positions. The padding
-    // at the end of a sheet (one run, or a run and a last row alike) only ever carries the default
-    // row height, so it is skipped too.
-    if (inert && !hidden && defaultStyleId === null && (height === null || trailing || index >= padding)) {
-      row += repeat;
-      continue;
-    }
-    if (height !== null || hidden || defaultStyleId !== null) {
-      for (let i = 0; i < repeat; i++) {
-        const model = sheet.getOrCreateRow(row + i);
-        if (height !== null) model.height = height;
-        if (defaultStyleId !== null) model.styleId = defaultStyleId;
-        model.hidden = hidden;
-      }
-    }
-    if (!inert) readCells(element, sheet, row, repeat, trailing, context);
-    row += repeat;
-  }
-}
-
-/**
- * The index of the first row element of the sheet's padding: the trailing rows that are all inert
- * and laid out alike (same style, visibility and default cell style). `rows.length` when the last
- * row is not inert.
- */
-function paddingStart(rows: readonly XmlElement[]): number {
-  const layout = (e: XmlElement): string =>
-    `${e.attr(Table('style-name'))}|${e.attr(Table('visibility'))}|${e.attr(Table('default-cell-style-name'))}`;
-  let start = rows.length;
-  while (start > 0) {
-    const element = rows[start - 1]!;
-    if (!rowIsInert(element)) break;
-    if (start < rows.length && layout(element) !== layout(rows[start]!)) break;
-    start--;
-  }
-  return start;
+/** What makes padding rows alike: their style, visibility and default cell style. */
+function rowLayout(e: XmlElement): string {
+  return `${e.attr(Table('style-name'))}|${e.attr(Table('visibility'))}|${e.attr(Table('default-cell-style-name'))}`;
 }
 
 /** A blank cell that only says how many columns it repeats over. */
@@ -333,6 +407,7 @@ function readCells(
   rowCount: number,
   trailingRows: boolean,
   context: ReadContext,
+  columnFormats: ColumnFormat[],
 ): void {
   const cells = rowElement.elements().filter(isCellElement);
   let column = 0;
@@ -379,7 +454,7 @@ function readCells(
         for (let r = row; r < row + rowCount; r++) sheet.getOrCreateRow(r).styleId = parsed.styleId!;
       } else if (!hasContent && area > STYLED_RUN_CELL_LIMIT && trailingRows) {
         // A styled run down to the end of the sheet: that is a column format.
-        for (let c = column; c < column + repeat; c++) sheet.getOrCreateColumn(c).styleId = parsed.styleId!;
+        columnFormats.push({ from: column, to: column + repeat, styleId: parsed.styleId! });
       } else {
         if (area > CONTENT_RUN_CELL_LIMIT) {
           throw new OdsContentTooLargeError(

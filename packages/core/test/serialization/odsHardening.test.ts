@@ -107,6 +107,30 @@ describe('ODS grid structure', () => {
     expect(sheet.getColumnWidth(1)).toBeGreaterThan(80);
   });
 
+  it('keeps the height of blank rows between rows of data, but not of the padding after them', () => {
+    const tall = `<table:table-row table:style-name="ro2"><table:table-cell/></table:table-row>`;
+    const bytes = ods(
+      `<table:table table:name="Sheet1">
+        <table:table-row>${float(1)}</table:table-row>${tall}${tall}
+        <table:table-row>${float(2)}</table:table-row>${tall}${tall}
+        <table:table-row table:style-name="ro3"><table:table-cell/></table:table-row>
+        <table:table-row>${float(3)}</table:table-row>
+        <table:table-row table:style-name="ro2" table:number-rows-repeated="1000"><table:table-cell/></table:table-row>${tall}
+      </table:table>`,
+      {
+        automaticStyles: `<style:style style:name="ro2" style:family="table-row"><style:table-row-properties style:row-height="2cm"/></style:style>
+          <style:style style:name="ro3" style:family="table-row"><style:table-row-properties style:row-height="3cm"/></style:style>`,
+      },
+    );
+    const sheet = readOds(bytes).activeSheet;
+    const plain = sheet.getRowHeight(0);
+    const heights = [1, 2, 4, 5, 6].map((r) => sheet.getRowHeight(r));
+    expect(heights.every((h) => h > plain)).toBe(true);
+    expect(heights[4]).toBeGreaterThan(heights[0]!);
+    expect(sheet.getValue(7, 0)).toEqual(CellValue.number(3));
+    expect([8, 500, 1008].map((r) => sheet.getRowHeight(r))).toEqual([plain, plain, plain]);
+  });
+
   it('clamps hostile repeats and spans to the sheet size without hanging', () => {
     const bytes = ods(
       `<table:table table:name="Sheet1">
