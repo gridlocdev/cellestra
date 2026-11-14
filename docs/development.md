@@ -39,6 +39,13 @@ node scripts/bench-ods-read.mjs generate /tmp/big.ods 100000 10   # 1M cells
 node scripts/bench-ods-read.mjs read /tmp/big.ods
 ```
 
+Two fixtures in `packages/core/test/serialization/fixtures` are files LibreOffice saved itself, and a test checks that saving them without edits keeps every element and attribute they have. The scripts that build them need LibreOffice in `/Applications`:
+
+```bash
+python3 scripts/make-libreoffice-sample.py    # values, formulas, formats, merges, validations
+python3 scripts/make-libreoffice-outline.py   # groups, print titles, page breaks, macros and events
+```
+
 ## The cellestra CLI
 
 `cellestra` reads and edits `.ods` files with the same engine as the app, for scripts and CI. It runs from source, from the folder you are in:
