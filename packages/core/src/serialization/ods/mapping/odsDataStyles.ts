@@ -1,7 +1,7 @@
 import { NumberFormats, type NumberFormat } from '../../../styling/cellStyle.ts';
 import type { NumberFormatKind } from '../../../styling/numberFormatParser.ts';
 import { splitSections, tokenize, type FormatToken } from '../../../styling/numberFormatter.ts';
-import { XmlElement } from '../../../xml/index.ts';
+import { XmlElement, xmlNamespace } from '../../../xml/index.ts';
 import { Fo, NumberNs as NumberX, Style } from '../odsXmlNames.ts';
 
 /**
@@ -95,6 +95,9 @@ export const OdsDataStyles = {
     return [...subs.map((s) => `[${s.condition}]${s.code}`), own].join(';');
   },
 } as const;
+
+/** LibreOffice's extension namespace; older versions wrote `max-denominator-value` in it. */
+const LoExt = xmlNamespace('urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0', 'loext');
 
 function named(elementName: ReturnType<typeof NumberX>, name: string): XmlElement {
   return new XmlElement(elementName).setAttr(Style('name'), name);
@@ -191,6 +194,8 @@ function parseSection(section: string): ParsedSection {
     } else if (inCore && !coreDone && c === '/') {
       core += pendingCore + c;
       pendingCore = '';
+    } else if (inCore && !coreDone && /[1-9]/.test(c) && /\/[0-9]*$/.test(core) && !pendingCore) {
+      core += c; // a fixed denominator: the 4 of `?/4`
     } else if (BARE_SYMBOLS.includes(c)) {
       symbol(c, null);
     } else {
@@ -260,15 +265,7 @@ function numberElement(core: string, kind: NumberFormatKind): XmlElement {
       .setAttr(NumberX('min-integer-digits'), integerDigits(core))
       .setAttr(NumberX('min-exponent-digits'), Math.max(1, exponentDigits));
   }
-  if (kind === 'fraction' && core.includes('/')) {
-    // Cellestra doesn't render fractions, but a format it can't draw is still a format the file
-    // chose — dropping it to General would rewrite someone else's document.
-    const slash = core.indexOf('/');
-    return new XmlElement(NumberX('fraction'))
-      .setAttr(NumberX('min-integer-digits'), core.includes('#') ? 0 : 1)
-      .setAttr(NumberX('min-numerator-digits'), countPlaceholders(core, slash - 1, -1))
-      .setAttr(NumberX('min-denominator-digits'), countPlaceholders(core, slash + 1, +1));
-  }
+  if (kind === 'fraction' && core.includes('/')) return fractionElement(core);
   const decimals = decimalPlaces(core);
   const number = new XmlElement(NumberX('number'))
     .setAttr(NumberX('decimal-places'), decimals)
@@ -281,11 +278,29 @@ function numberElement(core: string, kind: NumberFormatKind): XmlElement {
   return number;
 }
 
-/** Count the run of `?`/`0`/`#` placeholders from `start` in `step`'s direction. */
-function countPlaceholders(code: string, start: number, step: number): number {
-  let count = 0;
-  for (let i = start; i >= 0 && i < code.length && '?0#'.includes(code[i]!); i += step) count++;
-  return Math.max(1, count);
+/**
+ * `# ?/?`, `0 ??/??`, `?/4` as an ODF `number:fraction`. A whole-number part is its
+ * `min-integer-digits` (0 for `#`); leaving the attribute out means there is none, as LibreOffice
+ * reads it. A fixed denominator is `denominator-value`; otherwise `max-denominator-value` says how
+ * many digits the denominator may have.
+ */
+function fractionElement(core: string): XmlElement {
+  const slash = core.indexOf('/');
+  const before = core.slice(0, slash).trimEnd();
+  const numerator = /[?0#]+$/.exec(before)?.[0] ?? '?';
+  const integer = before.slice(0, before.length - numerator.length).trim();
+  const after = core.slice(slash + 1).trimStart();
+  const fixed = /^[1-9][0-9]*/.exec(after)?.[0];
+  const denominatorDigits = fixed ? fixed.length : (/^[?0#]+/.exec(after)?.[0].length ?? 1);
+  const element = new XmlElement(NumberX('fraction'));
+  if (integer) element.setAttr(NumberX('min-integer-digits'), [...integer].filter((c) => c === '0').length);
+  element
+    .setAttr(NumberX('min-numerator-digits'), numerator.length)
+    .setAttr(NumberX('min-denominator-digits'), denominatorDigits);
+  if (fixed) element.setAttr(NumberX('denominator-value'), fixed);
+  else if (denominatorDigits > 1)
+    element.setAttr(NumberX('max-denominator-value'), 10 ** denominatorDigits - 1);
+  return element;
 }
 
 /** How many leading digit placeholders a code asks for — the `0`s before its decimal point. */
@@ -492,17 +507,10 @@ function numericCode(style: XmlElement): string {
         sawNumber = true;
         break;
       }
-      case 'fraction': {
-        const whole = readDigits(child, 'min-integer-digits', 0) > 0 ? '0' : '#';
-        code +=
-          whole +
-          ' ' +
-          '?'.repeat(readDigits(child, 'min-numerator-digits', 1)) +
-          '/' +
-          '?'.repeat(readDigits(child, 'min-denominator-digits', 1));
+      case 'fraction':
+        code += fractionCode(child);
         sawNumber = true;
         break;
-      }
       case 'text-content':
         code += '@';
         break;
@@ -511,6 +519,27 @@ function numericCode(style: XmlElement): string {
   if (!sawNumber && code.length === 0) code = percent ? '0%' : '0';
   // A currency style with no symbol is just a number, which its code says honestly.
   return code;
+}
+
+/** `# ?/?`, `?/4`, `# ??/??` from a `number:fraction` element (see `fractionElement`). */
+function fractionCode(fraction: XmlElement): string {
+  const hasInteger = fraction.attr(NumberX('min-integer-digits')) !== null;
+  const integerZeros = Math.min(readDigits(fraction, 'min-integer-digits', 0), MAX_DIGITS);
+  const whole = !hasInteger ? '' : (integerZeros === 0 ? '#' : '0'.repeat(integerZeros)) + ' ';
+  const numerator = '?'.repeat(
+    Math.max(1, Math.min(readDigits(fraction, 'min-numerator-digits', 1), MAX_DIGITS)),
+  );
+  const fixed = readDigits(fraction, 'denominator-value', 0);
+  if (fixed > 0) return `${whole}${numerator}/${fixed}`;
+  // LibreOffice spells the denominator's width as its largest value (99 for ??).
+  const maxValue =
+    fraction.attr(NumberX('max-denominator-value')) ?? fraction.attr(LoExt('max-denominator-value'));
+  const fromMax = maxValue && /^[1-9][0-9]*$/.test(maxValue) ? maxValue.length : 0;
+  const width = Math.max(
+    1,
+    Math.min(Math.max(readDigits(fraction, 'min-denominator-digits', 1), fromMax), MAX_DIGITS),
+  );
+  return `${whole}${numerator}/${'?'.repeat(width)}`;
 }
 
 /** The numeric part of a code — `#,##0.00` — from a `number:number` element. */

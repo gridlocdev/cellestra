@@ -26,7 +26,8 @@ export function classifyNumberFormat(code: string | null | undefined): NumberFor
   if (pattern.includes('%')) return 'percent';
   if (/[$€£¥¤]/.test(pattern)) return 'currency';
   if (/e/i.test(pattern) && /[0#]/.test(pattern)) return 'scientific';
-  if (pattern.includes('/') && pattern.includes('#')) return 'fraction';
+  // `# ?/?`, `# ??/??`, `?/4`: a placeholder, a slash, then a placeholder or a fixed denominator.
+  if (/[0#?]\s*\/\s*[0-9#?]/.test(pattern)) return 'fraction';
   if (/[0#]/.test(pattern)) return 'number';
   return 'general';
 }

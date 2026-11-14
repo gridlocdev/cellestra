@@ -29,6 +29,20 @@ export interface Section {
   readonly tokens: readonly FormatToken[];
   readonly condition: Condition | null;
   readonly isDate: boolean;
+  /** Where the parts of a fraction (`# ?/?`, `?/4`) sit among the tokens; null for other sections. */
+  readonly fraction: FractionLayout | null;
+}
+
+/** Token indices of a fraction format's parts. */
+export interface FractionLayout {
+  /** The whole-number placeholders (`#` of `# ?/?`); empty when the fraction carries it all (`?/?`). */
+  readonly integer: readonly number[];
+  readonly numerator: readonly number[];
+  readonly slash: number;
+  /** The denominator's placeholders; empty when it is fixed. */
+  readonly denominator: readonly number[];
+  /** A fixed denominator (`?/4`) and the literal digit tokens that spell it. */
+  readonly fixed: { readonly value: number; readonly tokens: readonly number[] } | null;
 }
 
 /** Split a code on `;` outside quotes, brackets and escapes. */
@@ -155,8 +169,39 @@ export function tokenize(code: string): Section {
   }
   resolveMinutes(tokens);
   const isDate = tokens.some((tk) => tk.t === 'date' || tk.t === 'elapsed' || tk.t === 'ampm');
-  return { tokens, condition, isDate };
+  return { tokens, condition, isDate, fraction: isDate ? null : fractionLayout(tokens) };
 }
+
+/** The fraction parts of a section: placeholders, `/`, then placeholders or a fixed number. */
+function fractionLayout(tokens: readonly FormatToken[]): FractionLayout | null {
+  const isDigit = (i: number): boolean => tokens[i]?.t === 'digit';
+  const slash = tokens.findIndex((tk, i) => tk.t === 'literal' && tk.text === '/' && isDigit(i - 1));
+  if (slash < 0) return null;
+  let start = slash;
+  while (isDigit(start - 1)) start--;
+  const numerator = range(start, slash);
+  let end = slash + 1;
+  while (isDigit(end)) end++;
+  const denominator = range(slash + 1, end);
+  let fixed: FractionLayout['fixed'] = null;
+  if (denominator.length === 0) {
+    const digitTokens: number[] = [];
+    let text = '';
+    for (let i = slash + 1; i < tokens.length; i++) {
+      const tk = tokens[i]!;
+      if (tk.t !== 'literal' || !/^\d+$/.test(tk.text)) break;
+      digitTokens.push(i);
+      text += tk.text;
+    }
+    const value = Number(text);
+    if (digitTokens.length === 0 || !(value > 0)) return null;
+    fixed = { value, tokens: digitTokens };
+  }
+  const integer = range(0, start).filter(isDigit);
+  return { integer, numerator, slash, denominator, fixed };
+}
+
+const range = (from: number, to: number): number[] => Array.from({ length: to - from }, (_, k) => from + k);
 
 /**
  * `m`/`mm` is minutes when the nearest date token before it is an hour, or the nearest after it is
@@ -381,6 +426,88 @@ function formatNumberSection(
   return { text, nonZero };
 }
 
+// ---- fractions --------------------------------------------------------------
+
+/** Most denominator digits searched (`?????`); more are shown but not searched. */
+const MAX_DENOMINATOR_DIGITS = 5;
+
+/** The fraction nearest `x` with a denominator up to `maxDenominator` (the smallest one on a tie). */
+function nearestFraction(x: number, maxDenominator: number): { numerator: number; denominator: number } {
+  let best = { numerator: Math.round(x), denominator: 1 };
+  let bestError = Math.abs(x - best.numerator);
+  for (let d = 2; d <= maxDenominator && bestError > 0; d++) {
+    const n = Math.round(x * d);
+    const error = Math.abs(x - n / d);
+    if (error < bestError - Number.EPSILON * x) {
+      best = { numerator: n, denominator: d };
+      bestError = error;
+    }
+  }
+  return best;
+}
+
+/**
+ * A number as a fraction (`1 1/2`, `5/4`, `3/4` under `?/4`), as Calc and Excel show it. The
+ * numerator is padded on the left and the denominator on the right, `?` with spaces; when nothing is
+ * left over for the fraction, the whole number shows and the fraction part is blank.
+ */
+function formatFractionSection(
+  abs: number,
+  tokens: readonly FormatToken[],
+  layout: FractionLayout,
+): { text: string; nonZero: boolean } {
+  const mixed = layout.integer.length > 0;
+  let whole = mixed ? Math.floor(abs) : 0;
+  const rest = abs - whole;
+  const maxDenominator = 10 ** Math.min(MAX_DENOMINATOR_DIGITS, layout.denominator.length) - 1;
+  const nearest = layout.fixed
+    ? { numerator: Math.round(rest * layout.fixed.value), denominator: layout.fixed.value }
+    : nearestFraction(rest, maxDenominator);
+  const denominator = nearest.denominator;
+  let numerator = nearest.numerator;
+  if (mixed && numerator === denominator) {
+    whole++;
+    numerator = 0;
+  }
+  const blankFraction = mixed && numerator === 0;
+
+  const out = new Map<number, string>();
+  assignRightToLeft(whole === 0 ? (blankFraction ? '0' : '') : String(whole), layout.integer, tokens, out);
+  const fractionTokens = [
+    ...layout.numerator,
+    layout.slash,
+    ...layout.denominator,
+    ...(layout.fixed?.tokens ?? []),
+  ];
+  if (blankFraction) {
+    for (const i of fractionTokens) out.set(i, ' '.repeat(tokenWidth(tokens[i]!)));
+  } else {
+    assignRightToLeft(String(numerator), layout.numerator, tokens, out);
+    const digits = String(denominator);
+    layout.denominator.forEach((i, k) => {
+      const ch = placeholder(tokens, i);
+      const last = k === layout.denominator.length - 1;
+      const shown = last ? digits.slice(k) : (digits[k] ?? '');
+      out.set(i, shown || (ch === '?' ? ' ' : ch === '0' ? '0' : ''));
+    });
+  }
+
+  let text = '';
+  tokens.forEach((tk, i) => {
+    const filled = out.get(i);
+    if (filled !== undefined) text += filled;
+    else if (tk.t === 'literal') text += tk.text;
+    else if (tk.t === 'percent') text += '%';
+    else if (tk.t === 'comma') text += ',';
+  });
+  return { text, nonZero: whole !== 0 || numerator !== 0 };
+}
+
+/** How many characters a fixed token takes when blanked. */
+function tokenWidth(tk: FormatToken): number {
+  return tk.t === 'literal' ? tk.text.length : 1;
+}
+
 // ---- dates ------------------------------------------------------------------
 
 const pad = (n: number, width: number): string => String(n).padStart(width, '0');
@@ -498,7 +625,8 @@ function sectionsOf(code: string): Section[] {
  *
  * Supports sections (`;`, with `[<0]`-style conditions), placeholders `0 # ?`, `,` grouping and
  * scaling, `.`, `%`, `E+00`, quoted/escaped literals, `[$€-407]` currency tokens, colours (ignored),
- * `@`, dates and times (`y m d h s AM/PM A/P`), fractional seconds, and elapsed `[h] [mm] [ss]`.
+ * `@`, dates and times (`y m d h s AM/PM A/P`), fractional seconds, elapsed `[h] [mm] [ss]`, and
+ * fractions (`# ?/?`, `# ??/??`, `?/4`).
  * Separators and month/day names come from `Intl` for the locale.
  */
 export const NumberFormatter = {
@@ -524,7 +652,9 @@ export const NumberFormatter = {
     if (section.isDate) {
       return formatDateSection(n, section.tokens, info) ?? NumberFormatter.formatGeneral(n, locale);
     }
-    const { text, nonZero } = formatNumberSection(Math.abs(n), section.tokens, info);
+    const { text, nonZero } = section.fraction
+      ? formatFractionSection(Math.abs(n), section.tokens, section.fraction)
+      : formatNumberSection(Math.abs(n), section.tokens, info);
     return signed && n < 0 && nonZero ? '-' + text : text;
   },
 
