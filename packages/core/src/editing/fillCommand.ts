@@ -94,6 +94,7 @@ function writeCell(
       ? null
       : rewriteFormula(source.formula, (expr) => ReferenceAdjuster.forCopy(expr, columnDelta, rowDelta));
   cell.formulaSource = source.formulaSource;
+  cell.hyperlink = source.hyperlink;
   cell.styleId = source.styleId;
   sheet.putCell(row, column, cell);
 }

@@ -1,16 +1,18 @@
 import type { UnparsedFormulaSource } from '../model/cell.ts';
 import { CellRange } from '../model/cellRange.ts';
+import type { Hyperlink } from '../model/hyperlink.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import type { CellValue } from '../values/cellValue.ts';
 import { clampToUsed, OVERSIZED_CELL_CAP } from './editCommands.ts';
 
-/** One copied cell: value, formula source (no `=`), and style id. */
+/** One copied cell: value, formula source (no `=`), hyperlink and style id. */
 export interface ClipboardCell {
   readonly value: CellValue;
   readonly formula: string | null;
   /** A loaded formula's file text, kept while the parser cannot read the formula. */
   readonly formulaSource: UnparsedFormulaSource | null;
   readonly styleId: number;
+  readonly hyperlink: Hyperlink | null;
 }
 
 /** A copied or cut rectangle; `cells[r][c]` is null where the source had no cell. */
@@ -61,6 +63,7 @@ export class ClipboardBlock {
                 formula: cell.formula,
                 formulaSource: cell.formulaSource,
                 styleId: cell.styleId,
+                hyperlink: cell.hyperlink,
               }
             : null,
         );

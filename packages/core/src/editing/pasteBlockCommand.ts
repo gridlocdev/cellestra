@@ -209,6 +209,7 @@ export class PasteBlockCommand implements EditCommand {
     cell.value = source.value;
     cell.formula = this.mode === 'values' ? null : formula;
     cell.formulaSource = source.formulaSource;
+    cell.hyperlink = source.hyperlink;
     cell.styleId = styleId;
     dest.putCell(row, column, cell);
   }
