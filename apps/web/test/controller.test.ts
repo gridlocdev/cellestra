@@ -340,6 +340,15 @@ describe('auto-save', () => {
     expect(normalizeAutoSave(Number.NaN)).toBe(0);
   });
 
+  it('keeps the interval when the Settings field is cleared, and only a typed 0 turns it off', async () => {
+    const { autoSaveFromInput } = await import('../src/app/controller.ts');
+    expect(autoSaveFromInput('', 30)).toBe(30);
+    expect(autoSaveFromInput('  ', 45)).toBe(45);
+    expect(autoSaveFromInput('abc', 30)).toBe(30);
+    expect(autoSaveFromInput('0', 30)).toBe(0);
+    expect(autoSaveFromInput('2', 30)).toBe(5);
+  });
+
   it('saves in place once editing pauses, and the countdown restarts on each edit', async () => {
     vi.useFakeTimers();
     try {

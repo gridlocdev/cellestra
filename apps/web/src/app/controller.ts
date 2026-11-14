@@ -180,6 +180,16 @@ export function normalizeAutoSave(value: number): number {
   return Math.min(AutoSaveSeconds.maximum, Math.max(AutoSaveSeconds.minimum, Math.round(value)));
 }
 
+/**
+ * What the Settings field means once edited: a number is normalized, while a cleared or unreadable
+ * field keeps `current` (only a typed 0 turns auto-save off).
+ */
+export function autoSaveFromInput(text: string, current: number): number {
+  const trimmed = text.trim();
+  if (trimmed === '' || !Number.isFinite(Number(trimmed))) return current;
+  return normalizeAutoSave(Number(trimmed));
+}
+
 /** The command chrome: a tabbed ribbon (the default) or the single compact toolbar. */
 export type Layout = 'ribbon' | 'bar';
 

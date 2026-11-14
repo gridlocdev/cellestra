@@ -19,7 +19,7 @@ import {
 } from '@cellestra/ui';
 import {
   AutoSaveSeconds,
-  normalizeAutoSave,
+  autoSaveFromInput,
   wheelZoomFactor,
   type AppController,
   type Layout,
@@ -1087,7 +1087,7 @@ function SettingsDialog({ app, onClose }: { readonly app: AppController; readonl
             step={5}
             value={app.autoSaveSeconds.value}
             onChange={(e) => {
-              const v = normalizeAutoSave(Number(e.currentTarget.value));
+              const v = autoSaveFromInput(e.currentTarget.value, app.autoSaveSeconds.peek());
               app.autoSaveSeconds.value = v;
               e.currentTarget.value = String(v);
             }}
