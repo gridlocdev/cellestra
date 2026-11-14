@@ -35,6 +35,7 @@ import {
 import { canvasRowMeasure, ContentHeights } from './rowHeights.ts';
 import { afterTab, enterOrigin, startsComposition, type TabRun } from './keys.ts';
 import { insertLineBreak } from '../components/lineBreak.ts';
+import { ClickCounter } from './clickCounter.ts';
 import { Viewport, HEADER_HEIGHT, HEADER_WIDTH, type Rect } from './viewport.ts';
 import type { GridPalette } from './palette.ts';
 import { MAX_COLUMN, MAX_ROW, rangeOf, type GridRange, type Selection } from '../session/selection.ts';
@@ -245,6 +246,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     hint: readonly SignaturePart[] | null;
   } | null>(null);
   const assistRef = useRef(assist);
+  const clickCounter = useRef<ClickCounter | null>(null);
   assistRef.current = assist;
 
   // --- layout -----------------------------------------------------------------------------------
@@ -1014,6 +1016,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     // Ctrl-click on macOS is the context menu, not an added selection.
     if (IS_MAC && e.ctrlKey) return;
     const { x, y } = point(e);
+    const clicks = (clickCounter.current ??= new ClickCounter()).press(e.timeStamp, x, y, e.detail);
     const v = state.current.viewport;
     if (!v) return;
     // Typing a formula where a reference can go: a click points at the cell instead of leaving.
@@ -1041,7 +1044,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const resize = resizeTarget(x, y);
     if (resize) {
-      if (e.detail === 2) {
+      if (clicks === 2) {
         autofit(resize);
         return;
       }
@@ -1050,7 +1053,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     }
     if (handleAt(x, y)) {
       const source = selection.range.value;
-      if (e.detail === 2) {
+      if (clicks === 2) {
         const target = fillDownTarget(host.sheet.value, source);
         if (target) host.fill?.(source, target);
         return;
@@ -1102,7 +1105,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         if (e.shiftKey) selection.select(hit.row, hit.column, { extend: true, grow: growOverMerges });
         else selection.select(merged.top, merged.left, { add });
         state.current.drag = { kind: 'cells', index: 0, origin: 0, start: 0 };
-        if (e.detail === 2) beginEdit();
+        if (clicks === 2) beginEdit();
         return;
       }
     }
