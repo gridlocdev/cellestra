@@ -78,3 +78,7 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
 - **Closing.** The preload acknowledges a close request at once. If no ack arrives within 3 s, or the renderer is unresponsive, the user may force the close; a crashed renderer closes without asking. Cmd+Q quits after the unsaved-changes prompt, and a cancelled prompt cancels the quit.
 - **Watcher.** It watches the file's folder (filtered by name, debounced), so it survives atomic replaces, and ignores mtimes it wrote itself.
 - **App icon.** The source is `assets/icon.svg` (a 1024 canvas on Apple's icon grid). `just icons` renders it with Inkscape into `apps/desktop/build/icon.icns`, `icon.ico` and `icon.png`. Those files are committed, so packaging doesn't need Inkscape.
+
+## Working on it
+
+Setup, commands and workflows are in the [development guide](development.md).

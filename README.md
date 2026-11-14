@@ -1,53 +1,26 @@
 # Cellestra
 
-A spreadsheet editor for OpenDocument spreadsheets (`.ods`). It runs three ways, all from the same code:
+A spreadsheet editor for OpenDocument spreadsheets (`.ods`). You can use it in your browser, on your NAS from any browser on your network, or as a desktop app, all from the same code, and LibreOffice files survive the round trip.
 
-- **In the browser.** Open an `.ods`, `.csv` or `.tsv` file from your computer, edit it, and save it back. Everything happens in the page; nothing is uploaded.
-- **On your NAS.** A small server shows the folders you choose, so you can open and save spreadsheets on the NAS from any browser on your network.
-- **On the desktop.** An Electron app with native menus, file associations and normal Open/Save dialogs.
+- **Works with LibreOffice files.** It reads and writes `.ods`, keeps anything it doesn't understand intact, and imports and exports CSV and TSV.
+- **Formulas like LibreOffice Calc.** 47 functions with the same syntax, automatic recalculation and circular-reference detection.
+- **Every command from the keyboard.** `⌘K` opens the command menu and `⌘⇧P` switches sheets.
 
-## What it does
+## Getting started
 
-- Formulas with 47 functions, recalculation and circular-reference detection. The formula syntax matches LibreOffice Calc.
-- Reads and writes `.ods` and keeps anything it doesn't understand intact, so LibreOffice files survive a round trip. Also imports and exports CSV and TSV.
-- Formatting: number formats, fonts, fills, borders, alignment, wrapping and merges.
-- Data tools: sort, filter, tables, validation, remove duplicates and Clean Up.
-- Charts.
-- Every command is reachable from the keyboard: ⌘K opens the command menu, ⌘⇧P switches sheets.
-
-## Run it on a NAS (Docker)
+There are no prebuilt downloads yet. Run the desktop app from source with Node 22.18 or later and [just](https://github.com/casey/just):
 
 ```bash
-docker build -t cellestra .
-docker run -d -p 8787:8787 -v /volume1/Documents:/data cellestra
+just setup && just run-desktop
 ```
 
-Then open `http://<nas>:8787`. To expose several folders, add a password, or run as your NAS user, see [compose.example.yaml](compose.example.yaml).
+See [Getting started](docs/getting-started.md) for running it in the browser, on a NAS with Docker, and installing the desktop app.
 
-| Variable           | Default           | Meaning                                                           |
-| ------------------ | ----------------- | ----------------------------------------------------------------- |
-| `CELLESTRA_ROOTS`  | `Documents=/data` | The folders to show, as `Name=/path;Other=/path2`                 |
-| `CELLESTRA_TOKEN`  | unset             | If set, the browser asks for this token before it shows any files |
-| `CELLESTRA_HOSTS`  | unset             | Without a token, the extra host names to answer (comma-separated) |
-| `PORT`             | `8787`            | The port to listen on                                             |
-| `CELLESTRA_MAX_MB` | `64`              | The largest file you can save, in MB                              |
+## Learn more
 
-Without `CELLESTRA_TOKEN`, the server only answers requests addressed to an IP address or `localhost`. If you open it by name (for example `http://nas.lan:8787`), list that name in `CELLESTRA_HOSTS=nas.lan`. Other names get `421 Misdirected Request`, which stops a hostile web page from reaching your files through DNS rebinding.
-
-If LibreOffice has a file open (it leaves a `.~lock` file next to it), saving that file is refused. If someone else saved the file after you opened it, Cellestra warns you before overwriting their changes.
-
-## Desktop
-
-```bash
-just run-desktop      # run it in dev mode
-just package-desktop  # build a .dmg / AppImage / installer in apps/desktop/release
-just install-desktop  # macOS: package and install into /Applications
-```
-
-## For developers
-
-You need Node 22.18 or later and pnpm (installed via `corepack enable`). Run `just setup`, then `just run-web` for the dev server and `just check` before you commit. Run `just` on its own to list every recipe. [AGENTS.md](AGENTS.md) has the rules and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the code is laid out. The product spec is in [docs/PRD.md](docs/PRD.md).
+- [Features](docs/features.md) · [Controls](docs/controls.md)
+- [All documentation](docs/README.md) · [Working on the code](docs/development.md)
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+[MIT](LICENSE)

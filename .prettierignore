@@ -2,6 +2,6 @@ dist
 out
 release
 pnpm-lock.yaml
-docs/PRD.md
+docs/plans/prd.md
 packages/ui/src/icons
 .types

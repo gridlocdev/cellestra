@@ -2,7 +2,7 @@
 
 > **Name:** "Cellestra" — from *cell* + *orchestra*, pronounced **CELL-estra**. (A spreadsheet is a lot of little cells playing together in tune.)
 >
-> **Status:** Draft / pre-v1. This document changes slowly. It describes *what* I'm building and *why*, not *how*. The "how" lives in `ARCHITECTURE.md`.
+> **Status:** Draft / pre-v1. This document changes slowly. It describes *what* I'm building and *why*, not *how*. The "how" lives in `architecture.md`.
 
 ---
 
@@ -47,7 +47,7 @@ If I open a Cellestra-saved file in LibreOffice and notice nothing wrong, the ba
 - **Speed (measured on Apple Silicon):** a 10,000-filled-cell sheet opens in **under 500 ms**; scrolling and selection stay at **60 fps**; a full recalculation of 10,000 dependent cells completes in **under 100 ms**. These are the benchmark targets in `Cellestra.Benchmarks`.
 - **Correctness:** every v1 function (§8.2) returns the same result LibreOffice would for the same inputs; this is covered by tests.
 - **Feel:** core editing (move, type, edit, copy, paste, fill) is fully keyboard-driven and matches spreadsheet muscle memory.
-- **Trust:** the dependency list is short and explainable (see `ARCHITECTURE.md` for the exact set); nothing in the supply chain is a mystery.
+- **Trust:** the dependency list is short and explainable (see `architecture.md` for the exact set); nothing in the supply chain is a mystery.
 
 ## 4. Core features (v1)
 
@@ -209,7 +209,7 @@ Tooltips on every tool carry its name, shortcut, and one-line description; drawe
 
 ### 6.4 Keyboard shortcuts (full reference)
 
-Shortcuts use macOS modifiers (⌘ Command, ⇧ Shift, ⌥ Option, ⌃ Control). The single source of truth is the `AppCommands` catalog (see `ARCHITECTURE.md`); the table below lists the defaults, and **all are remappable in Settings**.
+Shortcuts use macOS modifiers (⌘ Command, ⇧ Shift, ⌥ Option, ⌃ Control). The single source of truth is the `AppCommands` catalog (see `architecture.md`); the table below lists the defaults, and **all are remappable in Settings**.
 
 **Files & app**
 | Action | Shortcut |
@@ -297,7 +297,7 @@ The **window title** is the document's file name (`Budget.ods`, or `Untitled`), 
 Two keyboard-summoned overlays are the fast path to "do a thing" and "go somewhere" — both modeled on VS Code's palettes. Each appears as a floating, centered input with a filtered result list below it; ↑/↓ move the highlight, Return activates it, Esc dismisses without changing anything.
 
 **Command Menu — ⌘K (run any command).**
-- Opens an input over the grid; typing **fuzzy-filters every command in the `AppCommands` catalog** by name (see `ARCHITECTURE.md`). The command bar's "Search commands…" affordance opens the same palette.
+- Opens an input over the grid; typing **fuzzy-filters every command in the `AppCommands` catalog** by name (see `architecture.md`). The command bar's "Search commands…" affordance opens the same palette.
 - Each row shows the command's **icon**, its **label**, a one-line **description**, and its **current keyboard shortcut** — so the palette doubles as searchable, in-context documentation.
 - Return runs the highlighted command against the current selection, then closes the palette. Because it reads the one command catalog, it can never drift out of sync with the menu bar or command bar.
 
@@ -310,7 +310,7 @@ Neither palette is the *only* way to do anything: every command is still in the 
 
 ## 7. User experience principles (Jakob Nielsen's 10 heuristics)
 
-I use Nielsen's heuristics as a checklist to keep the design honest. Each below is a *product requirement*. (Implementation is in `ARCHITECTURE.md`.)
+I use Nielsen's heuristics as a checklist to keep the design honest. Each below is a *product requirement*. (Implementation is in `architecture.md`.)
 
 1. **Visibility of system status** — the status bar always shows the active cell, selection stats, calculation mode, and a dirty indicator; a spinner/message shows while loading or recalculating.
 2. **Match with the real world** — familiar `A1` references, known function names, plain-English error explanations, the conventional row/column/sheet model.
@@ -454,7 +454,7 @@ below 5 seconds is treated as 5.
 
 ### 8.16 Command-line interface (`cellestra`)
 
-A second face on the same brain (`ARCHITECTURE.md` §1): the `cellestra` binary makes Cellestra useful in scripts, CI, and build pipelines. It lives in `Cellestra.Cli/`, references only Core + `System.CommandLine`, and has **no Avalonia and no network**. Because it reuses the engine, `convert` shares the serializers, `eval` shares the formula engine, and `functions` reads the same `FunctionRegistry` as the app's autocomplete — so CLI output and GUI behaviour can't drift. Cell addressing matches the app (`Sheet1.B2`, ranges `Sheet1.A1:C10`; omit the sheet for the active/first one). No args, `-h`, or `--help` shows help.
+A second face on the same brain (`architecture.md` §1): the `cellestra` binary makes Cellestra useful in scripts, CI, and build pipelines. It lives in `Cellestra.Cli/`, references only Core + `System.CommandLine`, and has **no Avalonia and no network**. Because it reuses the engine, `convert` shares the serializers, `eval` shares the formula engine, and `functions` reads the same `FunctionRegistry` as the app's autocomplete — so CLI output and GUI behaviour can't drift. Cell addressing matches the app (`Sheet1.B2`, ranges `Sheet1.A1:C10`; omit the sheet for the active/first one). No args, `-h`, or `--help` shows help.
 
 **Baseline (the genuinely useful core):**
 - `convert <in> <out>` — `.ods ⇄ CSV`, both directions (`--from/--to`, `--sheet`, `--delimiter`).
@@ -581,7 +581,7 @@ Intentional exclusions, not oversights.
 | Autosave | **In v1** (§8.7a): a saved workbook is written back after 30s of no editing, configurable in Preferences (0 = off). Crash auto-recovery is still out (§9). |
 | CSV specifics | UTF-8, comma default, RFC 4180 quoting, exports computed values (§8.4). |
 
-If a new ambiguity surfaces during build, resolve it here (or in `ARCHITECTURE.md` for technical detail) rather than guessing in code.
+If a new ambiguity surfaces during build, resolve it here (or in `architecture.md` for technical detail) rather than guessing in code.
 
 ### 10.1 Editing-feel decisions (resolved during build)
 
