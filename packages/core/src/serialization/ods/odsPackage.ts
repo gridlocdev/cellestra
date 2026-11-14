@@ -9,6 +9,14 @@ export class OdsPackageTooLargeError extends Error {
   override readonly name = 'OdsPackageTooLargeError';
 }
 
+/**
+ * Thrown when the bytes are not a spreadsheet Cellestra can open: not a ZIP package, another kind
+ * of document, or password-protected. The message is written for the person opening the file.
+ */
+export class OdsUnsupportedFileError extends Error {
+  override readonly name = 'OdsUnsupportedFileError';
+}
+
 /** An unmodeled child of `<office:spreadsheet>`, kept verbatim (PRD §8.1). */
 export interface ForeignXml {
   readonly beforeTables: boolean;
@@ -66,17 +74,23 @@ export class OdsPackage {
     // entry into a buffer of its declared size (and never grows it), so bounding the declared sizes
     // bounds the memory reading can take.
     let total = 0;
-    const entries = unzipSync(bytes, {
-      filter: (file) => {
-        total += file.originalSize;
-        if (total > maxUncompressedBytes) {
-          throw new OdsPackageTooLargeError(
-            `The file expands to more than ${Math.round(maxUncompressedBytes / 2 ** 20)} MiB.`,
-          );
-        }
-        return true;
-      },
-    });
+    let entries: Record<string, Uint8Array>;
+    try {
+      entries = unzipSync(bytes, {
+        filter: (file) => {
+          total += file.originalSize;
+          if (total > maxUncompressedBytes) {
+            throw new OdsPackageTooLargeError(
+              `The file expands to more than ${Math.round(maxUncompressedBytes / 2 ** 20)} MiB.`,
+            );
+          }
+          return true;
+        },
+      });
+    } catch (e) {
+      if (e instanceof OdsPackageTooLargeError) throw e;
+      throw new OdsUnsupportedFileError('This file is damaged or is not an .ods spreadsheet.');
+    }
     for (const [name, data] of Object.entries(entries)) {
       if (name.endsWith('/')) continue; // directory entry
       pkg.parts.set(name, data);

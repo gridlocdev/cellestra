@@ -2,6 +2,7 @@ export {
   MAX_UNCOMPRESSED_BYTES,
   OdsPackage,
   OdsPackageTooLargeError,
+  OdsUnsupportedFileError,
   type ForeignXml,
 } from './odsPackage.ts';
 export { OdsReader, type OdsReadResult } from './odsReader.ts';

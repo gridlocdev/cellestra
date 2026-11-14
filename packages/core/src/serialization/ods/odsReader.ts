@@ -2,6 +2,7 @@ import { Defaults } from '../../defaults.ts';
 import { Workbook } from '../../model/workbook.ts';
 import { parseXml, tryParseXml } from '../../xml/index.ts';
 import { readContentXml } from './odsContentRead.ts';
+import { checkSpreadsheetPackage } from './odsFileKind.ts';
 import { OdsPackage } from './odsPackage.ts';
 import { OdsPageSetup } from './odsPageSetup.ts';
 import { OdsSupportXml } from './odsSupportXml.ts';
@@ -27,7 +28,9 @@ export const OdsReader = {
     return OdsReader.readWithPackage(bytes).workbook;
   },
 
+  /** Throws `OdsUnsupportedFileError` for a password-protected file or another kind of document. */
   fromPackage(pkg: OdsPackage): Workbook {
+    checkSpreadsheetPackage(pkg);
     const workbook = new Workbook();
 
     const contentXml = pkg.getText(N.contentPart);
