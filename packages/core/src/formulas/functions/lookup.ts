@@ -41,19 +41,27 @@ function sameType(v: CellValue, lookup: CellValue): boolean {
   return v.kind === lookup.kind;
 }
 
-/** Position of `lookup` in `values` (−1 when absent), or the error value to return. */
-function search(values: readonly CellValue[], lookup: CellValue, matchType: number): number | CellValue {
+/**
+ * Position of `lookup` among the first `count` values `read` gives (−1 when absent), or the error
+ * value to return. Values are read one at a time, so an exact match stops at the first hit.
+ */
+function search(
+  read: (i: number) => CellValue,
+  count: number,
+  lookup: CellValue,
+  matchType: number,
+): number | CellValue {
   if (matchType === 0) {
     const matches = exactMatcher(lookup);
-    for (let i = 0; i < values.length; i++) if (matches(values[i]!)) return i;
+    for (let i = 0; i < count; i++) if (matches(read(i))) return i;
     return -1;
   }
   // Approximate: assume sorted (ascending for 1, descending for -1); take the last value on the
   // correct side of the lookup. Cells of another type (a text header above numbers, blanks, errors)
   // are skipped, not treated as the boundary.
   let best = -1;
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i]!;
+  for (let i = 0; i < count; i++) {
+    const v = read(i);
     if (!sameType(v, lookup)) continue;
     const cmp = ValueComparer.compare(v, lookup);
     if (cmp instanceof CellError) return CellValue.error(cmp);
@@ -75,13 +83,9 @@ function searchUsed(
   lookup: CellValue,
   matchType: number,
 ): number | CellValue {
-  const position = search(
-    Array.from({ length: used }, (_, i) => read(i)),
-    lookup,
-    matchType,
-  );
+  const position = search(read, used, lookup, matchType);
   if (position !== -1 || used >= length || matchType !== 0) return position;
-  return search([CellValue.empty], lookup, 0) === 0 ? used : -1;
+  return search(() => CellValue.empty, 1, lookup, 0) === 0 ? used : -1;
 }
 
 function lookupTable(args: readonly Expr[], ev: FunctionEvaluator, vertical: boolean): CellValue {
