@@ -134,6 +134,13 @@ function countValues(args: readonly Expr[], ev: FunctionEvaluator, onlyNumbers: 
   return count;
 }
 
+/** The cell at (r, c) from `sumRange`'s top-left, read past its own size; an array has nothing past it. */
+function reshapedCell(sumRange: RangeValues, r: number, c: number, ev: FunctionEvaluator): CellValue {
+  if (!sumRange.isArray)
+    return ev.context.getCell(sumRange.range.sheet, sumRange.range.top + r, sumRange.range.left + c);
+  return r < sumRange.rowCount && c < sumRange.columnCount ? sumRange.get(r, c) : CellValue.empty;
+}
+
 function sumOrCountIf(args: readonly Expr[], ev: FunctionEvaluator, sum: boolean): CellValue {
   const range = ev.tryEvaluateRange(args[0]!);
   if (!range) return CellValue.error(CellError.value('The first argument must be a range.'));
@@ -163,9 +170,7 @@ function sumOrCountIf(args: readonly Expr[], ev: FunctionEvaluator, sum: boolean
       if (!sum) continue;
       // Excel/Calc anchor sum_range at its top-left and reshape it to the criteria range, so its own
       // size is ignored: read offset (r, c) from its top-left through the context.
-      const target = sumRange
-        ? ev.context.getCell(sumRange.range.sheet, sumRange.range.top + r, sumRange.range.left + c)
-        : cell;
+      const target = sumRange ? reshapedCell(sumRange, r, c, ev) : cell;
       if (target.kind === 'error') return target;
       // A TRUE in the sum range adds 1, as in Calc, where a boolean cell is a number.
       if (target.kind === 'number') total.add(target.value);

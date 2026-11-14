@@ -61,6 +61,18 @@ export function literalText(value: CellValue, booleanSuffix = ''): string {
 }
 
 /**
+ * An inline array as formula text with the given column and row separators (A1: `,` and `;`;
+ * OpenFormula: `;` and `|`). Booleans are written bare in both, as Calc does inside an array.
+ */
+export function arrayText(
+  rows: readonly (readonly CellValue[])[],
+  columnSeparator: string,
+  rowSeparator: string,
+): string {
+  return `{${rows.map((row) => row.map((v) => literalText(v)).join(columnSeparator)).join(rowSeparator)}}`;
+}
+
+/**
  * A range that spans every row with absolute row corners is a whole-column range (`A:C`); every
  * column with absolute column corners, a whole-row range (`1:3`). Null for an ordinary range.
  * `sheetPrefix` renders the start's sheet and `endPrefix` goes before the end, so both writers share it.
@@ -124,6 +136,8 @@ function render(expr: Expr): string {
   switch (expr.kind) {
     case 'literal':
       return literalText(expr.value);
+    case 'array':
+      return arrayText(expr.rows, ',', ';');
     case 'reference':
       return expr.address.toString();
     case 'range':

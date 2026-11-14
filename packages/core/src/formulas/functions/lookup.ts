@@ -149,9 +149,41 @@ function indexReference(range: RangeValues, rowArg: number, colArg: number | nul
   return CellRange.fromBounds(top, left, bottom, right, r.sheet);
 }
 
+/** The cells INDEX points at within its range (or inline array), or the error value it gives. */
+function indexTarget(
+  args: readonly Expr[],
+  ev: FunctionEvaluator,
+): { readonly source: RangeValues; readonly target: CellRange } | CellValue {
+  const source = ev.tryEvaluateRange(args[0]!);
+  if (!source) return CellValue.error(CellError.value('INDEX needs a range.'));
+  const target = evaluateIndexIn(source, args, ev);
+  return target instanceof CellRange ? { source, target } : target;
+}
+
+/** INDEX as a reference; an inline array has no cells to refer to. */
 function evaluateIndex(args: readonly Expr[], ev: FunctionEvaluator): CellRange | CellValue {
-  const range = ev.tryEvaluateRange(args[0]!);
-  if (!range) return CellValue.error(CellError.value('INDEX needs a range.'));
+  const found = indexTarget(args, ev);
+  if (!('target' in found)) return found;
+  if (found.source.isArray) return CellValue.error(CellError.value('An inline array is not a reference.'));
+  return found.target;
+}
+
+/** INDEX where one value is needed. Out of an inline array it takes the one element it picks. */
+function indexValue(args: readonly Expr[], ev: FunctionEvaluator): CellValue {
+  const found = indexTarget(args, ev);
+  if (!('target' in found)) return found;
+  const { source, target } = found;
+  if (!source.isArray) return ev.intersect(target);
+  if (!target.isSingleCell)
+    return CellValue.error(CellError.value('INDEX of an inline array must pick one element here.'));
+  return source.get(target.top, target.left);
+}
+
+function evaluateIndexIn(
+  range: RangeValues,
+  args: readonly Expr[],
+  ev: FunctionEvaluator,
+): CellRange | CellValue {
   const rowArg = readInt(ev, args[1]!);
   if (isFailure(rowArg)) return rowArg.failed;
   let colArg: number | null = null;
@@ -245,10 +277,7 @@ export function lookupFunctions(): FormulaFunction[] {
         Arg.number('column', { optional: true }),
       ),
       evaluateIndex,
-      (args, ev) => {
-        const target = evaluateIndex(args, ev);
-        return target instanceof CellRange ? ev.intersect(target) : target;
-      },
+      indexValue,
     ),
   ];
 }

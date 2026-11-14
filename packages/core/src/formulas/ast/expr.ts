@@ -28,6 +28,15 @@ export interface LiteralExpr {
   readonly value: CellValue;
 }
 
+/**
+ * An inline array of constants, `{1,2;3,4}`: rows of equal length, each element a number, text,
+ * boolean or error value.
+ */
+export interface ArrayExpr {
+  readonly kind: 'array';
+  readonly rows: readonly (readonly CellValue[])[];
+}
+
 /** A single cell reference such as `A1`, `$A$1`, or `Sheet2.A1`. */
 export interface ReferenceExpr {
   readonly kind: 'reference';
@@ -77,6 +86,7 @@ export interface FunctionCallExpr {
 /** A parsed formula expression node. */
 export type Expr =
   | LiteralExpr
+  | ArrayExpr
   | ReferenceExpr
   | RangeExpr
   | NameExpr
@@ -92,6 +102,7 @@ const REF_ERROR: RefErrorExpr = Object.freeze({ kind: 'refError' });
 /** Node constructors. */
 export const Expr = {
   literal: (value: CellValue): Expr => ({ kind: 'literal', value }),
+  array: (rows: readonly (readonly CellValue[])[]): Expr => ({ kind: 'array', rows }),
   reference: (address: CellAddress): Expr => ({ kind: 'reference', address }),
   range: (range: CellRange): Expr => ({ kind: 'range', range }),
   name: (name: string): Expr => ({ kind: 'name', name }),

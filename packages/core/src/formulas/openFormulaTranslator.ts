@@ -3,6 +3,7 @@ import { quoteSheetIfNeeded, type CellAddress } from '../model/cellAddress.ts';
 import type { CellRange } from '../model/cellRange.ts';
 import type { BinaryExpr, Expr, UnaryExpr } from './ast/expr.ts';
 import {
+  arrayText,
   BINARY_SYMBOL,
   FormulaWriter,
   literalText,
@@ -73,6 +74,8 @@ function render(expr: Expr): string {
   switch (expr.kind) {
     case 'literal':
       return literalText(expr.value, '()');
+    case 'array':
+      return arrayText(expr.rows, ';', '|');
     case 'reference':
       return renderAddress(expr.address);
     case 'range':
@@ -102,6 +105,7 @@ function stripPrefix(formula: string): string {
 
 function convertReferencesAndSeparators(body: string): string {
   let out = '';
+  let inArray = false;
   for (let i = 0; i < body.length; i++) {
     const c = body[i]!;
     if (c === '"') {
@@ -134,8 +138,16 @@ function convertReferencesAndSeparators(body: string): string {
           ? '#REF!'
           : inner.split(':').map(convertCorner).join(':');
       i = close;
+    } else if (c === '{') {
+      inArray = true;
+      out += c;
+    } else if (c === '}') {
+      inArray = false;
+      out += c;
+    } else if (c === '|' && inArray) {
+      out += ';'; // OpenFormula → internal inline-array row separator
     } else if (c === ';') {
-      out += ','; // OpenFormula → internal argument separator
+      out += ','; // OpenFormula → internal argument (and inline-array column) separator
     } else if ((c === 'C' || c === 'c') && !/[\p{L}\p{Nd}_.$]/u.test(body[i - 1] ?? '')) {
       const call = MICROSOFT_CALL.exec(body.slice(i, i + 64));
       const name = call?.[1]?.toUpperCase();

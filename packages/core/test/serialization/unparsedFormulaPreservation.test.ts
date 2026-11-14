@@ -7,7 +7,7 @@ import { OpenFormulaTranslator } from '../../src/formulas/openFormulaTranslator.
 import { readOds, writeOds } from '../../src/serialization/index.ts';
 import { odsWith, readEntry } from './helpers.ts';
 
-const ORIGINAL = 'of:=MYSTERY([.A1] ~ [.B1]; {1;2})';
+const ORIGINAL = 'of:=MYSTERY([.A1] @ [.B1]; {1;2})';
 const MANY_OTHER_FORMULAS = 20_000;
 
 describe('Unparsed formulas', () => {
@@ -18,9 +18,9 @@ describe('Unparsed formulas', () => {
     const workbook = readOds(bytes);
     // Other files read in the same session must not push this formula's original text out.
     for (let i = 0; i < MANY_OTHER_FORMULAS; i++)
-      OpenFormulaTranslator.fromOpenFormula(`of:=OTHER${i}([.A1] ~ 1)`);
+      OpenFormulaTranslator.fromOpenFormula(`of:=OTHER${i}([.A1] @ 1)`);
     const content = readEntry(writeOds(workbook), 'content.xml');
-    expect(content).toContain('table:formula="of:=MYSTERY([.A1] ~ [.B1]; {1;2})"');
+    expect(content).toContain('table:formula="of:=MYSTERY([.A1] @ [.B1]; {1;2})"');
   });
 });
 
@@ -38,6 +38,6 @@ describe('Copies of unparsed formulas', () => {
     ).apply(workbook);
     new FillCommand(sheet.name, CellRange.parse('A1'), CellRange.parse('A1:A2')).apply(workbook);
     const content = readEntry(writeOds(workbook), 'content.xml');
-    expect(content.split('table:formula="of:=MYSTERY([.A1] ~ [.B1]; {1;2})"').length - 1).toBe(3);
+    expect(content.split('table:formula="of:=MYSTERY([.A1] @ [.B1]; {1;2})"').length - 1).toBe(3);
   });
 });

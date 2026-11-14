@@ -20,6 +20,7 @@ export const FormulaSignatureScanner = {
     const end = Math.max(0, Math.min(caret, formula.length));
     const stack: { nameStart: number; nameEnd: number; argIndex: number }[] = [];
     let inString = false;
+    let braces = 0; // inside an inline array, commas separate its elements, not arguments
     for (let i = 0; i < end; i++) {
       const c = formula[i]!;
       if (inString) {
@@ -30,12 +31,14 @@ export const FormulaSignatureScanner = {
         continue;
       }
       if (c === '"') inString = true;
+      else if (c === '{') braces++;
+      else if (c === '}') braces = Math.max(0, braces - 1);
       else if (c === '(') {
         let j = i - 1;
         while (j >= 0 && isNameChar(formula[j]!)) j--;
         stack.push({ nameStart: j + 1, nameEnd: i, argIndex: 0 });
       } else if (c === ')') stack.pop();
-      else if (c === ',' && stack.length > 0) stack[stack.length - 1]!.argIndex++;
+      else if (c === ',' && braces === 0 && stack.length > 0) stack[stack.length - 1]!.argIndex++;
     }
     while (stack.length > 0) {
       const { nameStart, nameEnd, argIndex } = stack.pop()!;

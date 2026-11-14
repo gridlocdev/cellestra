@@ -22,6 +22,9 @@ export type TokenType =
   | 'greaterEqual'
   | 'leftParen'
   | 'rightParen'
+  /** `{`: the start of an inline array. */
+  | 'leftBrace'
+  | 'rightBrace'
   | 'comma'
   /** The range operator `:`. */
   | 'colon'
@@ -29,7 +32,7 @@ export type TokenType =
   | 'tilde'
   /** The reference intersection operator `!`. */
   | 'bang'
-  /** `;`: a list separator inside bare parentheses (a union, as in Calc). */
+  /** `;`: an inline array's row separator, or a list separator inside bare parentheses (a union). */
   | 'semicolon'
   /** An error literal such as `#REF!` or `#N/A`. */
   | 'error'
@@ -52,6 +55,8 @@ const SINGLE: Readonly<Record<string, TokenType>> = {
   '%': 'percent',
   '(': 'leftParen',
   ')': 'rightParen',
+  '{': 'leftBrace',
+  '}': 'rightBrace',
   ',': 'comma',
   ':': 'colon',
   '~': 'tilde',

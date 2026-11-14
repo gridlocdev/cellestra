@@ -282,9 +282,80 @@ export class Parser {
       }
       case 'name':
         return this.parseNameOperand();
+      case 'leftBrace':
+        return this.parseArray();
       default:
         throw new FormulaParseException(`Unexpected ${describe(token.type)}.`, token.position);
     }
+  }
+
+  /**
+   * An inline array of constants: `,` separates columns and `;` rows (Calc's en-US separators). Every
+   * row must have as many elements as the first.
+   */
+  private parseArray(): Expr {
+    const open = this.expect('leftBrace');
+    const rows: CellValue[][] = [];
+    let row: CellValue[] = [this.parseArrayElement()];
+    for (;;) {
+      if (this.match('comma')) row.push(this.parseArrayElement());
+      else if (this.match('semicolon')) {
+        rows.push(row);
+        row = [this.parseArrayElement()];
+      } else break;
+    }
+    rows.push(row);
+    this.expect('rightBrace');
+    if (rows.some((r) => r.length !== rows[0]!.length))
+      throw new FormulaParseException('Every row of an array must have the same length.', open.position);
+    return Expr.array(rows);
+  }
+
+  /** One array element: a signed number, a string, TRUE or FALSE (with or without `()`), or an error. */
+  private parseArrayElement(): CellValue {
+    const token = this.current;
+    let sign = 1;
+    if (token.type === 'minus' || token.type === 'plus') {
+      this.advance();
+      if (token.type === 'minus') sign = -1;
+      if (this.current.type !== 'number')
+        throw new FormulaParseException('Expected a number after the sign.', this.current.position);
+    }
+    const element = this.current;
+    switch (element.type) {
+      case 'number': {
+        this.advance();
+        const value = sign * parseNumber(element);
+        return Number.isFinite(value)
+          ? CellValue.number(value)
+          : CellValue.error(CellError.number(`${element.text} is too large a number.`));
+      }
+      case 'text':
+        this.advance();
+        return CellValue.text(element.text);
+      case 'error': {
+        this.advance();
+        const code = CellError.codeFromToken(element.text)!;
+        return CellValue.error(new CellError(code, `The array contains ${element.text}.`));
+      }
+      case 'name': {
+        const upper = element.text.toUpperCase();
+        if (upper !== 'TRUE' && upper !== 'FALSE') break;
+        this.advance();
+        // OpenFormula may spell the constant as the function TRUE().
+        if (this.current.type === 'leftParen') {
+          this.advance();
+          this.expect('rightParen');
+        }
+        return CellValue.boolean(upper === 'TRUE');
+      }
+      default:
+        break;
+    }
+    throw new FormulaParseException(
+      'An array may only hold numbers, text, TRUE, FALSE and error values.',
+      element.position,
+    );
   }
 
   private parseNameOperand(): Expr {

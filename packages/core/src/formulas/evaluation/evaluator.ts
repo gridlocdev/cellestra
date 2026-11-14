@@ -68,6 +68,9 @@ export class Evaluator implements FunctionEvaluator {
     switch (expr.kind) {
       case 'literal':
         return expr.value;
+      case 'array':
+        // Where one value is needed an inline array gives its first element, as in Calc.
+        return expr.rows[0]?.[0] ?? CellValue.empty;
       case 'reference':
         return this.context.getCell(expr.address.sheet, expr.address.row, expr.address.column);
       case 'range':
@@ -275,6 +278,8 @@ export class Evaluator implements FunctionEvaluator {
     switch (expr.kind) {
       case 'range':
         return new RangeValues(expr.range, this.context);
+      case 'array':
+        return RangeValues.ofArray(expr.rows, this.context);
       case 'reference':
         return new RangeValues(new CellRange(expr.address), this.context);
       case 'name': {
