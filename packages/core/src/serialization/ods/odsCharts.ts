@@ -1,10 +1,23 @@
 import { ChartDocument } from '@cellestra/charts';
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
-import { tryParseXml, XmlElement, type XmlName } from '../../xml/index.ts';
+import { isNamespaceDeclaration, tryParseXml, XmlElement, type XmlName } from '../../xml/index.ts';
 import { formatUpTo3 } from './odsContentShared.ts';
 import type { OdsPackage } from './odsPackage.ts';
-import { Draw, Office, Svg, Table, Xlink } from './odsXmlNames.ts';
+import { CellestraNs, Draw, Office, Svg, Table, Xlink } from './odsXmlNames.ts';
+
+/**
+ * Marks the `draw:frame` of a chart sheet Cellestra wrote, so only those sheets are read back as
+ * chart sheets: a chart another editor anchored in A1 of an empty sheet is an embedded chart.
+ */
+const CHART_SHEET_MARK = CellestraNs('chart-sheet');
+
+/**
+ * Each chart sheet's chart as it was read or last written, so a save rewrites the chart object
+ * only when the chart was edited: an object holds much the model does not (styles, a wall, a
+ * local table), and another editor may have added it.
+ */
+const writtenCharts = new WeakMap<Worksheet, string>();
 
 /**
  * The spreadsheet side of chart-sheet serialization: embeds each chart sheet's chart as an ODF
@@ -40,7 +53,12 @@ export const OdsCharts = {
         chart.objectName = name;
       }
 
-      pkg.setText(`${chart.objectName}/content.xml`, ChartDocument.buildContent(chart));
+      const part = `${chart.objectName}/content.xml`;
+      const state = JSON.stringify(chart);
+      if (writtenCharts.get(sheet) !== state || !pkg.contains(part)) {
+        pkg.setText(part, ChartDocument.buildContent(chart));
+        writtenCharts.set(sheet, state);
+      }
       dirs.push(chart.objectName);
     }
     return dirs;
@@ -69,6 +87,7 @@ export const OdsCharts = {
       .setAttr(Svg('height'), cm(ChartDocument.defaultHeightCm))
       .setAttr(Svg('x'), '0cm')
       .setAttr(Svg('y'), '0cm')
+      .setAttr(CHART_SHEET_MARK, 'true')
       .add(
         new XmlElement(Draw('object'))
           .setAttr(Xlink('href'), './' + chart.objectName)
@@ -80,8 +99,8 @@ export const OdsCharts = {
   },
 
   /**
-   * If `table` is a chart sheet — exactly what `injectFrame` writes: one `draw:frame` holding one
-   * chart `draw:object`, anchored in A1, and nothing else (no data, no other shapes, no
+   * If `table` is a chart sheet — exactly what `injectFrame` writes: one marked `draw:frame`
+   * holding one chart `draw:object`, anchored in A1, and nothing else (no data, no other shapes, no
    * `table:shapes`) — parse the chart from `pkg`, attach it to `sheet`, and return the object's
    * href. Returns null otherwise: a chart in a sheet with anything else on it is an embedded chart,
    * preserved with the rest of the sheet, and must not turn the sheet into a chart sheet (which
@@ -90,6 +109,8 @@ export const OdsCharts = {
   readChartSheet(table: XmlElement, pkg: OdsPackage | null, sheet: Worksheet): string | null {
     if (!pkg) return null;
     const frame = chartSheetFrame(table);
+    if (!frame || !(frame.attr(CHART_SHEET_MARK) === 'true' || isUnmarkedCellestraFrame(frame, sheet.name)))
+      return null;
     const reference = frame?.element(Draw('object'))?.attr(Xlink('href')) ?? null;
     if (reference === null) return null;
 
@@ -103,6 +124,7 @@ export const OdsCharts = {
 
     chart.objectName = dir;
     sheet.chart = chart;
+    writtenCharts.set(sheet, JSON.stringify(chart));
     return reference;
   },
 } as const;
@@ -148,6 +170,26 @@ function chartSheetFrame(table: XmlElement): XmlElement | null {
   const objects = parts.filter((e) => e.is(Draw('object')));
   if (objects.length !== 1 || parts.some((e) => !e.is(Draw('object')) && !e.is(Draw('image')))) return null;
   return frame;
+}
+
+/**
+ * A chart sheet frame as Cellestra wrote it before frames were marked: its name, its fixed size at
+ * the origin, and no other attribute. LibreOffice always adds attributes of its own (a z-index, an
+ * end cell), so a frame it wrote never matches.
+ */
+function isUnmarkedCellestraFrame(frame: XmlElement, sheetName: string): boolean {
+  const expected = new Map<string, string>([
+    [`${Draw.uri} name`, `${sheetName} Chart`],
+    [`${Svg.uri} width`, cm(ChartDocument.defaultWidthCm)],
+    [`${Svg.uri} height`, cm(ChartDocument.defaultHeightCm)],
+    [`${Svg.uri} x`, '0cm'],
+    [`${Svg.uri} y`, '0cm'],
+  ]);
+  const attributes = frame.attributes.filter((a) => !isNamespaceDeclaration(a));
+  return (
+    attributes.length === expected.size &&
+    attributes.every((a) => expected.get(`${a.name.uri} ${a.name.local}`) === a.value)
+  );
 }
 
 /** "./Object 1" or "Object 1/" → "Object 1". */

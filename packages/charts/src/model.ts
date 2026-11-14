@@ -76,6 +76,11 @@ export const ChartTypes = {
   all: Object.keys(ODS_CLASS) as ChartType[],
   odsClass: (type: ChartType): string => ODS_CLASS[type],
   isHorizontalBars: (type: ChartType): boolean => type === 'bar',
+  /** Whether `odsClass` (`chart:bar`, `line`) is a chart family the model can hold. */
+  isKnownOds(odsClass: string): boolean {
+    const cls = odsClass.includes(':') ? odsClass : `chart:${odsClass}`;
+    return Object.values(ODS_CLASS).includes(cls);
+  },
   fromOds(odsClass: string | null | undefined, vertical: boolean): ChartType {
     const cls = !odsClass ? '' : odsClass.includes(':') ? odsClass : `chart:${odsClass}`;
     switch (cls) {

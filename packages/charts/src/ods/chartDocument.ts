@@ -97,12 +97,15 @@ export const ChartDocument = {
 
   /**
    * Parse an embedded chart object's `content.xml` root element back into a definition. Null when
-   * there is no document, or it isn't an `office:chart` document.
+   * there is no document, it isn't an `office:chart` document, or its chart family is one the
+   * model cannot hold (a stock chart, say), so the caller keeps the object as it is.
    */
   parse(root: ChartXmlElement | null | undefined): ChartDefinition | null {
     if (!root) return null;
     const chartElement = child(child(child(root, N.office, 'body'), N.office, 'chart'), N.chart, 'chart');
     if (!chartElement) return null;
+    const chartClass = chartElement.attr(N.chart, 'class');
+    if (chartClass && !ChartTypes.isKnownOds(chartClass)) return null;
 
     const plotArea = child(chartElement, N.chart, 'plot-area');
     const vertical = plotArea?.attr(N.chart, 'vertical') === 'true';

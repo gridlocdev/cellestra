@@ -94,7 +94,12 @@ describe('chart sheets', () => {
   });
 
   it('the frame Cellestra writes alone in A1 is still read as a chart sheet', () => {
-    const sheet = `<table:table table:name="Chart"><table:table-column/><table:table-row><table:table-cell>${frame(1, '0cm')}</table:table-cell></table:table-row></table:table>`;
+    // Cellestra marks the frames of the chart sheets it writes; an unmarked chart is another editor's.
+    const marked = frame(1, '0cm').replace(
+      '<draw:frame ',
+      '<draw:frame xmlns:cellestra="urn:cellestra:names:table:1.0" cellestra:chart-sheet="true" ',
+    );
+    const sheet = `<table:table table:name="Chart"><table:table-column/><table:table-row><table:table-cell>${marked}</table:table-cell></table:table-row></table:table>`;
     expect(readOds(ods(data + sheet, { extra: objects })).findSheet('Chart')!.isChartSheet).toBe(true);
   });
 });
