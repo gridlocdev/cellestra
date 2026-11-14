@@ -389,10 +389,20 @@ function formatDateSection(serial: number, tokens: readonly FormatToken[], info:
   const hasTime = tokens.some(
     (tk) => tk.t === 'elapsed' || tk.t === 'ampm' || (tk.t === 'date' && 'hmsf'.includes(tk.field)),
   );
-  const when: CivilDateTime | null = DateConversion.tryToDateTime(serial, !hasTime);
+  // Seconds round to what is shown (whole seconds, or the `.000` digits), as in Calc: 59.6 s is
+  // the next minute, not 59.
+  const digits = Math.min(
+    3,
+    Math.max(0, ...tokens.map((tk) => (tk.t === 'date' && tk.field === 'f' ? tk.length : 0))),
+  );
+  const step = 10 ** (3 - digits);
+  const totalMs = Math.round(Math.round(serial * 86_400_000) / step) * step;
+  const when: CivilDateTime | null = DateConversion.tryToDateTime(
+    hasTime ? totalMs / 86_400_000 : serial,
+    !hasTime,
+  );
   if (!when) return null;
   const twelveHour = tokens.some((tk) => tk.t === 'ampm');
-  const totalMs = Math.round(serial * 86_400_000);
   let text = '';
   for (const tk of tokens) {
     switch (tk.t) {
@@ -463,7 +473,8 @@ function dateField(
     case 's':
       return pad(d.second, Math.min(n, 2));
     case 'f':
-      return pad(d.millisecond, 3).slice(0, n).padEnd(n, '0');
+      // The point is part of the token ("ss.00"), so it is written here.
+      return '.' + pad(d.millisecond, 3).slice(0, n).padEnd(n, '0');
   }
 }
 

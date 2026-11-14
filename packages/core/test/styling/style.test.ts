@@ -166,6 +166,15 @@ describe('NumberFormatter', () => {
     expect(NumberFormatter.formatGeneral(0.5, INVARIANT)).toBe('0.5');
   });
 
+  it('rounds seconds to what the time format shows', () => {
+    const at = (h: number, m: number, sec: number) => (h * 3600 + m * 60 + sec) / 86_400;
+    expect(fmt(at(12, 0, 59.6), 'hh:mm:ss')).toBe('12:01:00');
+    expect(fmt(at(12, 0, 59.4), 'hh:mm:ss')).toBe('12:00:59');
+    expect(fmt(at(12, 0, 59.96), 'hh:mm:ss.0')).toBe('12:01:00.0');
+    expect(fmt(at(12, 0, 59.94), 'hh:mm:ss.0')).toBe('12:00:59.9');
+    expect(fmt(at(0, 1, 59.6), '[mm]:ss')).toBe('02:00');
+  });
+
   it('formats booleans and blanks', () => {
     expect(NumberFormatter.format(CellValue.boolean(true), '0.00', INVARIANT)).toBe('TRUE');
     expect(NumberFormatter.format(CellValue.empty, '0.00', INVARIANT)).toBe('');
