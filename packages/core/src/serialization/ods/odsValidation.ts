@@ -86,9 +86,14 @@ function writeContentValidation(name: string, validation: DataValidation, sheetN
   }
 
   // The error response: Stop/Warning/Information map to the ODF message-type; Stop rejects.
-  const error = new XmlElement(Table(N.errorMessage)).setAttr(Table(N.display), 'true');
-  copyAttributes(sourceError, error, [N.messageType]);
-  error.setAttr(Table(N.messageType), messageTypeOf(validation.response));
+  // None is an alert that isn't shown, which LibreOffice also writes as no element at all.
+  const quiet = validation.response === 'none';
+  if (quiet && !sourceError && !validation.errorMessage) return element;
+  const error = new XmlElement(Table(N.errorMessage)).setAttr(Table(N.display), quiet ? 'false' : 'true');
+  // A quiet rule keeps the file's message type, ready for when the alert is turned back on.
+  copyAttributes(sourceError, error, quiet ? [N.display] : [N.messageType, N.display]);
+  if (!quiet || error.attr(Table(N.messageType)) === null)
+    error.setAttr(Table(N.messageType), messageTypeOf(validation.response));
   addMessage(error, validation.errorMessage);
   element.add(error);
 
@@ -235,7 +240,11 @@ export function readContentValidationRules(spreadsheet: XmlElement): Map<string,
       ...(parsed ?? ANY),
       inputMessage: messageText(helpElement),
       errorMessage: messageText(errorElement),
-      response: responseOf(errorElement?.attr(Table(N.messageType)) ?? null),
+      // No alert, or one not shown, lets every entry through without a word.
+      response:
+        errorElement === null || errorElement.attr(Table(N.display)) === 'false'
+          ? 'none'
+          : responseOf(errorElement.attr(Table(N.messageType))),
       // Anything unrecognised is kept whole, rather than guessed at: a guess (the old "decimal
       // between 0 and 0") rejects every entry the original rule allowed.
       preserved: parsed === null ? element.clone() : null,

@@ -356,6 +356,7 @@ const RESPONSES: [ValidationResponse, string][] = [
   ['stop', 'Stop — reject the entry'],
   ['warning', 'Warning — allow, but say so'],
   ['information', 'Information — allow, but say so'],
+  ['none', 'None — allow without a word'],
 ];
 
 export function ValidationDialog(props: {

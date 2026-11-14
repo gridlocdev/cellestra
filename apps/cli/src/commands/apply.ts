@@ -916,8 +916,11 @@ function buildValidation(session: EditSession, op: Op, range: CellRange): DataVa
     case 'info':
       response = 'information';
       break;
+    case 'none':
+      response = 'none';
+      break;
     default:
-      throw new CliError('"response" must be stop, warning, or information.');
+      throw new CliError('"response" must be stop, warning, information, or none.');
   }
   const base = { inputMessage: op.string('inputMessage'), errorMessage: op.string('errorMessage'), response };
 

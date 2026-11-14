@@ -454,7 +454,7 @@ below 5 seconds is treated as 5.
 
 ### 8.13 Data validation
 - A cell or range can carry a **validation rule**: a **list** (literal values or a range reference, shown as an in-cell dropdown), or a **number / date / text-length** constraint with an operator (between, ≥, =, …).
-- Each rule has an optional **input message** (shown on selection) and an **error response** on invalid entry: **Stop** (reject), **Warning**, or **Information** (allow with a prompt). Default is Stop.
+- Each rule has an optional **input message** (shown on selection) and an **error response** on invalid entry: **Stop** (reject), **Warning**, **Information** (allow with a prompt), or **None** (allow without a word: LibreOffice's rule with "Show error message" off, stored as no `table:error-message` or one with `table:display="false"`). Default is Stop.
 - Rules are stored as ODF **content validations** (`table:content-validation`) and round-trip. Validation checks input only; it does not retroactively flag values already present (e.g. from import).
 
 ### 8.14 Hide/unhide and data tools

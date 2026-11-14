@@ -1205,7 +1205,8 @@ export class AppController {
           this.error(rule.errorMessage || 'That value is not allowed for this cell.');
           return false;
         }
-        this.info(rule.errorMessage || 'That value does not match the cell’s validation rule.');
+        if (rule.response !== 'none')
+          this.info(rule.errorMessage || 'That value does not match the cell’s validation rule.');
       }
     }
     const wb = s.workbook.peek();

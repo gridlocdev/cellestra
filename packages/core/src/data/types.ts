@@ -53,7 +53,8 @@ export type ValidationOperator =
   | 'greaterOrEqual'
   | 'lessOrEqual';
 /** How invalid input is handled; stop is the default (PRD §8.13). */
-export type ValidationResponse = 'stop' | 'warning' | 'information';
+/** What an entry that breaks the rule gets: rejected (stop), allowed with a note, or allowed quietly (none). */
+export type ValidationResponse = 'stop' | 'warning' | 'information' | 'none';
 
 /** A rule bound to a range (PRD §8.13) ↔ ODF `table:content-validation`. Checked on entry only. */
 export interface DataValidation {

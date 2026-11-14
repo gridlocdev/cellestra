@@ -201,7 +201,8 @@ describe('data validation messages and flags', () => {
     const validation = readOds(ods(body)).activeSheet.validations[0]!;
     expect(validation.inputMessage).toBe('Enter  a\nnumber');
     expect(validation.errorMessage).toBe('bad');
-    expect(validation.response).toBe('warning');
+    // display="false": LibreOffice lets a breaking entry through without the warning.
+    expect(validation.response).toBe('none');
   });
 
   it('keeps allow-empty-cell, titles and display flags through a save', () => {

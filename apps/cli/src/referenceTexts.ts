@@ -66,7 +66,7 @@ Data
   {"op":"table-remove", "table":"Sales"}
   {"op":"validation", "range":"C2:C50", "list":["Red","Green"]}  or  "source":"Lists.A1:A8"
   {"op":"validation", "range":"B2:B50", "kind":"whole|decimal|date|text-length", "operator":"between|not-between|equal|not-equal|greater|less|greater-or-equal|less-or-equal",
-                      "value1":1, "value2":100, "response":"stop|warning|information", "inputMessage":"…", "errorMessage":"…"}   a date bound may be "2026-01-31"
+                      "value1":1, "value2":100, "response":"stop|warning|information|none", "inputMessage":"…", "errorMessage":"…"}   a date bound may be "2026-01-31"
   {"op":"validation", "range":"B2:B50", "remove":true}
   {"op":"name", "name":"TaxRate", "range":"Config.B1"}   {"op":"unname", "name":"TaxRate"}
   {"op":"hyperlink", "cell":"A2", "url":"https://…", "tooltip":"…"}   "url": null removes it

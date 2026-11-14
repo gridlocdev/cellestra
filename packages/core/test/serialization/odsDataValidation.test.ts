@@ -3,7 +3,8 @@ import { dataValidation } from '../../src/data/types.ts';
 import { CellRange } from '../../src/model/cellRange.ts';
 import { Workbook } from '../../src/model/workbook.ts';
 import { CellValue } from '../../src/values/cellValue.ts';
-import { roundTrip } from './helpers.ts';
+import { readOds, writeOds } from '../../src/serialization/index.ts';
+import { odsWith, readEntry, roundTrip } from './helpers.ts';
 
 /**
  * Round-trips ODF `table:content-validation` (PRD §8.13): kind, operator, operands, list values,
@@ -132,5 +133,31 @@ describe('OdsDataValidation', () => {
     const rule = onlyRule(workbook);
     expect(rule.target.equals(CellRange.parse('C5:C7'))).toBe(true);
     expect(rule.listValues).toEqual(['Yes', 'No']);
+  });
+
+  // LibreOffice writes no error message, or one with display="false", when "Show error message
+  // when invalid values are entered" is off: any entry is then accepted without a word.
+  const ruleWith = (error: string) =>
+    odsWith(`<table:content-validations><table:content-validation table:name="val1" table:condition="of:cell-content-is-in-list(&quot;a&quot;;&quot;b&quot;)" table:base-cell-address="Sheet1.A1">${error}</table:content-validation></table:content-validations>
+      <table:table table:name="Sheet1"><table:table-row><table:table-cell table:content-validation-name="val1"/></table:table-row></table:table>`);
+
+  it('reads a rule without an error alert as accepting anything quietly', () => {
+    for (const error of ['', '<table:error-message table:display="false" table:message-type="stop"/>']) {
+      const rule = readOds(ruleWith(error)).findSheet('Sheet1')!.validations[0]!;
+      expect(rule.response).toBe('none');
+    }
+  });
+
+  it('saves a quiet rule without turning its alert on', () => {
+    for (const error of ['', '<table:error-message table:display="false" table:message-type="stop"/>']) {
+      const saved = writeOds(readOds(ruleWith(error)));
+      expect(readEntry(saved, 'content.xml')).not.toMatch(/<table:error-message[^>]*table:display="true"/);
+      expect(readOds(saved).findSheet('Sheet1')!.validations[0]!.response).toBe('none');
+    }
+    const workbook = Workbook.createNew();
+    workbook.activeSheet.addValidation(
+      dataValidation('list', CellRange.parse('A1'), { listValues: ['a'], response: 'none' }),
+    );
+    expect(onlyRule(workbook).response).toBe('none');
   });
 });

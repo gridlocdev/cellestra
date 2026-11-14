@@ -264,7 +264,7 @@ export const dataValidation: CommandSpec = {
       description: 'The bound (or the lower bound for between); a date may be ISO, e.g. 2026-01-31',
     },
     { name: '--max', description: 'The upper bound for between / not-between' },
-    { name: '--response', description: 'stop | warning | information (default stop)' },
+    { name: '--response', description: 'stop | warning | information | none (default stop)' },
     { name: '--message', description: 'Input prompt shown while editing a cell' },
     { name: '--error', description: 'Message shown when input is rejected' },
     { name: '--remove', description: 'Remove the rule(s) on the range', kind: 'flag' },
