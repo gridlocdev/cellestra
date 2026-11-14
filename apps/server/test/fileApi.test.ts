@@ -1,10 +1,21 @@
-import { chmod, link, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  link,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { pathToFileURL } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { FileApi, parseRoots, syncDir } from '../src/fileApi.ts';
 import { bindAuthProblem, createServer, defaultStaticDir, hostAllowed, parseHosts } from '../src/server.ts';
 
@@ -183,6 +194,22 @@ describe('read and write rules', () => {
     expect((await head()).headers.get('etag')).not.toBe(etag);
     const unauthorized = await fetch(`${base}/api/file?root=docs&path=polled.ods`, { method: 'HEAD' });
     expect(unauthorized.status).toBe(401);
+  });
+
+  it('reads a polled file again only when its size, times or inode change', async () => {
+    const api = new FileApi(parseRoots(`Docs=${dir}`, '/'));
+    const file = path.join(dir, 'cached.ods');
+    await writeFile(file, 'C1');
+    const hash = vi.spyOn(api as unknown as { hashFile(full: string): Promise<string> }, 'hashFile');
+    const first = await api.version('docs', 'cached.ods');
+    expect((await api.version('docs', 'cached.ods')).etag).toBe(first.etag);
+    expect(hash).toHaveBeenCalledTimes(1);
+    // Same size, mtime put back: the change time still moves, so the new content is seen.
+    const before = await stat(file);
+    await writeFile(file, 'C2');
+    await utimes(file, before.atime, before.mtime);
+    expect((await api.version('docs', 'cached.ods')).etag).not.toBe(first.etag);
+    expect(hash).toHaveBeenCalledTimes(2);
   });
 
   it('refuses to list dot folders', async () => {

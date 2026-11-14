@@ -88,6 +88,8 @@ export class FileApi {
   readonly roots: readonly Root[];
   /** Tail of the write queue per resolved path: check-then-write runs one at a time per file. */
   private readonly writeQueue = new Map<string, Promise<unknown>>();
+  /** The last ETag per file with the stat it was taken at, so a poll re-hashes only a changed file. */
+  private readonly etags = new Map<string, { stamp: string; etag: string }>();
 
   constructor(roots: readonly Root[]) {
     this.roots = roots;
@@ -174,6 +176,37 @@ export class FileApi {
     } catch (e) {
       throw fsError(e);
     }
+  }
+
+  /**
+   * The file's ETag without sending it, for clients polling for outside changes. The content hash is
+   * reused while the file's size, inode, and modify and change times are the same: a rewrite in
+   * place moves the change time even when a tool puts the modify time back, and a replace by rename
+   * gives a new inode. So a poll of an unchanged file costs one stat, not a read of the whole file.
+   */
+  async version(rootId: string | null, rel: string | null): Promise<{ etag: string; modified: number }> {
+    const root = this.root(rootId);
+    checkSpreadsheetPath(rel, 'opened');
+    const full = await this.resolveReal(root, rel);
+    try {
+      const s = await stat(full, { bigint: true });
+      if (!s.isFile()) throw new ApiError(400, 'Not a file');
+      const stamp = `${s.size}:${s.ino}:${s.mtimeNs}:${s.ctimeNs}`;
+      const modified = Number(s.mtimeMs);
+      const cached = this.etags.get(full);
+      if (cached?.stamp === stamp) return { etag: cached.etag, modified };
+      const etag = await this.hashFile(full);
+      if (this.etags.size >= ETAG_CACHE_SIZE) this.etags.delete(this.etags.keys().next().value!);
+      this.etags.delete(full);
+      this.etags.set(full, { stamp, etag });
+      return { etag, modified };
+    } catch (e) {
+      throw fsError(e);
+    }
+  }
+
+  private async hashFile(full: string): Promise<string> {
+    return etagOf(await readFile(full));
   }
 
   /**
@@ -317,6 +350,9 @@ async function writeInPlace(full: string, bytes: Uint8Array): Promise<void> {
     await handle.close();
   }
 }
+
+/** Files whose ETag `version` remembers; the oldest is dropped past this. */
+const ETAG_CACHE_SIZE = 256;
 
 /** LibreOffice's lock files are a few hundred bytes; more than this is not one. */
 const LOCK_FILE_MAX_BYTES = 4096;

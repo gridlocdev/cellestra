@@ -149,8 +149,19 @@ async function api(
       );
     case 'GET /api/list':
       return send(res, 200, await opts.api.list(q.get('root'), q.get('path')));
-    // HEAD answers with the ETag alone (Node sends no body), so a client can poll for changes.
-    case 'HEAD /api/file':
+    // HEAD answers with the ETag alone, so a client can poll for changes; an unchanged file costs a stat.
+    case 'HEAD /api/file': {
+      const { etag, modified } = await opts.api.version(q.get('root'), q.get('path'));
+      const ifNoneMatch = header(req, 'if-none-match');
+      const unchanged = ifNoneMatch !== null && etagListMatches(ifNoneMatch, etag);
+      res.writeHead(unchanged ? 304 : 200, {
+        'Cache-Control': 'no-store',
+        'Last-Modified': new Date(modified).toUTCString(),
+        ETag: etag,
+        ...SECURITY_HEADERS,
+      });
+      return void res.end();
+    }
     case 'GET /api/file': {
       const { bytes, etag, modified, lock } = await opts.api.read(q.get('root'), q.get('path'));
       const ifNoneMatch = header(req, 'if-none-match');
