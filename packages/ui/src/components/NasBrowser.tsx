@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'preact/hooks';
-import { AuthError, type NasEntry, type NasRoot, type NasStore } from '../platform/nasStore.ts';
+import { useEffect, useMemo, useState } from 'preact/hooks';
+import { AuthError, latestOnly, type NasEntry, type NasRoot, type NasStore } from '../platform/nasStore.ts';
 import { Dialog } from './Dialog.tsx';
 import { Icon } from './Icon.tsx';
 
@@ -25,6 +25,7 @@ export function NasBrowser(props: {
   const [error, setError] = useState<string | null>(null);
   const [needsToken, setNeedsToken] = useState(false);
   const [token, setToken] = useState('');
+  const listing = useMemo(() => latestOnly(), []);
 
   const fail = (e: unknown) => {
     if (e instanceof AuthError) setNeedsToken(true);
@@ -48,7 +49,7 @@ export function NasBrowser(props: {
   useEffect(() => {
     if (!root) return;
     setSelected(null);
-    store.list(root, path).then(setEntries, fail);
+    listing(store.list(root, path), setEntries, fail);
   }, [root, path]);
 
   const crumbs = path ? path.split('/') : [];

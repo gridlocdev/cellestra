@@ -156,6 +156,30 @@ export class NasStore implements FileStore {
   }
 }
 
+/**
+ * For requests that can overlap, like folder listings as the user clicks around: each call
+ * replaces the one before, and only the newest request's result (or error) is delivered. A slow
+ * earlier listing that answers last is dropped instead of overwriting the newer folder.
+ */
+export function latestOnly(): <T>(
+  promise: Promise<T>,
+  onValue: (value: T) => void,
+  onError: (error: unknown) => void,
+) => void {
+  let newest = 0;
+  return (promise, onValue, onError) => {
+    const ticket = ++newest;
+    promise.then(
+      (value) => {
+        if (ticket === newest) onValue(value);
+      },
+      (error: unknown) => {
+        if (ticket === newest) onError(error);
+      },
+    );
+  };
+}
+
 function splitId(id: string): { root: string; path: string } {
   const i = id.indexOf(':');
   return { root: id.slice(0, i), path: id.slice(i + 1) };
