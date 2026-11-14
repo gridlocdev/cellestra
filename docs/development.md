@@ -32,6 +32,13 @@ just fmt-check    # check the formatting
 
 `just check` must pass before you commit. When you change behaviour, add or update a test in that package's `test/` folder.
 
+To measure how long reading a large `.ods` takes and how much memory it peaks at, generate a file once and read it in a fresh process each time:
+
+```bash
+node scripts/bench-ods-read.mjs generate /tmp/big.ods 100000 10   # 1M cells
+node scripts/bench-ods-read.mjs read /tmp/big.ods
+```
+
 ## The cellestra CLI
 
 `cellestra` reads and edits `.ods` files with the same engine as the app, for scripts and CI. It runs from source, from the folder you are in:
