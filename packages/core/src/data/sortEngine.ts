@@ -1,4 +1,5 @@
-import { approxEqual, compareOrdinalIgnoreCase } from '../formulas/evaluation/valueComparer.ts';
+import { safeLocale } from '../formulas/evaluation/localeInfo.ts';
+import { approxEqual } from '../formulas/evaluation/valueComparer.ts';
 import { ReferenceAdjuster } from '../formulas/references/referenceAdjuster.ts';
 import { EditRefusedError } from '../editing/editCommand.ts';
 import { rewriteFormula } from '../editing/formulaRewrite.ts';
@@ -41,8 +42,11 @@ export const SortEngine = {
         cells.push(sheet.find(row, range.left + c)?.clone() ?? null);
       rows.push({ originalRow: row, cells });
     }
+    const sortLocale = locale ?? getHostLocale();
+    // Calc collates text in the document locale, ignoring case but not accents.
+    const collator = new Intl.Collator(safeLocale(sortLocale), { sensitivity: 'accent' });
     // Array.prototype.sort is stable, so equal keys keep their original order.
-    const ordered = [...rows].sort((a, b) => compareRows(a, b, spec, range.left));
+    const ordered = [...rows].sort((a, b) => compareRows(a, b, spec, range.left, collator));
     ordered.forEach((snapshot, i) => {
       const target = first + i;
       const rowDelta = target - snapshot.originalRow;
@@ -55,7 +59,7 @@ export const SortEngine = {
         sheet.putCell(target, range.left + c, cell);
       });
     });
-    reapplyActiveFilter(sheet, range, locale ?? getHostLocale());
+    reapplyActiveFilter(sheet, range, sortLocale);
   },
 } as const;
 
@@ -68,7 +72,13 @@ function reapplyActiveFilter(sheet: Worksheet, sorted: CellRange, locale: string
   }
 }
 
-function compareRows(a: RowSnapshot, b: RowSnapshot, spec: SortSpec, rangeLeft: number): number {
+function compareRows(
+  a: RowSnapshot,
+  b: RowSnapshot,
+  spec: SortSpec,
+  rangeLeft: number,
+  collator: Intl.Collator,
+): number {
   for (const level of spec.levels) {
     const index = level.column - rangeLeft;
     if (index < 0 || index >= a.cells.length) continue;
@@ -78,7 +88,7 @@ function compareRows(a: RowSnapshot, b: RowSnapshot, spec: SortSpec, rangeLeft: 
     const ea = va.kind === 'empty';
     const eb = vb.kind === 'empty';
     if (ea !== eb) return ea ? 1 : -1;
-    const cmp = compareSortValues(va, vb);
+    const cmp = compareSortValues(va, vb, collator);
     if (cmp !== 0) return level.ascending ? cmp : -cmp;
   }
   return 0;
@@ -89,15 +99,15 @@ const SORT_RANK: Record<CellValue['kind'], number> = { number: 0, text: 1, boole
 
 /**
  * A total order over non-empty values for sorting: by kind rank, then numbers numerically (within
- * `approxEqual`), text case-insensitively, FALSE before TRUE; errors tie with each other.
+ * `approxEqual`), text by the locale's collation ignoring case, FALSE before TRUE; errors tie with each other.
  */
-function compareSortValues(a: CellValue, b: CellValue): number {
+function compareSortValues(a: CellValue, b: CellValue, collator: Intl.Collator): number {
   const ra = SORT_RANK[a.kind];
   const rb = SORT_RANK[b.kind];
   if (ra !== rb) return ra - rb;
   if (a.kind === 'number' && b.kind === 'number')
     return approxEqual(a.value, b.value) ? 0 : a.value < b.value ? -1 : 1;
-  if (a.kind === 'text' && b.kind === 'text') return compareOrdinalIgnoreCase(a.value, b.value);
+  if (a.kind === 'text' && b.kind === 'text') return collator.compare(a.value, b.value);
   if (a.kind === 'boolean' && b.kind === 'boolean') return Number(a.value) - Number(b.value);
   return 0;
 }

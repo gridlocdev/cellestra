@@ -48,3 +48,19 @@ describe('Sort order', () => {
     expect(describeColumn(sheet, 6)).toEqual(['err', 'x', '3', '2', '1', '']);
   });
 });
+
+describe('Sort collation', () => {
+  it('sorts accented letters with their base letter in the locale', () => {
+    const t = CellValue.text;
+    const sheet = column([t('zebra'), t('éclair'), t('apple'), t('Echo')]);
+    sortColumn(sheet, 4, true);
+    expect(describeColumn(sheet, 4)).toEqual(['apple', 'Echo', 'éclair', 'zebra']);
+  });
+
+  it('ignores case and keeps the original order of case-only ties', () => {
+    const t = CellValue.text;
+    const sheet = column([t('b'), t('B'), t('a'), t('A')]);
+    sortColumn(sheet, 4, true);
+    expect(describeColumn(sheet, 4)).toEqual(['a', 'A', 'b', 'B']);
+  });
+});
