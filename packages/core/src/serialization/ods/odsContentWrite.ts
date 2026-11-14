@@ -502,7 +502,7 @@ function writeCell(
   }
 
   if (cell) {
-    const preserved = OdsPreserved.cell(w.sheet, row, column, cell);
+    const preserved = cell.unmodeled;
     for (const child of preserved?.before ?? []) element.add(child.clone());
     const checkbox = covered ? undefined : w.checkboxes.get(cellKey(row, column));
     if (checkbox !== undefined) element.add(checkboxControl(w.sheet, row, column, checkbox));

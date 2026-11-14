@@ -1,5 +1,6 @@
 import { DateConversion } from '../../formulas/evaluation/dateConversion.ts';
 import { OpenFormulaTranslator } from '../../formulas/openFormulaTranslator.ts';
+import type { UnmodeledCellContent } from '../../model/cell.ts';
 import { CellAddress } from '../../model/cellAddress.ts';
 import { CellRange } from '../../model/cellRange.ts';
 import type { Hyperlink } from '../../model/hyperlink.ts';
@@ -21,7 +22,7 @@ import {
 } from './odsCheckboxes.ts';
 import { readDatabaseRanges } from './odsDatabaseRanges.ts';
 import type { ForeignXml, OdsPackage } from './odsPackage.ts';
-import { OdsPreserved, type PreservedCell } from './odsPreserved.ts';
+import { OdsPreserved } from './odsPreserved.ts';
 import { paragraphText } from './odsContentShared.ts';
 import { OdsStyleIndex } from './odsStyleIndex.ts';
 import {
@@ -313,7 +314,7 @@ interface ParsedCell {
   readonly formula: string | null;
   readonly styleId: number | null;
   readonly hyperlink: Hyperlink | null;
-  readonly preserved: PreservedCell | null;
+  readonly preserved: UnmodeledCellContent | null;
 }
 
 /**
@@ -433,7 +434,7 @@ function storeCell(sheet: Worksheet, row: number, column: number, parsed: Parsed
   cell.formula = parsed.formula;
   cell.hyperlink = parsed.hyperlink;
   if (parsed.styleId !== null) cell.styleId = parsed.styleId;
-  if (parsed.preserved) OdsPreserved.setCell(sheet, row, column, cell, parsed.preserved);
+  if (parsed.preserved) cell.unmodeled = parsed.preserved;
 }
 
 function parseCell(element: XmlElement, context: ReadContext): ParsedCell {

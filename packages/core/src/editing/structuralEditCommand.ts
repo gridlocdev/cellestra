@@ -81,8 +81,8 @@ export class StructuralEditCommand implements EditCommand {
   }
 
   /**
-   * An insert pushes the last lines off the sheet. Refuse when that would lose a value or formula,
-   * or cut a merge or table short, rather than drop them silently (formatting alone may go).
+   * An insert pushes the last lines off the sheet. Refuse when that would lose a value, a formula or
+   * a comment, or cut a merge or table short, rather than drop them silently (formatting alone may go).
    */
   private refuseDataLoss(sheet: Worksheet): void {
     if (this.operation !== 'insert') return;
@@ -92,7 +92,7 @@ export class StructuralEditCommand implements EditCommand {
     if (extent && (rows ? extent.lastRow : extent.lastColumn) >= firstLost) {
       for (const [row, column, cell] of sheet.enumerateCells()) {
         if ((rows ? row : column) < firstLost) continue;
-        if (cell.formula !== null || cell.value.kind !== 'empty')
+        if (cell.formula !== null || cell.value.kind !== 'empty' || cell.unmodeled !== null)
           throw new EditRefusedError(this.lossMessage);
       }
     }

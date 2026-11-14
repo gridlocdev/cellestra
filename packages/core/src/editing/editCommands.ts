@@ -132,7 +132,7 @@ export const EditCommands = {
   clearFormatting: (workbook: Workbook, sheet: string, range: CellRange): EditCommand =>
     EditCommands.applyStyle(workbook, sheet, range, () => CellStyles.default, 'Clear Formatting'),
 
-  /** Content, style, and hyperlink — the cell is gone afterwards. */
+  /** Content, style, hyperlink and the comment or shapes a file gave it — the cell is gone afterwards. */
   clearAll: (sheet: string, range: CellRange): EditCommand =>
     new CellSnapshotCommand(
       'Clear All',
@@ -146,6 +146,7 @@ export const EditCommands = {
           cell.value = CellValue.empty;
           cell.styleId = StylePool.defaultId;
           cell.hyperlink = null;
+          cell.unmodeled = null;
           ws.pruneIfBlank(row, column, cell);
         }
       },
