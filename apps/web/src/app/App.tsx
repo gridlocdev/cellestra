@@ -1,5 +1,5 @@
 import { useComputed, useSignal, useSignalEffect, type ReadonlySignal } from '@preact/signals';
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { SheetDimensions, type CellValue } from '@cellestra/core';
 import {
   CommandMenu,
@@ -495,37 +495,52 @@ function SheetMenu(props: {
       removeEventListener('pointerdown', close);
     };
   }, []);
+  // Open above the tab that was clicked (the tab bar is at the bottom), kept inside the window.
+  const ref = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const w = el?.offsetWidth ?? 180;
+    const h = el?.offsetHeight ?? 100;
+    setAt({
+      x: Math.max(4, Math.min(props.x, innerWidth - w - 4)),
+      y: Math.max(4, props.y - h - 4),
+    });
+  }, [props.x, props.y]);
   const item = (a: 'rename' | 'duplicate' | 'delete', label: string, disabled = false) => (
-    <li
+    <button
+      type="button"
       role="menuitem"
-      aria-disabled={disabled}
-      style={disabled ? { opacity: 0.45 } : undefined}
+      class="cs-context-item"
+      disabled={disabled}
       onPointerDown={(e) => {
+        // Keep the window listener from closing the menu before the click lands.
         e.stopPropagation();
-        if (!disabled) props.onPick(a);
+        e.preventDefault();
       }}
+      onClick={() => props.onPick(a)}
     >
-      {label}
-    </li>
+      <span class="cs-context-title">{label}</span>
+    </button>
   );
   return (
-    <ul
-      class="cs-palette"
+    <div
+      ref={ref}
+      class="cs-context-menu"
       role="menu"
+      aria-label="Sheet actions"
       style={{
-        position: 'fixed',
-        left: `${props.x}px`,
-        top: `${props.y - 110}px`,
-        width: '180px',
-        margin: 0,
-        padding: '4px',
-        listStyle: 'none',
+        left: `${(at ?? props).x}px`,
+        top: `${(at ?? props).y}px`,
+        minWidth: '180px',
+        visibility: at ? 'visible' : 'hidden',
       }}
+      onContextMenu={(e) => e.preventDefault()}
     >
       {item('rename', 'Rename…')}
       {item('duplicate', 'Duplicate')}
       {item('delete', 'Delete', !props.canDelete)}
-    </ul>
+    </div>
   );
 }
 
