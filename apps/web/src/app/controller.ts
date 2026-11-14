@@ -155,6 +155,8 @@ export interface DataTarget {
 const RECOVERY_INTERVAL_MS = 30_000;
 /** A recovery snapshot is also taken this long after the last edit, so a pause in typing is safe. */
 const RECOVERY_IDLE_MS = 3_000;
+/** How often a file change on disk that arrived at a bad moment (a dialog, an edit) is tried again. */
+const EXTERNAL_CHANGE_RETRY_MS = 1_000;
 /** How much bigger than raw CSS px the grid draws at 100% zoom. */
 const BASE_GRID_ZOOM = 1.3;
 /** The zoom range the zoom commands allow, as fractions (25%–400%). */
@@ -810,6 +812,8 @@ export class AppController {
       const opened = await this.storeFor(ref).reload(ref);
       // Another document was opened meanwhile: this reload is for a file no longer on screen.
       if (this.session.generation !== generation) return;
+      // Same contents (a sync client rewrote it, `touch`): nothing to reload, and undo stays.
+      if (onlyIfClean && opened.ref.version !== null && opened.ref.version === ref.version) return;
       if (onlyIfClean && (this.session.editCount !== edits || this.session.document.peek() !== ref)) {
         this.info('The file changed on disk. Saving will ask before overwriting it.');
         return;
@@ -827,9 +831,23 @@ export class AppController {
     }
   }
 
-  /** Electron noticed the file change on disk: reload silently when clean, ask when dirty. */
-  async externalChange(): Promise<void> {
-    if (!this.session.modified.peek() && !this.#saving) return this.reloadFromStore(true, true);
+  /** A file change on disk waiting for a better moment to be looked at. */
+  #externalRetry: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Electron noticed the file change on disk: reload silently when clean (unless the contents are
+   * the same), warn when dirty. While a save, a dialog or a cell edit is open it waits and tries
+   * again; repeat events meanwhile fold into one.
+   */
+  async externalChange(generation = this.session.generation): Promise<void> {
+    if (this.#externalRetry) clearTimeout(this.#externalRetry);
+    this.#externalRetry = null;
+    if (generation !== this.session.generation) return; // another document is open now
+    if (this.busy) {
+      this.#externalRetry = setTimeout(() => void this.externalChange(generation), EXTERNAL_CHANGE_RETRY_MS);
+      return;
+    }
+    if (!this.session.modified.peek()) return this.reloadFromStore(true, true);
     this.info('The file changed on disk. Saving will ask before overwriting it.');
   }
 
@@ -871,7 +889,7 @@ export class AppController {
    * reports the change again on its next check.
    */
   nasFileChanged(): boolean {
-    if (this.#saving || this.dialog.peek() || this.grid.current?.isEditing()) return false;
+    if (this.busy) return false;
     const name = this.session.title.peek();
     if (this.session.modified.peek()) {
       this.#showToast(`“${name}” changed on the server. Saving will ask before overwriting it.`, 'error');
@@ -987,6 +1005,14 @@ export class AppController {
    */
   commitOpenEdit(): boolean {
     return this.grid.current?.commitEdit() ?? true;
+  }
+
+  /**
+   * A bad moment to replace the document unasked (a file changed elsewhere): a save is running, a
+   * dialog is open, or a cell is being edited.
+   */
+  get busy(): boolean {
+    return this.#saving !== null || this.dialog.peek() !== null || (this.grid.current?.isEditing() ?? false);
   }
 
   /** Changes that closing the tab would lose: unsaved edits, or a cell edit not committed yet. */

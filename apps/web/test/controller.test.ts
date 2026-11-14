@@ -35,6 +35,8 @@ class FakeStore implements FileStore {
   saves: { ref: DocumentRef; bytes: Uint8Array; finish: () => void }[] = [];
   version = 1;
   reloadBytes: Uint8Array = new Uint8Array();
+  /** The version a reload finds on disk: by default, not the one opened. */
+  reloadVersion: string | null = 'v-disk';
   reloadGate: Promise<void> = Promise.resolve();
 
   pick(): Promise<OpenedDocument | null> {
@@ -42,7 +44,7 @@ class FakeStore implements FileStore {
   }
   async reload(ref: DocumentRef): Promise<OpenedDocument> {
     await this.reloadGate;
-    return { ref, bytes: this.reloadBytes };
+    return { ref: { ...ref, version: this.reloadVersion }, bytes: this.reloadBytes };
   }
   save(ref: DocumentRef, bytes: Uint8Array): Promise<DocumentRef> {
     if (ref.version !== `v${this.version}`) return Promise.reject(new Error(`stale ${ref.version}`));
@@ -339,6 +341,60 @@ describe('recovery and reloads', () => {
     await reloading;
     expect(app.session.modified.peek()).toBe(true);
     expect(app.session.activeSheet.peek().getValue(0, 0)).toEqual(CellValue.text('a'));
+  });
+});
+
+describe('a file changed on disk (desktop)', () => {
+  function opened(app: Controller): FakeStore {
+    const fake = new FakeStore();
+    withFake(app, fake);
+    app.session.load(csvBytes, ref('data.csv'));
+    fake.reloadBytes = new TextEncoder().encode('changed\n');
+    return fake;
+  }
+
+  it('keeps the document and its undo history when the contents did not change', async () => {
+    const app = await makeApp();
+    const fake = opened(app);
+    fake.reloadVersion = 'v1'; // touched or rewritten by a sync client, same bytes
+    const reload = vi.spyOn(app.session, 'reload');
+    await app.externalChange();
+    expect(reload).not.toHaveBeenCalled();
+    expect(app.session.activeSheet.peek().getValue(0, 0)).toEqual(CellValue.text('a'));
+  });
+
+  it('reloads a clean document whose contents changed', async () => {
+    const app = await makeApp();
+    opened(app);
+    await app.externalChange();
+    expect(app.session.activeSheet.peek().getValue(0, 0)).toEqual(CellValue.text('changed'));
+  });
+
+  it('waits while a dialog or a cell edit is open, then reloads once', async () => {
+    vi.useFakeTimers();
+    try {
+      const app = await makeApp();
+      opened(app);
+      const reload = vi.spyOn(app, 'reloadFromStore');
+      app.dialog.value = { kind: 'about' };
+      await app.externalChange();
+      await app.externalChange(); // a second event folds into the first
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(reload).not.toHaveBeenCalled();
+
+      let editing = true;
+      app.grid.current = { isEditing: () => editing, commitEdit: () => true } as unknown as GridController;
+      app.dialog.value = null;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(reload).not.toHaveBeenCalled();
+
+      editing = false;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(reload).toHaveBeenCalledOnce();
+      expect(app.session.activeSheet.peek().getValue(0, 0)).toEqual(CellValue.text('changed'));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
