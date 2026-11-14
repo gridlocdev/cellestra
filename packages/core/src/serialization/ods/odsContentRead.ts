@@ -1,6 +1,6 @@
 import { DateConversion } from '../../formulas/evaluation/dateConversion.ts';
 import { OpenFormulaTranslator } from '../../formulas/openFormulaTranslator.ts';
-import type { UnmodeledCellContent } from '../../model/cell.ts';
+import type { CellRichText, UnmodeledCellContent } from '../../model/cell.ts';
 import { CellAddress } from '../../model/cellAddress.ts';
 import { CellRange } from '../../model/cellRange.ts';
 import type { Hyperlink } from '../../model/hyperlink.ts';
@@ -316,6 +316,7 @@ interface ParsedCell {
   readonly styleId: number | null;
   readonly hyperlink: Hyperlink | null;
   readonly preserved: UnmodeledCellContent | null;
+  readonly richText: CellRichText | null;
 }
 
 /**
@@ -436,6 +437,7 @@ function storeCell(sheet: Worksheet, row: number, column: number, parsed: Parsed
   cell.hyperlink = parsed.hyperlink;
   if (parsed.styleId !== null) cell.styleId = parsed.styleId;
   if (parsed.preserved) cell.unmodeled = parsed.preserved;
+  if (parsed.richText) cell.richText = parsed.richText;
 }
 
 function parseCell(element: XmlElement, context: ReadContext): ParsedCell {
@@ -457,12 +459,28 @@ function parseCell(element: XmlElement, context: ReadContext): ParsedCell {
     (paragraphs.length > 0 ? after : before).push(child.clone());
   }
 
+  const value = readValue(element, paragraphs);
+  const hyperlink = readHyperlink(paragraphs);
   return {
-    value: readValue(element, paragraphs),
+    value,
     formula: formula !== null ? OpenFormulaTranslator.fromOpenFormula(formula) : null,
     styleId: styleName === null ? null : context.styles.cellStyleId(styleName),
-    hyperlink: readHyperlink(paragraphs),
+    hyperlink,
     preserved: before.length > 0 || after.length > 0 ? { before, after } : null,
+    richText: value.kind === 'text' ? readRichText(paragraphs, hyperlink) : null,
+  };
+}
+
+/**
+ * The paragraphs of a text cell when they carry markup the model flattens (spans, links, line
+ * breaks, paragraph styles); null for plain paragraphs, which the writer reproduces as they were.
+ */
+function readRichText(paragraphs: readonly XmlElement[], hyperlink: Hyperlink | null): CellRichText | null {
+  if (!paragraphs.some((p) => p.hasAttributes || p.hasElements)) return null;
+  return {
+    text: paragraphs.map(paragraphText).join('\n'),
+    hyperlink: hyperlink?.target ?? null,
+    paragraphs: paragraphs.map((p) => p.clone()),
   };
 }
 

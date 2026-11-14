@@ -13,6 +13,18 @@ export interface UnmodeledCellContent {
 }
 
 /**
+ * A cell's text as a file marked it up (spans with their text styles, links, line breaks), kept so
+ * a save writes it back. It stands for the cell only while the cell's text and hyperlink are still
+ * the `text` and `hyperlink` it produced; once either is edited the text is written plain.
+ */
+export interface CellRichText {
+  readonly text: string;
+  readonly hyperlink: string | null;
+  /** The cell's `text:p` elements, detached and never changed, so clones share them. */
+  readonly paragraphs: readonly XmlElement[];
+}
+
+/**
  * One cell's content. A literal cell has `formula === null` and `value` is the content; a formula
  * cell holds the source without its leading `=` and `value` is the cached/computed result — shown
  * immediately on open, then refreshed by recalculation (PRD §8.6).
@@ -25,6 +37,8 @@ export class Cell {
   hyperlink: Hyperlink | null = null;
   /** Content read from a file that the model does not model; travels with the cell. */
   unmodeled: UnmodeledCellContent | null = null;
+  /** The marked-up form of the cell's text, read from a file. */
+  richText: CellRichText | null = null;
 
   get isFormula(): boolean {
     return this.formula !== null;
@@ -48,6 +62,7 @@ export class Cell {
     c.styleId = this.styleId;
     c.hyperlink = this.hyperlink;
     c.unmodeled = this.unmodeled;
+    c.richText = this.richText;
     return c;
   }
 }

@@ -548,6 +548,15 @@ function writeCellContent(element: XmlElement, cell: Cell, registry: StyleRegist
       break;
     case 'text':
       element.setAttr(Office('value-type'), 'string');
+      // Text a file marked up is written back as it was until it is edited.
+      if (
+        cell.richText !== null &&
+        cell.richText.text === value.value &&
+        cell.richText.hyperlink === (cell.hyperlink?.target ?? null)
+      ) {
+        for (const paragraph of cell.richText.paragraphs) element.add(paragraph.clone());
+        return;
+      }
       // One text:p per line: ODF has no newline inside a paragraph (a conformant reader collapses
       // it to a space). The reader joins paragraphs with "\n".
       // A pasted Windows line end ("\r\n") or a lone "\r" is a line break too, not a stray character.

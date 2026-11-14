@@ -73,3 +73,40 @@ describe('ODS cell comments and anchored shapes', () => {
     expect(cellXml(workbook, pkg)).toContain('Only a note');
   });
 });
+
+describe('ODS rich text in a cell', () => {
+  const RICH =
+    '<text:p>Plain <text:span text:style-name="T1">bold</text:span> and <text:a xlink:href="https://example.com/" xlink:type="simple">link</text:a> end</text:p>' +
+    '<text:p>second<text:line-break/>line</text:p>';
+  const BOOK = `<table:table table:name="Sheet1"><table:table-row><table:table-cell office:value-type="string">${RICH}</table:table-cell><table:table-cell office:value-type="string"><text:p>other</text:p></table:table-cell></table:table-row></table:table>`;
+  const TEXT_STYLE =
+    '<style:style style:name="T1" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>';
+
+  function openRich() {
+    const { workbook, package: pkg } = readOdsWithPackage(odsWith(BOOK, { automaticStyles: TEXT_STYLE }));
+    return { workbook, pkg, sheet: workbook.activeSheet, history: new EditHistory(workbook) };
+  }
+
+  it('is written back as it was while the text is unchanged', () => {
+    const { workbook, pkg, sheet, history } = openRich();
+    expect(sheet.getValue(0, 0)).toEqual(CellValue.text('Plain bold and link end\nsecond\nline'));
+    // An edit elsewhere and a structural edit do not disturb it.
+    history.execute(EditCommands.setValue(sheet.name, 0, 1, CellValue.text('changed')));
+    history.execute(new StructuralEditCommand(sheet.name, 'row', 'insert', 0, 1));
+    const content = cellXml(workbook, pkg);
+    expect(content).toContain(RICH);
+    expect(content).toMatch(/<style:style style:name="T1" style:family="text">/);
+  });
+
+  it('is regenerated once the text is edited', () => {
+    const { workbook, pkg, sheet, history } = openRich();
+    history.execute(EditCommands.setValue(sheet.name, 0, 0, CellValue.text('new text')));
+    const content = cellXml(workbook, pkg);
+    expect(content).not.toContain('text:style-name="T1"');
+    // The cell keeps its hyperlink, written the plain way round the whole text.
+    expect(content).toMatch(
+      /<text:p><text:a xlink:href="https:\/\/example.com\/">new text<\/text:a><\/text:p>/,
+    );
+    expect(content).not.toContain('line-break');
+  });
+});
