@@ -16,6 +16,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  changedSince,
+  contentVersion,
   isAppUrl,
   PathGrants,
   pdfExportTarget,
@@ -230,5 +232,25 @@ describe('pdfExportTarget', () => {
       path: path.join(dir, 'fresh.pdf'),
       askOverwrite: false,
     });
+  });
+});
+
+describe('changedSince', () => {
+  const bytes = (s: string) => new TextEncoder().encode(s);
+
+  it('sees a same-size edit that kept the mtime', () => {
+    const opened = contentVersion(bytes('1,2,3'));
+    expect(changedSince(opened, { bytes: bytes('1,2,3'), mtimeMs: 5000 })).toBe(false);
+    expect(changedSince(opened, { bytes: bytes('1,2,4'), mtimeMs: 5000 })).toBe(true);
+  });
+
+  it('ignores a touch that changed only the mtime', () => {
+    const opened = contentVersion(bytes('same'));
+    expect(changedSince(opened, { bytes: bytes('same'), mtimeMs: 9999 })).toBe(false);
+  });
+
+  it('still understands an mtime-only version from an older session', () => {
+    expect(changedSince('5000', { bytes: bytes('x'), mtimeMs: 5000.4 })).toBe(false);
+    expect(changedSince('5000', { bytes: bytes('x'), mtimeMs: 7000 })).toBe(true);
   });
 });

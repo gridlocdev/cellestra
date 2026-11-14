@@ -14,6 +14,8 @@ import {
   type SavedFile,
 } from './bridge.ts';
 import {
+  changedSince,
+  contentVersion,
   isAppUrl,
   isSpreadsheetPath,
   saveAsMismatch,
@@ -195,7 +197,13 @@ async function readNative(p: string): Promise<NativeFile> {
   grants.grant(p);
   knownMtime.set(p, s.mtimeMs);
   app.addRecentDocument(p);
-  return { path: p, name: path.basename(p), bytes: new Uint8Array(bytes), modified: s.mtimeMs };
+  return {
+    path: p,
+    name: path.basename(p),
+    bytes: new Uint8Array(bytes),
+    modified: s.mtimeMs,
+    version: contentVersion(bytes),
+  };
 }
 
 /**
@@ -220,18 +228,21 @@ async function allowRead(win: BrowserWindow | null, p: unknown): Promise<string>
   return p;
 }
 
-/** Atomic save that keeps mode and hard links. Refuses if the file changed since opened. */
+/**
+ * Atomic save that keeps mode and hard links. Refuses if the file's contents changed since it was
+ * opened at `expectedVersion` (a hash, so an edit that keeps the size and mtime is still caught).
+ */
 async function writeNative(
   p: string,
   bytes: Uint8Array,
-  expectedModified: number | null,
+  expectedVersion: string | null,
   force: boolean,
 ): Promise<SavedFile> {
-  // One save per file at a time, so the mtime check and the write can't interleave with another save.
+  // One save per file at a time, so the check and the write can't interleave with another save.
   return withFileLock(p, async () => {
-    if (!force && expectedModified !== null) {
-      const s = await stat(p).catch(() => null);
-      if (s && Math.abs(s.mtimeMs - expectedModified) > 1)
+    if (!force && expectedVersion !== null) {
+      const [current, s] = await Promise.all([readFile(p).catch(() => null), stat(p).catch(() => null)]);
+      if (current && s && changedSince(expectedVersion, { bytes: current, mtimeMs: s.mtimeMs }))
         throw new Error(`${CONFLICT}: the file changed on disk`);
     }
     await writeAtomic(p, bytes);
@@ -239,7 +250,7 @@ async function writeNative(
     grants.grant(p);
     knownMtime.set(p, s.mtimeMs);
     app.addRecentDocument(p);
-    return { path: p, name: path.basename(p), modified: s.mtimeMs };
+    return { path: p, name: path.basename(p), modified: s.mtimeMs, version: contentVersion(bytes) };
   });
 }
 
@@ -351,13 +362,10 @@ function registerIpc(): void {
     if (!trusted(e)) forbidden();
     return readNative(await allowRead(fromEvent(e), p));
   });
-  ipcMain.handle(
-    Channels.saveFile,
-    (e, p: unknown, bytes: Uint8Array, expected: number | null, force: boolean) => {
-      if (!trusted(e) || !grants.has(p)) forbidden();
-      return writeNative(p, bytes, expected, force);
-    },
-  );
+  ipcMain.handle(Channels.saveFile, (e, p: unknown, bytes: Uint8Array, expected: unknown, force: boolean) => {
+    if (!trusted(e) || !grants.has(p)) forbidden();
+    return writeNative(p, bytes, typeof expected === 'string' ? expected : null, force);
+  });
   ipcMain.handle(Channels.saveDialog, async (e, suggestedName: string, bytes: Uint8Array) => {
     if (!trusted(e)) forbidden();
     const win = fromEvent(e);

@@ -50,7 +50,7 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
 - **State.** Signals hold the chrome state: selection, zoom, theme and a document version counter. The grid redraws whenever the version changes.
 - **Commands.** `CommandCatalog` is the one list of commands. The toolbar, ⌘K, the shortcut dispatcher and the Electron menu bar (sent over IPC) all read it. Shortcuts are written once as `mod+shift+k` and formatted for each platform.
 - **Files.** `FileStore` has three implementations, and the UI only ever sees the interface.
-  - Conflict detection uses an ETag (NAS) or the file's mtime (native).
+  - Conflict detection uses an ETag (NAS) or a SHA-256 hash of the file's contents (native), so an edit that keeps the size and mtime is still caught.
   - The NAS store exists only in a NAS build (`VITE_CELLESTRA_NAS=1`: the Docker image, `just build-web-nas`, `just run-web`, `just preview-web`). A NAS build still shows NAS open and save only after the server answers `/api/info`. Every other build, the desktop app included, never contacts the server and shows nothing about a NAS.
   - IndexedDB keeps the recent files (including browser file handles) and a crash-recovery snapshot.
 
@@ -75,7 +75,7 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
 - **Isolation.** The renderer runs with `sandbox`, `contextIsolation` and no Node.
 - **Bridge.** The preload exposes exactly one object, `window.cellestraNative`. Its contract is in `bridge.ts` and is mirrored in `packages/ui/src/platform/native.ts`.
 - **Loading.** The UI loads from `app://cellestra/`, a privileged standard scheme backed by `out/web`. Navigation away from it is blocked, and links open in the system browser.
-- **Main process.** It handles open and save dialogs, atomic saves with an mtime conflict check, the native menu (built from the renderer's catalog), document state (title, the edited dot, represented file), the close guard, the external-change watcher, recent documents, and file associations through `open-file` and argv.
+- **Main process.** It handles open and save dialogs, atomic saves with a content-hash conflict check, the native menu (built from the renderer's catalog), document state (title, the edited dot, represented file), the close guard, the external-change watcher, recent documents, and file associations through `open-file` and argv.
 - **Bridge checks.** Every IPC call must come from an `app://cellestra/` frame. The renderer may only read, save and watch `.ods`/`.csv`/`.tsv` paths the user handed over (a dialog, `open-file`, argv, or an earlier open, kept in `granted-files.json` under userData); any other path asks the user first.
 - **Closing.** The preload acknowledges a close request at once. If no ack arrives within 3 s, or the renderer is unresponsive, the user may force the close; a crashed renderer closes without asking. Cmd+Q quits after the unsaved-changes prompt, and a cancelled prompt cancels the quit.
 - **Watcher.** It watches the file's folder (filtered by name, debounced), so it survives atomic replaces, and ignores mtimes it wrote itself.

@@ -1,7 +1,7 @@
 import { CONFLICT, type CellestraNative, type NativeFile, type SavedFile } from './native.ts';
 import { ConflictError, type DocumentRef, type FileStore, type OpenedDocument } from './fileStore.ts';
 
-/** Files on disk through Electron's main process. Version = mtime, checked again before each save. */
+/** Files on disk through Electron's main process. Version = a hash of the contents, checked again before each save. */
 export class NativeStore implements FileStore {
   readonly kind = 'native' as const;
   readonly label = 'Files';
@@ -27,8 +27,7 @@ export class NativeStore implements FileStore {
 
   async save(ref: DocumentRef, bytes: Uint8Array, opts: { force?: boolean } = {}): Promise<DocumentRef> {
     try {
-      const expected = ref.version === null ? null : Number(ref.version);
-      return toRef(await this.bridge.saveFile(ref.id, bytes, expected, opts.force ?? false));
+      return toRef(await this.bridge.saveFile(ref.id, bytes, ref.version, opts.force ?? false));
     } catch (e) {
       // Errors cross IPC as plain messages; the main process prefixes conflicts with CONFLICT.
       if (e instanceof Error && e.message.includes(CONFLICT))
@@ -48,5 +47,5 @@ function opened(f: NativeFile): OpenedDocument {
 }
 
 function toRef(f: SavedFile | NativeFile): DocumentRef {
-  return { store: 'native', name: f.name, id: f.path, version: String(f.modified) };
+  return { store: 'native', name: f.name, id: f.path, version: f.version };
 }

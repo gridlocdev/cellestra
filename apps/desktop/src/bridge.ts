@@ -8,14 +8,17 @@ export interface NativeFile {
   readonly path: string;
   readonly name: string;
   readonly bytes: Uint8Array;
-  /** mtime in ms when read; passed back on save to detect outside edits. */
+  /** mtime in ms when read. */
   readonly modified: number;
+  /** A hash of the contents; passed back on save to detect outside edits. */
+  readonly version: string;
 }
 
 export interface SavedFile {
   readonly path: string;
   readonly name: string;
   readonly modified: number;
+  readonly version: string;
 }
 
 /** A menu the renderer builds from its command catalog; `command` ids come back via onCommand. */

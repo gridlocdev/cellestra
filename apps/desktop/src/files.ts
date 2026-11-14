@@ -1,6 +1,6 @@
 // File-system helpers for the main process. No Electron imports, so the tests can run them in Node.
 import { constants as fsConstants, watch, type FSWatcher } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   access,
   chown,
@@ -52,6 +52,26 @@ export async function pdfExportTarget(chosen: string): Promise<{ path: string; a
     () => false,
   );
   return { path: target, askOverwrite: exists };
+}
+
+const HASH_PREFIX = 'sha256:';
+/** mtimes within this many ms count as equal (some file systems round them). */
+const MTIME_SLACK_MS = 1;
+
+/** The version of a file's contents: a hash, so an edit that keeps the size and mtime still shows. */
+export function contentVersion(bytes: Uint8Array): string {
+  return HASH_PREFIX + createHash('sha256').update(bytes).digest('base64url');
+}
+
+/**
+ * Did the file change since it was read at `expected` (a `contentVersion`)? A touch that keeps the
+ * contents is not a change. A bare number is an mtime version from an older session's recovery data,
+ * and is compared as an mtime.
+ */
+export function changedSince(expected: string, current: { bytes: Uint8Array; mtimeMs: number }): boolean {
+  if (expected.startsWith(HASH_PREFIX)) return contentVersion(current.bytes) !== expected;
+  const mtime = Number(expected);
+  return !Number.isFinite(mtime) || Math.abs(current.mtimeMs - mtime) > MTIME_SLACK_MS;
 }
 
 /** Only the app's own pages may use the bridge (not a navigated-away or injected frame). */

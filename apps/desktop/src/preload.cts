@@ -19,9 +19,9 @@ contextBridge.exposeInMainWorld('cellestraNative', {
   saveFile: (
     path: string,
     bytes: Uint8Array,
-    expectedModified: number | null,
+    expectedVersion: string | null,
     force: boolean,
-  ): Promise<SavedFile> => ipcRenderer.invoke('cellestra:save-file', path, bytes, expectedModified, force),
+  ): Promise<SavedFile> => ipcRenderer.invoke('cellestra:save-file', path, bytes, expectedVersion, force),
   saveDialog: (suggestedName: string, bytes: Uint8Array): Promise<SavedFile | null> =>
     ipcRenderer.invoke('cellestra:save-dialog', suggestedName, bytes),
   setDocumentState: (state: DocumentState): void => ipcRenderer.send('cellestra:document-state', state),

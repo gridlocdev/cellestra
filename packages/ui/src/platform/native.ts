@@ -4,11 +4,14 @@ export interface NativeFile {
   readonly name: string;
   readonly bytes: Uint8Array;
   readonly modified: number;
+  /** A hash of the contents, passed back on save to detect outside edits. */
+  readonly version: string;
 }
 export interface SavedFile {
   readonly path: string;
   readonly name: string;
   readonly modified: number;
+  readonly version: string;
 }
 export interface NativeMenuItem {
   readonly label?: string;
@@ -36,7 +39,7 @@ export interface CellestraNative {
   saveFile(
     path: string,
     bytes: Uint8Array,
-    expectedModified: number | null,
+    expectedVersion: string | null,
     force: boolean,
   ): Promise<SavedFile>;
   saveDialog(suggestedName: string, bytes: Uint8Array): Promise<SavedFile | null>;
