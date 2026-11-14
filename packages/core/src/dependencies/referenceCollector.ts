@@ -1,4 +1,5 @@
-import type { CellRange } from '../model/cellRange.ts';
+import { CellRange } from '../model/cellRange.ts';
+import { SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Expr } from '../formulas/ast/expr.ts';
 import { FunctionRegistry } from '../formulas/functions/functionRegistry.ts';
 import { CellRef, type RangeRef } from './cellRef.ts';
@@ -30,6 +31,35 @@ function expand(
     return;
   }
   for (let r = range.top; r <= range.bottom; r++) for (let c = range.left; c <= range.right; c++) add(r, c);
+}
+
+/** The cells an argument names, as a range: a reference, a range or a named range. */
+function asRange(expr: Expr, resolveName: (name: string) => CellRange | null): CellRange | null {
+  if (expr.kind === 'reference') {
+    const { row, column, sheet } = expr.address;
+    return CellRange.fromBounds(row, column, row, column, sheet);
+  }
+  if (expr.kind === 'range') return expr.range;
+  if (expr.kind === 'name') return resolveName(expr.name);
+  return null;
+}
+
+/**
+ * SUMIF reads its sum range from its top-left, sized like the criteria range (Excel/Calc), so
+ * `SUMIF(A1:A3, "x", B1)` reads B1:B3. Returns that reshaped range, or null for any other call.
+ */
+function reshapedSumRange(
+  name: string,
+  args: readonly Expr[],
+  resolveName: (name: string) => CellRange | null,
+): CellRange | null {
+  if (name.toUpperCase() !== 'SUMIF' || args.length < 3) return null;
+  const criteria = asRange(args[0]!, resolveName);
+  const sum = asRange(args[2]!, resolveName);
+  if (!criteria || !sum) return null;
+  const bottom = Math.min(sum.top + criteria.rowCount, SheetDimensions.maxRows) - 1;
+  const right = Math.min(sum.left + criteria.columnCount, SheetDimensions.maxColumns) - 1;
+  return CellRange.fromBounds(sum.top, sum.left, bottom, right, sum.sheet);
 }
 
 /**
@@ -72,10 +102,13 @@ export const ReferenceCollector = {
         ReferenceCollector.collect(expr.left, homeSheet, resolveName, destination, largeRanges);
         ReferenceCollector.collect(expr.right, homeSheet, resolveName, destination, largeRanges);
         break;
-      case 'call':
+      case 'call': {
         for (const a of expr.args)
           ReferenceCollector.collect(a, homeSheet, resolveName, destination, largeRanges);
+        const reshaped = reshapedSumRange(expr.name, expr.args, resolveName);
+        if (reshaped) expand(reshaped, homeSheet, destination, largeRanges);
         break;
+      }
       default:
         break;
     }

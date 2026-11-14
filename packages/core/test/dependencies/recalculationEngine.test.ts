@@ -209,4 +209,19 @@ describe('RecalculationEngine', () => {
     expect(numberAt(sheet, 0, 0)).toBe(42);
     expect(errorAt(sheet, 1, 0).token).toBe('#VALUE!');
   });
+
+  it('SUMIF follows edits to the cells its sum range is reshaped onto', () => {
+    const { workbook, sheet } = newBook();
+    for (let r = 0; r < 3; r++) sheet.setValue(r, 0, CellValue.text('x'));
+    sheet.setValue(0, 1, CellValue.number(1));
+    sheet.setFormula(0, 3, 'SUMIF(A1:A3,"x",B1)');
+    const engine = engineFor(workbook);
+    engine.recalculateAll();
+    expect(numberAt(sheet, 0, 3)).toBe(1);
+
+    sheet.setValue(2, 1, CellValue.number(10));
+    engine.recordEdits([CellRef.of(sheet.name, 2, 1)]);
+
+    expect(numberAt(sheet, 0, 3)).toBe(11);
+  });
 });
