@@ -1203,11 +1203,6 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     host.contextMenu(hit.zone, { x: e.clientX, y: e.clientY });
   };
 
-  const onWheel = (e: WheelEvent) => {
-    if (e.ctrlKey) return; // pinch-zoom is handled by the app's zoom command
-    // Native scroller handles it; nothing to do.
-  };
-
   const onEditorInput = (e: Event) => {
     const editor = e.currentTarget as HTMLTextAreaElement;
     const typed = (e as InputEvent).inputType === 'insertText';
@@ -1256,7 +1251,6 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         ref={scrollerRef}
         class="cs-grid-scroller"
         onScroll={onScroll}
-        onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}

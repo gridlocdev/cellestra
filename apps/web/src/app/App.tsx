@@ -20,6 +20,7 @@ import {
 import {
   AutoSaveSeconds,
   normalizeAutoSave,
+  wheelZoomFactor,
   type AppController,
   type Layout,
   type Theme,
@@ -139,6 +140,36 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
     }),
     [app, catalog, s, draft],
   );
+
+  // Pinching a trackpad or ⌘/Ctrl-scrolling zooms the sheet, not the whole page (ribbon included).
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      app.zoomBy(wheelZoomFactor(e.deltaY, e.deltaMode));
+    };
+    // Safari reports a pinch as gesture events with a running scale, not as ⌘-wheel.
+    let lastScale = 1;
+    const onGestureStart = (e: Event) => {
+      e.preventDefault();
+      lastScale = 1;
+    };
+    const onGestureChange = (e: Event) => {
+      e.preventDefault();
+      const scale = (e as Event & { scale?: number }).scale ?? 1;
+      if (scale > 0 && lastScale > 0) app.zoomBy(scale / lastScale);
+      lastScale = scale;
+    };
+    const options = { passive: false } as const;
+    addEventListener('wheel', onWheel, options);
+    addEventListener('gesturestart', onGestureStart, options);
+    addEventListener('gesturechange', onGestureChange, options);
+    return () => {
+      removeEventListener('wheel', onWheel);
+      removeEventListener('gesturestart', onGestureStart);
+      removeEventListener('gesturechange', onGestureChange);
+    };
+  }, [app]);
 
   // Shortcuts that fire anywhere (outside the grid too): ⌘K, ⌘S, ⌘O…
   useEffect(() => {

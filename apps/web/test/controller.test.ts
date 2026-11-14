@@ -527,6 +527,20 @@ describe('large removals', () => {
 });
 
 describe('zoom', () => {
+  it('zooms by a pinch or ⌘-wheel factor, within the zoom range', async () => {
+    const { wheelZoomFactor } = await import('../src/app/controller.ts');
+    const app = await makeApp();
+    app.zoomBy(wheelZoomFactor(-100, 0)); // pinch out / wheel up: bigger
+    expect(app.zoom.value).toBeGreaterThan(1);
+    app.zoomBy(1 / wheelZoomFactor(-100, 0));
+    expect(app.zoom.value).toBeCloseTo(1, 2);
+    expect(wheelZoomFactor(3, 1)).toBeCloseTo(wheelZoomFactor(48, 0)); // lines are 16px
+    app.zoomBy(1000);
+    expect(app.zoom.value).toBe(4);
+    app.zoomBy(0.0001);
+    expect(app.zoom.value).toBe(0.25);
+  });
+
   it('opens a file at its saved zoom, and writes the zoom back without marking it modified', async () => {
     const app = await makeApp();
     expect(app.zoom.value).toBe(1);

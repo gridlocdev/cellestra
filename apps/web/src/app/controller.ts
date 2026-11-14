@@ -160,6 +160,17 @@ const LAYOUT_KEY = 'cellestra.layout';
 const RIBBON_COLLAPSED_KEY = 'cellestra.ribbonCollapsed';
 const AUTO_SAVE_KEY = 'cellestra.autoSaveSeconds';
 
+/** How fast pinching or ⌘/Ctrl-scrolling zooms: the zoom doubles every this many wheel px. */
+const WHEEL_PX_PER_DOUBLING = 200;
+/** A wheel event in lines (`deltaMode` 1) moves this many px per line. */
+const WHEEL_LINE_PX = 16;
+
+/** The zoom factor a pinch or ⌘/Ctrl-wheel event asks for: up (negative delta) zooms in. */
+export function wheelZoomFactor(deltaY: number, deltaMode: number): number {
+  const px = deltaMode === 1 ? deltaY * WHEEL_LINE_PX : deltaY;
+  return 2 ** (-px / WHEEL_PX_PER_DOUBLING);
+}
+
 /** Auto-save's interval bounds, in seconds of no editing. 0 (or less) turns it off. */
 export const AutoSaveSeconds = { default: 30, minimum: 5, maximum: 600 } as const;
 
@@ -931,6 +942,14 @@ export class AppController {
     }));
     this.grid.current?.focus();
     return r;
+  }
+
+  /**
+   * Scale the zoom (a pinch, ⌘-wheel), kept within the zoom range. Not rounded: a trackpad sends
+   * many tiny steps that rounding would swallow.
+   */
+  zoomBy(factor: number): void {
+    this.zoom.value = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.zoom.peek() * factor));
   }
 
   // ── Feedback ─────────────────────────────────────────────────────────────
