@@ -1,4 +1,4 @@
-import { CellAddress } from '../../model/cellAddress.ts';
+import { CellAddress, quoteSheetIfNeeded } from '../../model/cellAddress.ts';
 import type { CellRange } from '../../model/cellRange.ts';
 import { XmlElement, XmlText } from '../../xml/index.ts';
 import { Office, Text } from './odsXmlNames.ts';
@@ -37,8 +37,8 @@ export function odfCellAddress(address: CellAddress, fallbackSheet: string): str
  * address at all to LibreOffice, so named ranges, validations and filters on it were lost.
  */
 export function odfSheetName(sheet: string): string {
-  const plain = /^[\p{L}_][\p{L}\p{N}_]*$/u.test(sheet) && !/^[A-Za-z]{1,3}\d+$/.test(sheet);
-  return plain ? sheet : `'${sheet.replaceAll("'", "''")}'`;
+  // One quoting rule with formulas, so an address written here always parses back.
+  return quoteSheetIfNeeded(sheet);
 }
 
 export function pxToCm(px: number): number {
