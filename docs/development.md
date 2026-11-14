@@ -80,6 +80,21 @@ just icons  # icon.icns (macOS), icon.ico (Windows) and icon.png in apps/desktop
 
 It needs Inkscape and, for the `.icns`, macOS.
 
+## Releasing
+
+Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`. It packages the desktop app on macOS (Apple silicon and Intel), Windows and Linux, and publishes them on a GitHub release. The NAS image isn't published: people build it from the repository ([Getting started](getting-started.md#run-it-on-a-nas-docker)).
+
+1. Set the same version in every `package.json` under `apps/` and `packages/`. The workflow stops if the tag doesn't match `apps/desktop/package.json`.
+2. Add a `## X.Y.Z` section to `CHANGELOG.md`. It becomes the release notes.
+3. Run `just check`, commit, then tag and push:
+
+   ```bash
+   git tag -a vX.Y.Z -m "Cellestra X.Y.Z"
+   git push origin main vX.Y.Z
+   ```
+
+The apps aren't notarized or code-signed, so people see a warning the first time they open them.
+
 ## Cleaning up
 
 ```bash

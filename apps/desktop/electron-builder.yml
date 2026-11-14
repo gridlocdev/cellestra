@@ -9,6 +9,8 @@ files:
   # The window icon on Linux and Windows (macOS takes the bundle's icon.icns).
   - build/icon.png
 asar: true
+# One naming scheme on every system: Cellestra-0.1.0-mac-arm64.dmg, Cellestra-0.1.0-win-x64.exe, …
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 fileAssociations:
   - ext: ods
     name: OpenDocument Spreadsheet
@@ -28,6 +30,8 @@ mac:
 linux:
   icon: build/icon.png
   target: [AppImage]
+  # The package name (@cellestra/desktop) isn't a usable file name.
+  executableName: cellestra
   category: Office
 win:
   icon: build/icon.ico
