@@ -1,4 +1,4 @@
-import { ValueComparer } from '../formulas/evaluation/valueComparer.ts';
+import { approxEqual, compareOrdinalIgnoreCase } from '../formulas/evaluation/valueComparer.ts';
 import { ReferenceAdjuster } from '../formulas/references/referenceAdjuster.ts';
 import { EditRefusedError } from '../editing/editCommand.ts';
 import { rewriteFormula } from '../editing/formulaRewrite.ts';
@@ -22,7 +22,7 @@ interface RowSnapshot {
 
 /**
  * Sort (PRD §8.11): a stable multi-level sort of a range's data rows (the header stays put). Empty
- * cells always sort last; values order as the comparison operators do. Relative references into the
+ * cells always sort last; then numbers < text < booleans < errors, as Calc. Relative references into the
  * sorted rows follow their row, and an active filter is re-applied so visibility tracks the values.
  * A merge across the data rows refuses the sort (`EditRefusedError`) before anything moves.
  */
@@ -78,9 +78,26 @@ function compareRows(a: RowSnapshot, b: RowSnapshot, spec: SortSpec, rangeLeft: 
     const ea = va.kind === 'empty';
     const eb = vb.kind === 'empty';
     if (ea !== eb) return ea ? 1 : -1;
-    const result = ValueComparer.compare(va, vb);
-    const cmp = typeof result === 'number' ? result : 0;
+    const cmp = compareSortValues(va, vb);
     if (cmp !== 0) return level.ascending ? cmp : -cmp;
   }
+  return 0;
+}
+
+/** Calc's sort rank across kinds: numbers < text < booleans < errors (empties are handled first). */
+const SORT_RANK: Record<CellValue['kind'], number> = { number: 0, text: 1, boolean: 2, error: 3, empty: 4 };
+
+/**
+ * A total order over non-empty values for sorting: by kind rank, then numbers numerically (within
+ * `approxEqual`), text case-insensitively, FALSE before TRUE; errors tie with each other.
+ */
+function compareSortValues(a: CellValue, b: CellValue): number {
+  const ra = SORT_RANK[a.kind];
+  const rb = SORT_RANK[b.kind];
+  if (ra !== rb) return ra - rb;
+  if (a.kind === 'number' && b.kind === 'number')
+    return approxEqual(a.value, b.value) ? 0 : a.value < b.value ? -1 : 1;
+  if (a.kind === 'text' && b.kind === 'text') return compareOrdinalIgnoreCase(a.value, b.value);
+  if (a.kind === 'boolean' && b.kind === 'boolean') return Number(a.value) - Number(b.value);
   return 0;
 }
