@@ -34,18 +34,22 @@ export class EditHistory {
     return result;
   }
 
+  /** Undo the last step. If its undo throws, the step stays where it was and the error goes on. */
   undo(): EditResult {
-    const command = this.undoStack.pop();
+    const command = this.undoStack.at(-1);
     if (!command) return EditResult.none;
     const result = command.undo(this.workbook);
+    this.undoStack.pop();
     this.redoStack.push(command);
     return result;
   }
 
+  /** Redo the last undone step. If it throws, the step stays on the redo stack. */
   redo(): EditResult {
-    const command = this.redoStack.pop();
+    const command = this.redoStack.at(-1);
     if (!command) return EditResult.none;
     const result = command.apply(this.workbook);
+    this.redoStack.pop();
     this.undoStack.push(command);
     return result;
   }
