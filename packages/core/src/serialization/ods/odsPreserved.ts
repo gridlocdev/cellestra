@@ -35,6 +35,8 @@ export interface PreservedWorkbook {
   readonly spreadsheetAttributes?: readonly XmlAttribute[];
   readonly namedExpressions: readonly XmlElement[];
   readonly automaticStyles: readonly XmlElement[];
+  /** content.xml's `office:scripts`: the macros bound to document events (Open Document, …). */
+  readonly scripts?: XmlElement | null;
   /** content.xml's `office:font-face-decls`, which the automatic styles written back may name. */
   readonly fontFaces?: XmlElement | null;
 }

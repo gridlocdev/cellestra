@@ -105,3 +105,27 @@ describe('Workbook structure protection', () => {
     }
   });
 });
+
+describe('Document event bindings', () => {
+  it('keeps office:scripts (a macro bound to Open Document) through a save', () => {
+    const scripts =
+      '<office:scripts><office:event-listeners><script:event-listener script:language="ooo:script" script:event-name="dom:load" xlink:href="vnd.sun.star.script:Standard.Module1.OnOpen?language=Basic&amp;location=document" xlink:type="simple"/></office:event-listeners></office:scripts>';
+    const content = `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:script="urn:oasis:names:tc:opendocument:xmlns:script:1.0" xmlns:xlink="http://www.w3.org/1999/xlink">${scripts}<office:body><office:spreadsheet><table:table table:name="Sheet1"><table:table-row><table:table-cell/></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>`;
+    const pkg = new OdsPackage();
+    pkg.setText(OdsXmlNames.mimetypePart, OdsXmlNames.mimeType);
+    pkg.setText(OdsXmlNames.contentPart, content);
+
+    const first = readOdsWithPackage(pkg.write());
+    const saved = writeOds(first.workbook, first.package);
+    const second = readOdsWithPackage(saved);
+    for (const bytes of [saved, writeOds(second.workbook, second.package)]) {
+      const xml = readEntry(bytes, OdsXmlNames.contentPart);
+      // Schema order: office:scripts comes first, before the font faces and automatic styles.
+      expect(xml).toMatch(/<office:document-content[^>]*><office:scripts><office:event-listeners>/);
+      expect(xml).toContain(
+        'script:event-name="dom:load" xlink:href="vnd.sun.star.script:Standard.Module1.OnOpen?language=Basic&amp;location=document"',
+      );
+    }
+  });
+});

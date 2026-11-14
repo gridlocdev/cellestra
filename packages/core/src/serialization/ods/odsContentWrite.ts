@@ -109,8 +109,13 @@ export function writeContentXml(
     // Comments (office:annotation) carry dc:creator and dc:date; declared once here, not per note.
     .declare(Dc.prefix, Dc.uri)
     .setAttr(Office('version'), '1.3')
-    // Schema order: office:font-face-decls, office:automatic-styles, office:body.
-    .add(preserved?.fontFaces?.clone(), autoStyles, new XmlElement(Office('body'), spreadsheet));
+    // Schema order: office:scripts, office:font-face-decls, office:automatic-styles, office:body.
+    .add(
+      preserved?.scripts?.clone(),
+      preserved?.fontFaces?.clone(),
+      autoStyles,
+      new XmlElement(Office('body'), spreadsheet),
+    );
 
   return new XmlDocument(root);
 }

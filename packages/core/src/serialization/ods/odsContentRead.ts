@@ -353,6 +353,7 @@ class ContentReader implements XmlEventHandler {
       spreadsheetAttributes: this.spreadsheet.attributes.map((a) => ({ name: a.name, value: a.value })),
       namedExpressions: this.namedExpressions,
       automaticStyles: this.styles.preservedAutomaticStyles,
+      scripts: root.element(Office('scripts'))?.clone() ?? null,
       fontFaces: root.element(Office('font-face-decls'))?.clone() ?? null,
     });
     return root;
