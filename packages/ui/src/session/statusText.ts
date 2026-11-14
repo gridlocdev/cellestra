@@ -1,5 +1,5 @@
 import { CellRange, type CalculationMode, type ChangedCell, type EditResult } from '@cellestra/core';
-import type { GridRange } from './selection.ts';
+import { MAX_COLUMN, MAX_ROW, type GridRange } from './selection.ts';
 
 /**
  * The status bar's words (PRD §6.5): what the last action did, when the file was saved, and the
@@ -79,9 +79,15 @@ export function describeCells(cells: readonly ChangedCell[]): string | null {
   return `${seen.size.toLocaleString('en-US')} ${seen.size === 1 ? 'cell' : 'cells'}`;
 }
 
-/** A range in A1 form: "B2" or "A1:C20". */
+/** A range in A1 form: "B2" or "A1:C20", or "B:C" and "2:4" for whole columns and rows. */
 export function describeRange(r: GridRange): string {
-  return CellRange.fromBounds(r.top, r.left, r.bottom, r.right).toString();
+  const a1 = CellRange.fromBounds(r.top, r.left, r.bottom, r.right).toString();
+  const wholeColumns = r.top === 0 && r.bottom >= MAX_ROW;
+  const wholeRows = r.left === 0 && r.right >= MAX_COLUMN;
+  if (wholeColumns === wholeRows) return a1;
+  const [from, to = from] = a1.split(':') as [string, string?];
+  const part = (ref: string) => (wholeColumns ? ref.replace(/\d+$/, '') : ref.replace(/^[A-Z]+/, ''));
+  return `${part(from)}:${part(to)}`;
 }
 
 /**

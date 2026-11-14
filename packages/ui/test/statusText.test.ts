@@ -4,11 +4,13 @@ import {
   calculationBadge,
   clockTime,
   describeCells,
+  describeRange,
   narrateEdit,
   narrateHistory,
   pastTense,
   saveStateText,
 } from '../src/session/statusText.ts';
+import { MAX_COLUMN, MAX_ROW } from '../src/session/selection.ts';
 
 const cell = (row: number, column: number, sheet = 'Sheet1') => ({ sheet, row, column });
 
@@ -50,6 +52,13 @@ describe('narrateEdit', () => {
     expect(narrateEdit('Bold', EditResult.none, sel)).toBe('Bold · B2:C4');
     expect(narrateEdit('Format Cells', EditResult.none, sel)).toBe('Formatted cells B2:C4');
     expect(narrateEdit('Bold', EditResult.none, null)).toBe('Bold');
+  });
+
+  it('names whole columns and rows the way the headers do', () => {
+    expect(describeRange({ top: 0, left: 1, bottom: MAX_ROW, right: 2 })).toBe('B:C');
+    expect(describeRange({ top: 0, left: 0, bottom: MAX_ROW, right: 0 })).toBe('A:A');
+    expect(describeRange({ top: 1, left: 0, bottom: 3, right: MAX_COLUMN })).toBe('2:4');
+    expect(describeRange({ top: 0, left: 0, bottom: MAX_ROW, right: MAX_COLUMN })).toBe('A1:XFD1048576');
   });
 
   it('names the step undo and redo moved over', () => {
