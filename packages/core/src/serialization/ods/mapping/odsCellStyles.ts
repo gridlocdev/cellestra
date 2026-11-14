@@ -9,8 +9,10 @@ import {
   type Border,
   type BorderEdge,
   type BorderLineStyle,
+  styleKey,
   type CellStyle,
   type CellStyleMap,
+  type CellStyleSource,
   type Fill,
   type Font,
   type HorizontalAlignment,
@@ -45,6 +47,24 @@ export interface MapStyleTarget {
  * written again on every save, so edited or deleted rules leave none behind.
  */
 export const CONDITIONAL_STYLE_PREFIX = 'CellestraCond';
+
+/**
+ * The automatic `style:style` a cell style was read from, and the style the model read from it.
+ * A save writes the element back; an edited style changes only the properties that differ from
+ * `read`, so a parent style, diagonal borders, padding, indents and exact border widths survive.
+ */
+export interface OdsCellStyleSource extends CellStyleSource {
+  readonly element: XmlElement;
+  /** `styleKey` of the style as read, without its source. */
+  readonly readKey: string;
+  readonly read: CellStyle;
+}
+
+let nextSourceId = 1;
+
+export function isOdsCellStyleSource(source: CellStyleSource | undefined): source is OdsCellStyleSource {
+  return source !== undefined && 'element' in source && 'readKey' in source;
+}
 
 /** Maps a `CellStyle` to an ODF table-cell automatic style and back. */
 export const OdsCellStyles = {
@@ -109,14 +129,45 @@ export const OdsCellStyles = {
     if (textProps.hasAttributes) element.add(textProps);
 
     // style:map follows the property elements (ODF 16.2).
-    for (const map of maps) {
-      const mapElement = new XmlElement(Style('map'))
-        .setAttr(Style('condition'), map.condition)
-        .setAttr(Style('apply-style-name'), map.applyStyleName);
-      if (map.baseCellAddress !== null) mapElement.setAttr(Style('base-cell-address'), map.baseCellAddress);
-      element.add(mapElement);
+    for (const map of maps) element.add(mapElement(map));
+
+    return element;
+  },
+
+  /** `style` as read from `element`, tagged with it as its source. */
+  withSource(style: CellStyle, element: XmlElement): CellStyle {
+    const source: OdsCellStyleSource = {
+      id: nextSourceId++,
+      element: element.clone(),
+      readKey: styleKey(style),
+      read: style,
+    };
+    return { ...style, source };
+  },
+
+  /**
+   * Write `style` from its source element: the element as it was, renamed, with this save's data
+   * style and maps; when the model style was edited since it was read, the edited properties are
+   * written over the element's own and everything else in it stays.
+   */
+  rebuild(
+    source: OdsCellStyleSource,
+    name: string,
+    style: CellStyle,
+    dataStyleName: string | null,
+    maps: readonly WrittenStyleMap[] = [],
+  ): XmlElement {
+    const element = source.element.clone();
+    element.setAttr(Style('name'), name).setAttr(Style('family'), 'table-cell');
+    element.setAttr(Style('data-style-name'), dataStyleName);
+    for (const map of element.elements(Style('map'))) element.remove(map);
+
+    const { source: _source, ...now } = style;
+    if (styleKey(now) !== source.readKey) {
+      applyEdits(element, source.read, now, OdsCellStyles.build(name, now, null));
     }
 
+    for (const map of maps) element.add(mapElement(map));
     return element;
   },
 
@@ -221,6 +272,229 @@ export const OdsCellStyles = {
     };
   },
 } as const;
+
+function mapElement(map: WrittenStyleMap): XmlElement {
+  const element = new XmlElement(Style('map'))
+    .setAttr(Style('condition'), map.condition)
+    .setAttr(Style('apply-style-name'), map.applyStyleName);
+  if (map.baseCellAddress !== null) element.setAttr(Style('base-cell-address'), map.baseCellAddress);
+  return element;
+}
+
+// ---- Writing an edit over a source style -----------------------------------------------------
+
+type PropertiesKind = 'table-cell-properties' | 'paragraph-properties' | 'text-properties';
+const PROPERTIES_ORDER: readonly PropertiesKind[] = [
+  'table-cell-properties',
+  'paragraph-properties',
+  'text-properties',
+];
+
+/**
+ * One modeled property and the attributes that spell it. When the property changed, every one of
+ * `owned` is removed and `written` is set from the generated style, or to `off` when the generated
+ * style leaves it out (the source may have a parent that sets it, so leaving it out is not "off").
+ * `mirrors` are the Asian and complex-script twins LibreOffice writes beside a font property; when
+ * the source had one, it takes the new value too.
+ */
+interface PropertyRule {
+  readonly changed: (a: CellStyle, b: CellStyle) => boolean;
+  readonly kind: PropertiesKind;
+  readonly owned: readonly XmlName[];
+  readonly written: readonly XmlName[];
+  readonly off: string | null;
+  readonly mirrors?: readonly XmlName[];
+}
+
+const differs =
+  <T>(get: (s: CellStyle) => T) =>
+  (a: CellStyle, b: CellStyle): boolean =>
+    get(a) !== get(b);
+
+const PROPERTY_RULES: readonly PropertyRule[] = [
+  {
+    changed: differs((s) => s.font.bold),
+    kind: 'text-properties',
+    owned: [Fo('font-weight')],
+    written: [Fo('font-weight')],
+    off: 'normal',
+    mirrors: [Style('font-weight-asian'), Style('font-weight-complex')],
+  },
+  {
+    changed: differs((s) => s.font.italic),
+    kind: 'text-properties',
+    owned: [Fo('font-style')],
+    written: [Fo('font-style')],
+    off: 'normal',
+    mirrors: [Style('font-style-asian'), Style('font-style-complex')],
+  },
+  {
+    changed: differs((s) => s.font.underline),
+    kind: 'text-properties',
+    owned: ['style', 'type', 'width', 'color', 'mode'].map((p) => Style(`text-underline-${p}`)),
+    written: [Style('text-underline-style'), Style('text-underline-width'), Style('text-underline-color')],
+    off: 'none',
+  },
+  {
+    changed: differs((s) => s.font.strikethrough),
+    kind: 'text-properties',
+    owned: ['style', 'type', 'width', 'color', 'mode', 'text', 'text-style'].map((p) =>
+      Style(`text-line-through-${p}`),
+    ),
+    written: [Style('text-line-through-style')],
+    off: 'none',
+  },
+  {
+    changed: differs((s) => s.font.color >>> 0),
+    kind: 'text-properties',
+    owned: [Fo('color')],
+    written: [Fo('color')],
+    off: '#000000',
+  },
+  {
+    changed: differs((s) => s.font.family),
+    kind: 'text-properties',
+    owned: [Fo('font-family'), Style('font-name'), Style('font-family-generic'), Style('font-pitch')],
+    written: [Fo('font-family')],
+    off: Defaults.fontFamily,
+  },
+  {
+    changed: differs((s) => s.font.sizePoints),
+    kind: 'text-properties',
+    owned: [Fo('font-size')],
+    written: [Fo('font-size')],
+    off: `${Defaults.fontSizePoints}pt`,
+    mirrors: [Style('font-size-asian'), Style('font-size-complex')],
+  },
+  {
+    changed: differs((s) => (s.fill.background === null ? null : s.fill.background >>> 0)),
+    kind: 'table-cell-properties',
+    owned: [Fo('background-color')],
+    written: [Fo('background-color')],
+    off: 'transparent',
+  },
+  {
+    changed: differs((s) => s.alignment.vertical),
+    kind: 'table-cell-properties',
+    owned: [Style('vertical-align')],
+    written: [Style('vertical-align')],
+    off: null,
+  },
+  {
+    changed: differs((s) => s.alignment.wrapText),
+    kind: 'table-cell-properties',
+    owned: [Fo('wrap-option')],
+    written: [Fo('wrap-option')],
+    off: 'no-wrap',
+  },
+  {
+    changed: (a, b) =>
+      (a.alignment.rotation ?? 0) !== (b.alignment.rotation ?? 0) ||
+      a.alignment.rotationAlign !== b.alignment.rotationAlign,
+    kind: 'table-cell-properties',
+    owned: [Style('rotation-angle'), Style('rotation-align')],
+    written: [Style('rotation-angle'), Style('rotation-align')],
+    off: '0',
+  },
+  {
+    changed: (a, b) => {
+      const p = a.protection ?? Protections.default;
+      const q = b.protection ?? Protections.default;
+      return (
+        p.locked !== q.locked ||
+        p.hideFormula !== q.hideFormula ||
+        p.hideAll !== q.hideAll ||
+        p.printContent !== q.printContent
+      );
+    },
+    kind: 'table-cell-properties',
+    owned: [Style('cell-protect'), Style('print-content')],
+    written: [Style('cell-protect'), Style('print-content')],
+    off: 'protected',
+  },
+];
+
+function applyEdits(element: XmlElement, read: CellStyle, now: CellStyle, generated: XmlElement): void {
+  const generatedProps = (kind: PropertiesKind) => generated.element(Style(kind));
+
+  for (const rule of PROPERTY_RULES) {
+    if (!rule.changed(read, now)) continue;
+    const props = propertiesOf(element, rule.kind);
+    const hadMirror = (rule.mirrors ?? []).filter((m) => props.attr(m) !== null);
+    for (const name of [...rule.owned, ...(rule.mirrors ?? [])]) props.setAttr(name, null);
+    const source = generatedProps(rule.kind);
+    let value: string | null = null;
+    for (const name of rule.written) {
+      const v = source?.attr(name) ?? null;
+      if (v !== null) props.setAttr(name, v);
+      if (name === rule.written[0]) value = v;
+    }
+    if (value === null && rule.off !== null) props.setAttr(rule.written[0]!, (value = rule.off));
+    if (value !== null) for (const mirror of hadMirror) props.setAttr(mirror, value);
+  }
+
+  applyBorderEdits(element, read.border, now.border, generatedProps('table-cell-properties'));
+
+  if (read.alignment.horizontal !== now.alignment.horizontal) {
+    const paragraph = propertiesOf(element, 'paragraph-properties');
+    const cell = propertiesOf(element, 'table-cell-properties');
+    const fixed = now.alignment.horizontal !== 'general';
+    paragraph.setAttr(Fo('text-align'), fixed ? HORIZONTAL_TO_ODF[now.alignment.horizontal] : null);
+    cell.setAttr(Style('text-align-source'), fixed ? 'fix' : 'value-type');
+  }
+
+  for (const kind of PROPERTIES_ORDER) {
+    const props = element.element(Style(kind));
+    if (props && !props.hasAttributes && !props.hasElements) element.remove(props);
+  }
+}
+
+const SIDES = ['left', 'right', 'top', 'bottom'] as const;
+
+/**
+ * Write the edited border edges. A `fo:border` shorthand is spelt out per side first, so the sides
+ * that did not change keep their exact width and style.
+ */
+function applyBorderEdits(
+  element: XmlElement,
+  read: Border,
+  now: Border,
+  generated: XmlElement | null,
+): void {
+  const key = (e: BorderEdge) => `${e.style}:${e.color >>> 0}`;
+  const changed = SIDES.filter((side) => key(read[side]) !== key(now[side]));
+  if (changed.length === 0) return;
+  const props = propertiesOf(element, 'table-cell-properties');
+  const all = props.attr(Fo('border'));
+  const allWidth = props.attr(Style('border-line-width'));
+  props.setAttr(Fo('border'), null).setAttr(Style('border-line-width'), null);
+  for (const side of SIDES) {
+    if (changed.includes(side)) {
+      props.setAttr(Style(`border-line-width-${side}`), null);
+      props.setAttr(Fo(`border-${side}`), generated?.attr(Fo(`border-${side}`)) ?? 'none');
+      continue;
+    }
+    if (all !== null && props.attr(Fo(`border-${side}`)) === null) props.setAttr(Fo(`border-${side}`), all);
+    if (allWidth !== null && props.attr(Style(`border-line-width-${side}`)) === null)
+      props.setAttr(Style(`border-line-width-${side}`), allWidth);
+  }
+}
+
+/** The element's `style:<kind>` child, added in schema order when it has none. */
+function propertiesOf(element: XmlElement, kind: PropertiesKind): XmlElement {
+  const existing = element.element(Style(kind));
+  if (existing) return existing;
+  const created = new XmlElement(Style(kind));
+  const later = PROPERTIES_ORDER.slice(PROPERTIES_ORDER.indexOf(kind) + 1);
+  const next = element.elements().find((e) => e.is(Style('map')) || later.some((k) => e.is(Style(k))));
+  if (!next) {
+    element.add(created);
+  } else {
+    created.parent = element;
+    element.nodes.splice(element.nodes.indexOf(next), 0, created);
+  }
+  return created;
+}
 
 const ROTATION_ALIGNS: ReadonlySet<string> = new Set<RotationAlign>(['none', 'bottom', 'top', 'center']);
 

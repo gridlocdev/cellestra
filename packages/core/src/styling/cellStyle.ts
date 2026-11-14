@@ -87,6 +87,16 @@ export interface NumberFormat {
 }
 
 /** A cell's complete formatting. Immutable; intern via `StylePool`. */
+/**
+ * The file style a style was read from, kept so a save can write back what the model has no field
+ * for. Opaque here: the reader that made it knows what else it holds. Edits that spread a style
+ * carry it along, so a save changes only the properties that were edited; two sources are two
+ * styles even when the model reads them alike.
+ */
+export interface CellStyleSource {
+  readonly id: number;
+}
+
 export interface CellStyle {
   readonly font: Font;
   readonly fill: Fill;
@@ -102,6 +112,8 @@ export interface CellStyle {
   readonly protection?: Protection;
   /** The source style's `style:map` elements, in order. Absent or empty means none. */
   readonly conditionalMaps?: readonly CellStyleMap[];
+  /** Where the style came from in the file it was read from. Absent for styles made in Cellestra. */
+  readonly source?: CellStyleSource;
 }
 
 export const BorderEdges = {
@@ -211,6 +223,7 @@ export function styleKey(s: CellStyle): string {
     a.rotationAlign ?? '',
     `${+p.locked}${+p.hideFormula}${+p.hideAll}${+p.printContent}`,
     mapsKey(s.conditionalMaps),
+    s.source?.id ?? '',
   ].join('\u0001');
 }
 

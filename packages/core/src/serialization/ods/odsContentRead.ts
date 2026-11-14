@@ -116,6 +116,7 @@ export function readContentXml(
   OdsPreserved.setWorkbook(workbook, {
     namedExpressions,
     automaticStyles: styles.preservedAutomaticStyles,
+    fontFaces: root.element(Office('font-face-decls'))?.clone() ?? null,
   });
 }
 

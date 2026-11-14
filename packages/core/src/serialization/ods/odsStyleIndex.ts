@@ -99,7 +99,11 @@ export class OdsStyleIndex {
     const cached = this.styleIds.get(name);
     if (cached !== undefined) return cached;
     const style = this.cellStyle(name, 0);
-    const id = style === null ? null : this.pool.intern(style);
+    // An automatic style is written back from its element; a common style keeps its name in
+    // styles.xml and is written as an automatic style made from the model, as before.
+    const element = this.automaticCellStyles.get(name);
+    const id =
+      style === null ? null : this.pool.intern(element ? OdsCellStyles.withSource(style, element) : style);
     this.styleIds.set(name, id);
     return id;
   }

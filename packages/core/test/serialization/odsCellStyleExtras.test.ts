@@ -50,8 +50,12 @@ function buildOds(cellStyles: readonly string[], extraAutomatic = ''): Uint8Arra
   return pkg.write();
 }
 
+/** The model's reading of a cell's style, without the file style it was read from. */
 function styleOf(workbook: Workbook, row: number): CellStyle {
-  return workbook.styles.get(workbook.findSheet('Sheet1')!.find(row, 0)!.styleId);
+  const { source: _source, ...style } = workbook.styles.get(
+    workbook.findSheet('Sheet1')!.find(row, 0)!.styleId,
+  );
+  return style;
 }
 
 /** content.xml's automatic cell styles by name, and the style name each cell of column A uses. */
@@ -113,7 +117,8 @@ describe('cell style protection, rotation and maps', () => {
 
     const saved = resave(bytes);
     expect(cellProps(saved, 0)!.attr(Style('cell-protect'))).toBe('none');
-    expect(cellProps(saved, 0)!.attr(Style('print-content'))).toBeNull();
+    // The style is written back as the file had it.
+    expect(cellProps(saved, 0)!.attr(Style('print-content'))).toBe('true');
     expect(cellProps(saved, 1)!.attr(Style('cell-protect'))).toBe('hidden-and-protected');
     expect(cellProps(saved, 2)!.attr(Style('cell-protect'))).toBe('protected formula-hidden');
     expect(cellProps(saved, 2)!.attr(Style('print-content'))).toBe('false');
@@ -143,7 +148,8 @@ describe('cell style protection, rotation and maps', () => {
     expect(cellProps(saved, 0)!.attr(Style('rotation-angle'))).toBe('90');
     expect(cellProps(saved, 0)!.attr(Style('rotation-align'))).toBe('none');
     expect(cellProps(saved, 2)!.attr(Style('rotation-align'))).toBe('top');
-    expect(cellProps(saved, 3)!.attr(Style('rotation-angle'))).toBe('270');
+    // Written back as the file spelt it.
+    expect(cellProps(saved, 3)!.attr(Style('rotation-angle'))).toBe('-90');
     expect(cellProps(saved, 3)!.attr(Style('rotation-align'))).toBeNull();
 
     const reopened = readOdsWithPackage(saved).workbook;
@@ -255,7 +261,6 @@ describe('cell style protection, rotation and maps', () => {
       protection: { ...Protections.default, locked: false, printContent: false },
     };
     sheet.getOrCreate(0, 0).styleId = workbook.styles.intern(style);
-    const reopened = roundTrip(workbook);
-    expect(reopened.styles.get(reopened.findSheet('Sheet1')!.find(0, 0)!.styleId)).toEqual(style);
+    expect(styleOf(roundTrip(workbook), 0)).toEqual(style);
   });
 });

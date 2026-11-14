@@ -30,6 +30,8 @@ export interface PreservedTable {
 export interface PreservedWorkbook {
   readonly namedExpressions: readonly XmlElement[];
   readonly automaticStyles: readonly XmlElement[];
+  /** content.xml's `office:font-face-decls`, which the automatic styles written back may name. */
+  readonly fontFaces?: XmlElement | null;
 }
 
 /** A validation whose condition the model cannot express, kept as the original element. */

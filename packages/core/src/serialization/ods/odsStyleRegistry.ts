@@ -1,7 +1,12 @@
 import { NumberFormats, type CellStyleMap, type NumberFormat } from '../../styling/cellStyle.ts';
 import type { StylePool } from '../../styling/stylePool.ts';
 import { XmlElement } from '../../xml/index.ts';
-import { CONDITIONAL_STYLE_PREFIX, OdsCellStyles, type WrittenStyleMap } from './mapping/odsCellStyles.ts';
+import {
+  CONDITIONAL_STYLE_PREFIX,
+  OdsCellStyles,
+  isOdsCellStyleSource,
+  type WrittenStyleMap,
+} from './mapping/odsCellStyles.ts';
 import { OdsDataStyles } from './mapping/odsDataStyles.ts';
 import { formatUpTo3, pxToCm } from './odsContentShared.ts';
 import { Style } from './odsXmlNames.ts';
@@ -68,7 +73,13 @@ export class StyleRegistry {
     });
 
     const name = this.nextName('ce');
-    this.autoStyles.add(OdsCellStyles.build(name, style, dataStyleName, maps));
+    // A style read from a file is written from the element it came from (PRD §10.2: formatting is
+    // not edited by saving).
+    this.autoStyles.add(
+      isOdsCellStyleSource(style.source)
+        ? OdsCellStyles.rebuild(style.source, name, style, dataStyleName, maps)
+        : OdsCellStyles.build(name, style, dataStyleName, maps),
+    );
     this.cellStyleNames.set(styleId, name);
     return name;
   }
