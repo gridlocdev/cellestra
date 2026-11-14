@@ -193,12 +193,58 @@ export class Parser {
   }
 
   private parsePostfix(): Expr {
-    let expr = this.parsePrimary();
+    let expr = this.parseUnion();
     while (this.current.type === 'percent') {
       this.advance();
       expr = Expr.unary('percent', expr);
     }
     return expr;
+  }
+
+  /** The reference union `~`, looser than intersection but tighter than every other operator. */
+  private parseUnion(): Expr {
+    let left = this.parseIntersection();
+    while (this.current.type === 'tilde') {
+      this.advance();
+      left = Expr.binary('union', left, this.parseIntersection());
+    }
+    return left;
+  }
+
+  /** The reference intersection `!`, which binds tightest after `:` (as in Calc and OpenFormula). */
+  private parseIntersection(): Expr {
+    let left = this.parsePrimary();
+    while (this.current.type === 'bang') {
+      this.advance();
+      left = Expr.binary('intersect', left, this.parsePrimary());
+    }
+    return left;
+  }
+
+  /**
+   * After `(` and its first expression: a `,` or `;` makes the parentheses a reference list, a
+   * union of every item (Calc's `(A1:A2;C1)`). Each item must be a reference.
+   */
+  private parseReferenceList(first: Expr): Expr {
+    const isSeparator = (): boolean => this.current.type === 'comma' || this.current.type === 'semicolon';
+    if (!isSeparator()) return first;
+    this.requireReference(first);
+    let list = first;
+    while (isSeparator()) {
+      this.advance();
+      const item = this.parseExpression();
+      this.requireReference(item);
+      list = Expr.binary('union', list, item);
+    }
+    return list;
+  }
+
+  private requireReference(expr: Expr): void {
+    if (isReferenceExpr(expr)) return;
+    throw new FormulaParseException(
+      'Only references can be listed inside parentheses.',
+      this.current.position,
+    );
   }
 
   private parsePrimary(): Expr {
@@ -229,7 +275,7 @@ export class Parser {
       case 'leftParen': {
         this.advance();
         this.enter();
-        const inner = this.parseExpression();
+        const inner = this.parseReferenceList(this.parseExpression());
         this.expect('rightParen');
         this.leave();
         return inner;
@@ -340,6 +386,23 @@ export class Parser {
     this.expect('rightParen');
     this.leave();
     return Expr.call(nameToken.text.toUpperCase(), args);
+  }
+}
+
+/** Whether `expr` can stand for cells: a reference, range, name, broken reference, reference operator or call. */
+function isReferenceExpr(expr: Expr): boolean {
+  switch (expr.kind) {
+    case 'reference':
+    case 'range':
+    case 'name':
+    case 'refError':
+      return true;
+    case 'binary':
+      return expr.operator === 'union' || expr.operator === 'intersect';
+    case 'call':
+      return true; // a reference-returning function (INDEX); any other is #VALUE! when evaluated
+    default:
+      return false;
   }
 }
 

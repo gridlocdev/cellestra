@@ -16,7 +16,11 @@ export type BinaryOperator =
   | 'less'
   | 'lessEqual'
   | 'greater'
-  | 'greaterEqual';
+  | 'greaterEqual'
+  /** The reference union `~`: every area of both sides (Calc's reference list). */
+  | 'union'
+  /** The reference intersection `!`: the cells both sides share. */
+  | 'intersect';
 
 /** A literal number, string, or boolean. */
 export interface LiteralExpr {

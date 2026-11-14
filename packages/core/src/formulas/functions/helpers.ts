@@ -66,7 +66,7 @@ export function collectNumbers(
   destination: number[],
 ): CellValue | null {
   for (const arg of args) {
-    const fromReference = ev.tryEvaluateRange(arg) !== null;
+    const fromReference = ev.tryEvaluateAreas(arg) !== null;
     for (const value of ev.enumerateValues(arg)) {
       if (value.kind === 'error') return value;
       if (fromReference) {

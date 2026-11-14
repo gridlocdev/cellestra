@@ -18,6 +18,8 @@ export const BINARY_SYMBOL: Readonly<Record<BinaryOperator, string>> = {
   lessEqual: '<=',
   greater: '>',
   greaterEqual: '>=',
+  union: '~',
+  intersect: '!',
 };
 
 /** Binary-operator precedence shared by the A1 writer and the OpenFormula translator. */
@@ -33,6 +35,10 @@ export function binaryPrecedence(op: BinaryOperator): number {
       return 4;
     case 'power':
       return 5;
+    case 'union':
+      return 8;
+    case 'intersect':
+      return 9;
     default:
       return 1; // comparisons
   }
@@ -84,12 +90,13 @@ const a1SheetPrefix = (sheet: string | null): string =>
 
 /**
  * Precedence of a node as written: binary operators by `binaryPrecedence`, then a prefix sign (6,
- * tighter than ^, so (-2)^2 is written -2^2 and -(2^2) keeps its parentheses), then postfix percent.
+ * tighter than ^, so (-2)^2 is written -2^2 and -(2^2) keeps its parentheses), then postfix percent,
+ * then the reference operators (union 8, intersection 9), which bind tightest as in Calc.
  */
 export function writtenPrecedence(expr: Expr): number {
   if (expr.kind === 'binary') return binaryPrecedence(expr.operator);
   if (expr.kind === 'unary') return expr.operator === 'percent' ? 7 : 6;
-  return 8;
+  return 10;
 }
 
 function withParens(expr: Expr, minPrecedence: number): string {

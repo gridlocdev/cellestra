@@ -43,13 +43,15 @@ function sumArguments(
   const groups: number[][] = [];
   for (const arg of args) {
     const nums: number[] = [];
-    const range = arg.kind === 'reference' ? null : ev.tryEvaluateRange(arg);
-    if (range) {
-      for (let c = 0; c < range.usedColumnCount; c++) {
-        for (let r = 0; r < range.usedRowCount; r++) {
-          const value = range.get(r, c);
-          if (value.kind === 'error') return value;
-          if (value.kind === 'number') nums.push(value.value);
+    const areas = arg.kind === 'reference' ? null : ev.tryEvaluateAreas(arg);
+    if (areas) {
+      for (const range of areas) {
+        for (let c = 0; c < range.usedColumnCount; c++) {
+          for (let r = 0; r < range.usedRowCount; r++) {
+            const value = range.get(r, c);
+            if (value.kind === 'error') return value;
+            if (value.kind === 'number') nums.push(value.value);
+          }
         }
       }
     } else {
@@ -120,7 +122,7 @@ function countValues(args: readonly Expr[], ev: FunctionEvaluator, onlyNumbers: 
   for (const arg of args) {
     // COUNT counts numbers from references, but a value typed directly as an argument also counts
     // when it is a boolean or a numeric string — COUNT("x",1,TRUE)=2 (Excel/Calc).
-    const fromReference = ev.tryEvaluateRange(arg) !== null;
+    const fromReference = ev.tryEvaluateAreas(arg) !== null;
     for (const value of ev.enumerateValues(arg)) {
       if (!onlyNumbers) {
         if (value.kind !== 'empty') count++;

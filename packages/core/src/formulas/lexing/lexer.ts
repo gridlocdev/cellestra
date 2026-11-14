@@ -25,6 +25,12 @@ export type TokenType =
   | 'comma'
   /** The range operator `:`. */
   | 'colon'
+  /** The reference union operator `~`. */
+  | 'tilde'
+  /** The reference intersection operator `!`. */
+  | 'bang'
+  /** `;`: a list separator inside bare parentheses (a union, as in Calc). */
+  | 'semicolon'
   /** An error literal such as `#REF!` or `#N/A`. */
   | 'error'
   | 'endOfInput';
@@ -48,6 +54,9 @@ const SINGLE: Readonly<Record<string, TokenType>> = {
   ')': 'rightParen',
   ',': 'comma',
   ':': 'colon',
+  '~': 'tilde',
+  '!': 'bang',
+  ';': 'semicolon',
   '=': 'equal',
 };
 

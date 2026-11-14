@@ -10,7 +10,7 @@ function reduce(args: readonly Expr[], ev: FunctionEvaluator, requireAll: boolea
   let any = false;
   let accumulator = requireAll;
   for (const arg of args) {
-    const fromReference = ev.tryEvaluateRange(arg) !== null;
+    const fromReference = ev.tryEvaluateAreas(arg) !== null;
     for (const value of ev.enumerateValues(arg)) {
       if (value.kind === 'error') return value;
       if (value.kind === 'empty') continue;

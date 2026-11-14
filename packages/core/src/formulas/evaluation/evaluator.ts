@@ -121,6 +121,7 @@ export class Evaluator implements FunctionEvaluator {
   }
 
   #binary(node: BinaryExpr): CellValue {
+    if (node.operator === 'union' || node.operator === 'intersect') return this.#referenceValue(node);
     const left = this.evaluate(node.left);
     const right = this.evaluate(node.right);
     switch (node.operator) {
@@ -149,6 +150,74 @@ export class Evaluator implements FunctionEvaluator {
       case 'greaterEqual':
         return ValueComparer.greaterEqual(left, right);
     }
+  }
+
+  /** A union or intersection where one value is needed: its one area, intersected with the formula's cell. */
+  #referenceValue(node: BinaryExpr): CellValue {
+    const areas = this.#areas(node);
+    if (!Array.isArray(areas)) return areas;
+    if (areas.length !== 1)
+      return CellValue.error(CellError.value('A list of ranges cannot be used where one value is needed.'));
+    return this.intersect(areas[0]!);
+  }
+
+  /**
+   * The areas a reference expression names: one for a reference, range, name or INDEX, several for
+   * a union, and the shared cells of each pair for an intersection. An error value when the
+   * expression is not a reference (#VALUE!), names a missing sheet (#REF!), or the intersection is
+   * empty (#NULL!).
+   */
+  #areas(expr: Expr): CellRange[] | CellValue {
+    switch (expr.kind) {
+      case 'reference':
+        return this.#missingSheet(expr) ?? [new CellRange(expr.address)];
+      case 'range':
+        return this.#missingSheet(expr) ?? [expr.range];
+      case 'name': {
+        const named = this.context.resolveName(expr.name);
+        if (!named) return CellValue.error(CellError.name(`Unknown name '${expr.name}'.`));
+        return this.#missingSheet(expr) ?? [named];
+      }
+      case 'refError':
+        return CellValue.error(CellError.reference('A referenced cell was deleted.'));
+      case 'call': {
+        const fn = this.#functions.get(expr.name);
+        if (!fn?.reference || !acceptsArgCount(fn.metadata, expr.args.length)) break;
+        const target = fn.reference(expr.args, this);
+        return target instanceof CellRange ? [target] : target;
+      }
+      case 'binary': {
+        if (expr.operator !== 'union' && expr.operator !== 'intersect') break;
+        const left = this.#areas(expr.left);
+        if (!Array.isArray(left)) return left;
+        const right = this.#areas(expr.right);
+        if (!Array.isArray(right)) return right;
+        if (expr.operator === 'union') return [...left, ...right];
+        const shared: CellRange[] = [];
+        for (const a of left)
+          for (const b of right) {
+            const both = this.#intersection(a, b);
+            if (both) shared.push(both);
+          }
+        return shared.length > 0 ? shared : CellValue.error(CellError.null());
+      }
+      default:
+        break;
+    }
+    return CellValue.error(CellError.value('A reference operator needs references on both sides.'));
+  }
+
+  /** The cells two ranges share (on the same sheet), or null. */
+  #intersection(a: CellRange, b: CellRange): CellRange | null {
+    const sheetOf = (r: CellRange): string => (r.sheet ?? this.context.currentSheet).toLowerCase();
+    if (sheetOf(a) !== sheetOf(b) || !a.intersects(b)) return null;
+    return CellRange.fromBounds(
+      Math.max(a.top, b.top),
+      Math.max(a.left, b.left),
+      Math.min(a.bottom, b.bottom),
+      Math.min(a.right, b.right),
+      a.sheet ?? b.sheet,
+    );
   }
 
   #call(node: FunctionCallExpr): CellValue {
@@ -182,10 +251,24 @@ export class Evaluator implements FunctionEvaluator {
 
   // ---- FunctionEvaluator ----------------------------------------------
 
-  enumerateValues(expr: Expr): Iterable<CellValue> {
-    const range = expr.kind === 'reference' ? null : this.tryEvaluateRange(expr);
+  *enumerateValues(expr: Expr): Iterable<CellValue> {
+    const areas = expr.kind === 'reference' ? null : this.tryEvaluateAreas(expr);
+    if (!areas) {
+      yield this.evaluate(expr);
+      return;
+    }
     // Every caller skips empty cells, so the empty margin past the sheet's data is left out.
-    return range ? range.usedValues() : [this.evaluate(expr)];
+    for (const area of areas) yield* area.usedValues();
+  }
+
+  tryEvaluateAreas(expr: Expr): readonly RangeValues[] | null {
+    if (expr.kind !== 'binary') {
+      const range = this.tryEvaluateRange(expr);
+      return range ? [range] : null;
+    }
+    if (expr.operator !== 'union' && expr.operator !== 'intersect') return null;
+    const areas = this.#areas(expr);
+    return Array.isArray(areas) ? areas.map((a) => new RangeValues(a, this.context)) : null;
   }
 
   tryEvaluateRange(expr: Expr): RangeValues | null {
@@ -197,6 +280,11 @@ export class Evaluator implements FunctionEvaluator {
       case 'name': {
         const named = this.context.resolveName(expr.name);
         return named ? new RangeValues(named, this.context) : null;
+      }
+      case 'binary': {
+        // A union of one area, or an intersection that leaves one, is a plain range.
+        const areas = this.tryEvaluateAreas(expr);
+        return areas?.length === 1 ? areas[0]! : null;
       }
       case 'call': {
         // A reference-returning function (INDEX); its errors surface when it is evaluated instead.

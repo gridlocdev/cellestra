@@ -14,12 +14,18 @@ export interface FunctionEvaluator {
   /** Evaluate an argument to a single scalar value. */
   evaluate(expr: Expr): CellValue;
   /**
-   * Flatten an argument into scalars: a range/named range yields each cell (row-major); any other
+   * Flatten an argument into scalars: a range/named range yields each cell (row-major), a union each
+   * cell of each area in turn; any other
    * expression (including a single reference) yields its one evaluated value. Errors are yielded as-is.
    */
   enumerateValues(expr: Expr): Iterable<CellValue>;
   /** Resolve an argument to a 2D range view; null when it is not a reference/range/named range. */
   tryEvaluateRange(expr: Expr): RangeValues | null;
+  /**
+   * Resolve an argument to every area it names: one for a range, several for a union (`A1:A2~C1`).
+   * Null when it is not a reference, or when it is a reference error (evaluate it for the error).
+   */
+  tryEvaluateAreas(expr: Expr): readonly RangeValues[] | null;
   /**
    * A range used where one value is needed: its one cell, or the cell in the formula's row (of a
    * one-column range) or column (of a one-row range); otherwise #VALUE!, as in Calc.
