@@ -4,7 +4,6 @@ import { SortEngine } from '../data/sortEngine.ts';
 import { TableAutoExpand } from '../data/tables.ts';
 import type { DataValidation, FilterSpec, SortSpec, Table } from '../data/types.ts';
 import { CellRange } from '../model/cellRange.ts';
-import { getHostLocale } from '../model/documentSettings.ts';
 import type { MergedRegion } from '../model/mergedRegion.ts';
 import { SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
@@ -29,18 +28,24 @@ export const DataEditCommands = {
   // ---- Sort -------------------------------------------------------------
 
   /** Sort the range (clamped to the used range) as one undo step. */
+  /** Text collates in `locale`, else in the document locale. */
   sort: (sheet: string, range: CellRange, spec: SortSpec, locale?: string): EditCommand =>
-    // Sorting re-applies a filter over the range, which changes which rows are hidden; the first
-    // step keeps those flags so undo shows the same rows again.
-    new CompositeEditCommand('Sort', [
-      filteredRowsCommand(sheet, range),
-      new CellSnapshotCommand(
-        'Sort',
-        sheet,
-        (ws) => clampedPositions(ws, range),
-        (ws) => SortEngine.sort(ws, clampToUsed(ws, range) ?? range, spec, locale),
-      ),
-    ]),
+    inDocumentLocale(
+      'Sort',
+      locale,
+      (loc) =>
+        // Sorting re-applies a filter over the range, which changes which rows are hidden; the first
+        // step keeps those flags so undo shows the same rows again.
+        new CompositeEditCommand('Sort', [
+          filteredRowsCommand(sheet, range),
+          new CellSnapshotCommand(
+            'Sort',
+            sheet,
+            (ws) => clampedPositions(ws, range),
+            (ws) => SortEngine.sort(ws, clampToUsed(ws, range) ?? range, spec, loc),
+          ),
+        ]),
+    ),
 
   sortByColumn: (
     sheet: string,
@@ -90,13 +95,13 @@ export const DataEditCommands = {
   /**
    * Split a column's text; snapshots a block as wide as the widest split, so it fully undoes. Only
    * the used rows of a whole-column selection are read. Fields are read as typed input in `locale`
-   * (numbers, dates, TRUE/FALSE), and a date gets its date format.
+   * (numbers, dates, TRUE/FALSE; by default the document locale), and a date gets its date format.
    */
   textToColumns(
     worksheet: Worksheet,
     sourceColumn: CellRange,
     delimiter: string,
-    locale: string = getHostLocale(),
+    locale?: string,
   ): EditCommand {
     const source = (ws: Worksheet): CellRange | null => {
       const bottom = Math.min(sourceColumn.bottom, ws.cellExtent()?.lastRow ?? -1);
@@ -123,13 +128,15 @@ export const DataEditCommands = {
       (ws) => [...(block(ws)?.positions() ?? [])],
       (ws) => {
         const src = source(ws);
-        if (src) TextToColumns.split(ws, src, delimiter, { locale, styles });
+        if (src) TextToColumns.split(ws, src, delimiter, { locale: documentLocale, styles });
       },
     );
+    let documentLocale = locale;
     return new ActionCommand(
       'Text to Columns',
       (wb) => {
         styles = wb.styles;
+        documentLocale = locale ?? wb.settings.effectiveLocale;
         return split.apply(wb);
       },
       (wb) => split.undo(wb),
@@ -155,15 +162,16 @@ export const DataEditCommands = {
     filter: FilterSpec | null,
     locale?: string,
   ): EditCommand {
-    const loc = locale ?? getHostLocale();
-    const steps: EditCommand[] = [
-      setSheetFilterState(sheet, sort || filter ? range : null, filter, sort),
-      filter
-        ? DataEditCommands.applyFilter(sheet, range, filter, loc)
-        : DataEditCommands.clearFilter(sheet, range),
-    ];
-    if (sort && sort.levels.length > 0) steps.push(DataEditCommands.sort(sheet, range, sort, loc));
-    return EditCommands.composite('Sort & Filter', steps);
+    return inDocumentLocale('Sort & Filter', locale, (loc) => {
+      const steps: EditCommand[] = [
+        setSheetFilterState(sheet, sort || filter ? range : null, filter, sort),
+        filter
+          ? DataEditCommands.applyFilter(sheet, range, filter, loc)
+          : DataEditCommands.clearFilter(sheet, range),
+      ];
+      if (sort && sort.levels.length > 0) steps.push(DataEditCommands.sort(sheet, range, sort, loc));
+      return EditCommands.composite('Sort & Filter', steps);
+    });
   },
 
   /** As `applySortAndFilter`, but the state lives on the table record, not the sheet AutoFilter. */
@@ -174,16 +182,17 @@ export const DataEditCommands = {
     filter: FilterSpec | null,
     locale?: string,
   ): EditCommand {
-    const loc = locale ?? getHostLocale();
-    const range = table.range;
-    const steps: EditCommand[] = [
-      DataEditCommands.replaceTable(sheet, table, { ...table, filter, sort }),
-      filter
-        ? DataEditCommands.applyFilter(sheet, range, filter, loc)
-        : DataEditCommands.clearFilter(sheet, range),
-    ];
-    if (sort && sort.levels.length > 0) steps.push(DataEditCommands.sort(sheet, range, sort, loc));
-    return EditCommands.composite('Sort & Filter', steps);
+    return inDocumentLocale('Sort & Filter', locale, (loc) => {
+      const range = table.range;
+      const steps: EditCommand[] = [
+        DataEditCommands.replaceTable(sheet, table, { ...table, filter, sort }),
+        filter
+          ? DataEditCommands.applyFilter(sheet, range, filter, loc)
+          : DataEditCommands.clearFilter(sheet, range),
+      ];
+      if (sort && sort.levels.length > 0) steps.push(DataEditCommands.sort(sheet, range, sort, loc));
+      return EditCommands.composite('Sort & Filter', steps);
+    });
   },
 
   // ---- Clear structure --------------------------------------------------
@@ -513,6 +522,27 @@ function setSheetFilterState(
  * Changes nothing; keeps which rows of every filter that overlaps `range` (the sheet's filter and
  * table filters) are hidden, and puts exactly those flags back on undo.
  */
+/**
+ * The command `build` makes for `locale`, or, without one, for the workbook's document locale (its
+ * effective locale) as it is when the command first applies.
+ */
+function inDocumentLocale(
+  label: string,
+  locale: string | undefined,
+  build: (locale: string) => EditCommand,
+): EditCommand {
+  if (locale !== undefined) return build(locale);
+  let inner: EditCommand | null = null;
+  return new ActionCommand(
+    label,
+    (wb) => {
+      inner ??= build(wb.settings.effectiveLocale);
+      return inner.apply(wb);
+    },
+    (wb) => inner?.undo(wb) ?? EditResult.none,
+  );
+}
+
 function filteredRowsCommand(sheet: string, range: CellRange): EditCommand {
   let filtered: CellRange[] = [];
   let hiddenBefore = new Set<number>();

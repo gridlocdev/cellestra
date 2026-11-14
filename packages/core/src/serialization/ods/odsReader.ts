@@ -42,6 +42,7 @@ export const OdsReader = {
       const styles = stylesXml === null ? null : tryParseXml(stylesXml, { preserveWhitespace: true });
       readContentXml(document, workbook, pkg.foreignSpreadsheetChildren, pkg, styles);
       OdsPageSetup.read(workbook, document.root, styles?.root ?? null);
+      workbook.settings.locale = OdsSupportXml.documentLocale(styles?.root ?? null);
     }
 
     // A valid spreadsheet always has at least one sheet.

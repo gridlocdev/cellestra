@@ -367,7 +367,7 @@ Two parts describe the old content rather than hold data, and a save drops them:
 These are the v1 commitment. Adding functions later is expected and cheap (one registry entry + tests).
 
 ### 8.3 Locale and number formats
-Number, date, and currency formatting follow the **document's locale** when the `.ods` file specifies one. For a **new** document, and for any format the file leaves unspecified, Cellestra uses the **system locale**. The decimal/thousands separators and currency symbol follow the active locale.
+Number, date, and currency formatting follow the **document's locale** when the `.ods` file specifies one. The document's locale is the language and country of its default cell style (`fo:language`, `fo:country` in styles.xml, as LibreOffice writes them); a locale chosen in Cellestra (saved in settings.xml) wins over it. For a **new** document, and for any format the file leaves unspecified, Cellestra uses the **system locale**. The decimal/thousands separators and currency symbol follow the active locale.
 
 **Two-digit years** in typed dates resolve on LibreOffice Calc's default window — **1930–2029** (`00`–`29` → 2000–2029, `30`–`99` → 1930–1999). So `3/4/30` is 1930.
 

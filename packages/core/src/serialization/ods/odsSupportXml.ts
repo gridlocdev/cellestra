@@ -17,6 +17,10 @@ const POSITION_RIGHT_ITEM = 'PositionRight';
 const POSITION_BOTTOM_ITEM = 'PositionBottom';
 const ZOOM_TYPE_ITEM = 'ZoomType';
 const ZOOM_VALUE_ITEM = 'ZoomValue';
+/** The style family whose default style holds the document language. */
+const CELL_STYLE_FAMILY = 'table-cell';
+/** ODF values that mean "no language": `zxx` (no linguistic content) and LibreOffice's `none`. */
+const NO_LANGUAGE: ReadonlySet<string> = new Set(['zxx', 'none']);
 /** Calc's zoom limits, in percent. */
 const MIN_ZOOM = 20;
 const MAX_ZOOM = 600;
@@ -96,6 +100,22 @@ export const OdsSupportXml = {
     return new XmlDocument(root);
   },
 
+  /**
+   * The document locale from styles.xml: `fo:language` and `fo:country` of the default cell style
+   * (else of another default style that names one), as a BCP 47 tag. Null when the file names no
+   * language, or one that isn't a language (`zxx`, `none`).
+   */
+  documentLocale(stylesRoot: XmlElement | null): string | null {
+    if (!stylesRoot) return null;
+    const defaults = stylesRoot.descendants(Style('default-style'));
+    const cell = defaults.filter((d) => d.attr(Style('family')) === CELL_STYLE_FAMILY);
+    for (const style of [...cell, ...defaults]) {
+      const locale = textPropertiesLocale(style);
+      if (locale !== null) return locale;
+    }
+    return null;
+  },
+
   applySettings(settingsXml: string, workbook: Workbook): void {
     const document = tryParseXml(settingsXml);
     if (!document) return;
@@ -116,8 +136,9 @@ export const OdsSupportXml = {
         const mode = parseCalculationMode(item.value);
         if (mode !== null) workbook.settings.calculationMode = mode;
       } else if (name === LOCALE_ITEM) {
-        // An explicit document locale round-trips; blank keeps "system default".
-        workbook.settings.locale = item.value.trim() ? tryLocale(item.value) : null;
+        // A locale chosen in Cellestra wins over the default style's language; blank leaves that.
+        const locale = item.value.trim() ? tryLocale(item.value) : null;
+        if (locale !== null) workbook.settings.locale = locale;
       } else if (name === ACTIVE_TABLE_ITEM) {
         const sheet = workbook.findSheet(item.value);
         if (sheet) workbook.settings.activeSheetIndex = workbook.indexOf(sheet);
@@ -291,6 +312,16 @@ function tableEntry(name: string, columns: number, rows: number, zoom: number | 
 function parseCalculationMode(text: string): CalculationMode | null {
   const t = text.trim().toLowerCase();
   return t === 'automatic' || t === 'manual' ? t : null;
+}
+
+/** The locale a style's text properties name, or null. */
+function textPropertiesLocale(style: XmlElement): string | null {
+  const props = style.element(Style('text-properties'));
+  const language = props?.attr(Fo('language'))?.trim() ?? '';
+  if (!language || NO_LANGUAGE.has(language.toLowerCase())) return null;
+  const country = props?.attr(Fo('country'))?.trim() ?? '';
+  const tag = country && !NO_LANGUAGE.has(country.toLowerCase()) ? `${language}-${country}` : language;
+  return tryLocale(tag);
 }
 
 /** `CultureInfo.GetCultureInfo(name)` or null: a well-formed BCP 47 tag, canonicalized. */
