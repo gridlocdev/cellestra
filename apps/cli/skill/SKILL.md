@@ -23,9 +23,9 @@ contracts on their own.
 ## Prerequisite
 
 `cellestra` must be on `PATH` — check with `cellestra --version` or `cellestra man | head`. If it
-is missing, tell the user: it installs from the Puffinote repository with `just install-cli` (or
-`just install-cellestra-cli`), and this skill itself can be (re)installed from the tool with
-`cellestra skill --install`. Do not try to build it from source unless you are inside that
+is missing, tell the user: it is the CLI in the Cellestra repository (`apps/cli`), put on `PATH`
+by building it and linking its package globally, and this skill itself can be (re)installed from
+the tool with `cellestra skill --install`. Do not try to build it from source unless you are inside that
 repository and were asked to.
 
 ## The loop: build → check → read back
