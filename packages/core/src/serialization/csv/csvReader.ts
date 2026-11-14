@@ -4,7 +4,6 @@ import type { Worksheet } from '../../model/worksheet.ts';
 import { CellStyles, NumberFormats } from '../../styling/cellStyle.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import { CsvOptions } from './csvOptions.ts';
-import { restoreFormulaText } from './formulaInjection.ts';
 
 // A double holds 15 significant digits exactly; a longer digit string is an ID, not a number.
 const MAX_SIGNIFICANT_DIGITS = 15;
@@ -82,8 +81,8 @@ export function readCsv(text: string, options: CsvOptions = CsvOptions.default):
 
 /**
  * Fill an existing worksheet from CSV, inferring numbers and dates with the locale (the options',
- * else the workbook's effective locale). Everything else stays text; empty fields stay blank. A
- * leading apostrophe that export added to defuse formula-like text is removed again.
+ * else the workbook's effective locale). Everything else stays text, formula-like text included (as
+ * in LibreOffice's default import); empty fields stay blank.
  */
 export function fillFromCsv(
   workbook: Workbook,
@@ -102,12 +101,6 @@ export function fillFromCsv(
     for (let c = 0; c < cells.length; c++) {
       const raw = cells[c]!;
       if (raw.length === 0) continue;
-
-      const defused = restoreFormulaText(raw);
-      if (defused !== null) {
-        sheet.setValue(r, c, CellValue.text(defused));
-        continue;
-      }
 
       const number = numbers.parse(raw);
       if (number !== null && Number.isFinite(number)) {
