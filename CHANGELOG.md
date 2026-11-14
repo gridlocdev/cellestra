@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.2.1
+
+### What's new
+
+- **Ranges across sheets.** `=SUM(Sheet1.A1:Sheet3.B2)` adds up the same area on every sheet from Sheet1 to Sheet3. COUNT, AVERAGE, MIN, MAX and the other totals read them too.
+- **SUBTOTAL.** It totals a range but leaves out rows a filter hid and other subtotals inside it, so a grand total doesn't count twice. Functions 101–111 also leave out rows you hid. Results update as soon as you hide, show or filter rows.
+- **SUMPRODUCT** multiplies matching cells of two or more ranges and adds up the products.
+- **INDEX picks an area.** Its fourth argument chooses one range from a list joined with `~`, such as `=INDEX((A1:B4~D1:E4), 2, 1, 2)`.
+- **A space between two ranges is their overlap**, as in Calc: `=SUM(A1:C5 B4:D8)`.
+- **Autofit several columns at once.** Double-click the edge of a selected column's header to fit every selected column to its contents.
+- **A None alert for validation rules.** A rule with the **None** response accepts any entry without a word, like a LibreOffice rule with its error message switched off.
+
+### Improvements
+
+- The status line names whole columns and rows as `B:C` and `2:4`, and says which columns an autofit changed.
+
+### Bugs fixed
+
+- Double-clicking a column header's edge autofits in Chrome, Edge and Safari.
+- Validation rules whose error message is switched off in LibreOffice no longer reject entries, and a save keeps the message off.
+- TRUE and FALSE cells count as 1 and 0 in SUM, COUNT, AVERAGE, MIN, MAX and PRODUCT, as in Calc.
+- Formulas that point at another sheet keep pointing at it when LibreOffice copies the cell to a different sheet.
+
 ## 0.2.0
 
 ### Before you update
