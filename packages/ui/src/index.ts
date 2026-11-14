@@ -16,6 +16,7 @@ export { SheetTabs } from './components/SheetTabs.tsx';
 export { NasBrowser } from './components/NasBrowser.tsx';
 export * from './session/workbookSession.ts';
 export * from './session/csvLoss.ts';
+export * from './session/statusText.ts';
 export { FormatCellsDialog } from './components/FormatCellsDialog.tsx';
 export * from './components/formatCells.ts';
 export * from './charts/ChartSvg.tsx';

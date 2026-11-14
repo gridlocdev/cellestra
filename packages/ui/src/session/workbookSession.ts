@@ -16,6 +16,7 @@ import {
   writeCsv,
   type CellRef,
   type CellStyle,
+  type CalculationMode,
   type CellValue,
   type EditCommand,
   type EditResult,
@@ -24,6 +25,7 @@ import {
 } from '@cellestra/core';
 import type { DocumentRef } from '../platform/fileStore.ts';
 import type { SelectionState } from './selection.ts';
+import { narrateEdit, narrateHistory } from './statusText.ts';
 
 /** A cell's position within its sheet. */
 export interface CellPosition {
@@ -56,6 +58,8 @@ export class WorkbookSession {
   readonly #document = signal<DocumentRef | null>(null);
   readonly #format = signal<DocumentFormat>('ods');
   readonly #circular = signal(false);
+  readonly #lastAction = signal('');
+  readonly #savedAt = signal<Date | null>(null);
 
   #engine: RecalculationEngine;
   #history: EditHistory;
@@ -78,6 +82,12 @@ export class WorkbookSession {
   readonly document: ReadonlySignal<DocumentRef | null> = this.#document;
   readonly format: ReadonlySignal<DocumentFormat> = this.#format;
   readonly hasCircularReference: ReadonlySignal<boolean> = this.#circular;
+  /** The status bar's narration of the most recent edit, undo or redo ("Pasted A1:C4"). */
+  readonly lastAction: ReadonlySignal<string> = this.#lastAction;
+  /** When this document was last saved in this session, or null. */
+  readonly savedAt: ReadonlySignal<Date | null> = this.#savedAt;
+  /** The clock `savedAt` reads (tests set it). */
+  now: () => Date = () => new Date();
 
   readonly workbook: ReadonlySignal<Workbook> = this.#workbook;
   readonly activeSheet: ReadonlySignal<Worksheet> = computed(() => {
@@ -93,6 +103,9 @@ export class WorkbookSession {
   readonly title: ReadonlySignal<string> = computed(() => this.#document.value?.name ?? 'Untitled.ods');
   readonly canUndo: ReadonlySignal<boolean> = computed(() => (this.#version.value, this.#history.canUndo));
   readonly canRedo: ReadonlySignal<boolean> = computed(() => (this.#version.value, this.#history.canRedo));
+  readonly calculationMode: ReadonlySignal<CalculationMode> = computed(
+    () => (this.#version.value, this.#workbook.value.settings.calculationMode),
+  );
 
   constructor() {
     const wb = this.#workbook.peek();
@@ -173,6 +186,7 @@ export class WorkbookSession {
       this.#document.value = ref;
       this.#format.value = formatOf(ref.name);
       if (editCount === this.#edits) this.#modified.value = false;
+      this.#savedAt.value = this.now();
     });
   }
 
@@ -210,6 +224,8 @@ export class WorkbookSession {
       this.#format.value = format;
       this.#modified.value = false;
       this.#circular.value = circular;
+      this.#lastAction.value = '';
+      this.#savedAt.value = null;
       this.#structure.value++;
       this.#version.value++;
     });
@@ -236,20 +252,26 @@ export class WorkbookSession {
     if (this.#undoSelections.length > EditHistory.maxDepth) this.#undoSelections.shift();
     this.#redoSelections.length = 0;
     this.#apply(result);
+    const ranges = entry.selection?.ranges;
+    this.#lastAction.value = narrateEdit(command.label, result, ranges?.[ranges.length - 1] ?? null);
   }
 
   undo(): void {
-    if (!this.#history.canUndo) return;
+    const label = this.#history.undoLabel;
+    if (label === null) return;
     this.#redoSelections.push(this.#entry());
     this.#apply(this.#history.undo());
     this.#restore(this.#undoSelections.pop());
+    this.#lastAction.value = narrateHistory('undo', label);
   }
 
   redo(): void {
-    if (!this.#history.canRedo) return;
+    const label = this.#history.redoLabel;
+    if (label === null) return;
     this.#undoSelections.push(this.#entry());
     this.#apply(this.#history.redo());
     this.#restore(this.#redoSelections.pop());
+    this.#lastAction.value = narrateHistory('redo', label);
   }
 
   recalculateAll(): void {

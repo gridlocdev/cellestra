@@ -123,3 +123,39 @@ describe('WorkbookSession.load', () => {
     expect(session.activeSheet.value.getValue(0, 1)).toEqual(CellValue.number(4));
   });
 });
+
+describe('WorkbookSession status', () => {
+  it('narrates edits, undo and redo, and forgets them when another document opens', () => {
+    const session = new WorkbookSession();
+    const sheet = session.activeSheet.peek().name;
+    expect(session.lastAction.value).toBe('');
+    session.execute(EditCommands.setInput(sheet, 1, 1, '5', 'en-US'));
+    expect(session.lastAction.value).toBe('Edited cell B2');
+    session.execute(
+      EditCommands.setBlock(sheet, 0, 0, [
+        [CellValue.number(1), CellValue.number(2)],
+        [CellValue.number(3), CellValue.number(4)],
+      ]),
+    );
+    expect(session.lastAction.value).toBe('Pasted A1:B2');
+    session.undo();
+    expect(session.lastAction.value).toBe('Undid Paste');
+    session.redo();
+    expect(session.lastAction.value).toBe('Redid Paste');
+    session.newDocument();
+    expect(session.lastAction.value).toBe('');
+  });
+
+  it('records when the document was saved', () => {
+    const session = new WorkbookSession();
+    const at = new Date(2026, 10, 14, 14, 30);
+    session.now = () => at;
+    expect(session.savedAt.value).toBeNull();
+    session.execute(EditCommands.setInput(session.activeSheet.peek().name, 0, 0, '1', 'en-US'));
+    session.markSaved({ store: 'browser', id: 'x', name: 'x.ods', version: null });
+    expect(session.savedAt.value).toBe(at);
+    expect(session.modified.value).toBe(false);
+    session.newDocument();
+    expect(session.savedAt.value).toBeNull();
+  });
+});

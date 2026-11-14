@@ -13,6 +13,8 @@ import {
   NasBrowser,
   QuickPick,
   SheetTabs,
+  calculationBadge,
+  saveStateText,
   type CommandCatalog,
   type GridHost,
   type RecentEntry,
@@ -457,6 +459,9 @@ function Footer({ app }: { readonly app: AppController }) {
     const { row, column } = app.selection.active.value;
     return s.activeSheet.value.findValidation(row, column)?.inputMessage ?? '';
   });
+  const saveState = useComputed(() =>
+    saveStateText(s.modified.value, s.document.value !== null, s.savedAt.value),
+  );
   return (
     <div class="cs-footer">
       <SheetTabs
@@ -479,6 +484,11 @@ function Footer({ app }: { readonly app: AppController }) {
         onMenu={(index, x, y) => setMenu({ index, x, y })}
       />
       <span style={{ flex: 1 }} />
+      {s.lastAction.value && (
+        <span class="cs-status cs-last-action" title={s.lastAction.value}>
+          {s.lastAction.value}
+        </span>
+      )}
       {inputMessage.value && (
         <span class="cs-status cs-input-message" title={inputMessage.value}>
           {inputMessage.value}
@@ -490,9 +500,13 @@ function Footer({ app }: { readonly app: AppController }) {
         </span>
       )}
       <span class="cs-status">{summary.value}</span>
+      <span class="cs-status cs-calc-badge" title="Calculation mode">
+        {calculationBadge(s.calculationMode.value)}
+      </span>
       <span class="cs-status" title="Zoom">
         {Math.round(app.zoom.value * 100)}%
       </span>
+      {saveState.value && <span class="cs-status">{saveState.value}</span>}
       {menu && (
         <SheetMenu
           x={menu.x}

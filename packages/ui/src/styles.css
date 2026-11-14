@@ -425,6 +425,29 @@ button {
   padding: 0 8px;
   font-variant-numeric: tabular-nums;
 }
+.cs-last-action {
+  max-width: 260px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cs-last-action::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--cs-accent);
+  vertical-align: 1px;
+}
+.cs-calc-badge {
+  padding: 1px 6px;
+  margin: 0 4px;
+  border: 1px solid var(--cs-border);
+  border-radius: 4px;
+  font-size: 11px;
+}
 
 /* Overlays */
 .cs-backdrop {

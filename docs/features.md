@@ -42,6 +42,8 @@ Number formats (general, number, currency, percent, date, time, scientific and t
 
 A workbook has any number of sheets: **Insert Sheet**, **Rename Sheet…**, **Duplicate Sheet** and **Delete Sheet** manage them, and **Go to Sheet…** jumps to one by name. **Freeze Panes** keeps header rows and columns in view, rows and columns can be hidden, resized and fitted with **Autofit Columns**, and **Zoom In** and **Zoom Out** change the view.
 
+The status bar under the grid narrates the last edit ("Pasted A1:C4", "Inserted rows", "Undid Sort"), sums the selection, and shows the calculation mode (Auto or Manual), the zoom, and when the file was last saved ("Saved 14:05", or "Edited" once it has changed since).
+
 ## The keyboard
 
 Every command can be reached from the keyboard. `⌘K` opens the command menu, which searches every command and shows its shortcut, and `⌘⇧P` switches sheets. **Keyboard Shortcuts** (`⌘/`) lists them all in the app. See [Controls](controls.md) for the full list.
