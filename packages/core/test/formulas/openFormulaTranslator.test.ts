@@ -11,7 +11,11 @@ describe('OpenFormulaTranslator', () => {
     ['A1+B2', 'of:=[.A1]+[.B2]'],
     ['IF(A1>0, B1, C1)', 'of:=IF([.A1]>0;[.B1];[.C1])'],
     ['$A$1*2', 'of:=[.$A$1]*2'],
-    ['Sheet2.A1', 'of:=[Sheet2.A1]'],
+    // Calc reads a sheet name without `$` as relative, which moves when the cell is copied to
+    // another sheet; Cellestra's sheet names never move, so they are written absolute.
+    ['Sheet2.A1', 'of:=[$Sheet2.A1]'],
+    ['SUM(Sheet2.A1:B2)', 'of:=SUM([$Sheet2.A1:.B2])'],
+    ["'My Sheet'.A1", "of:=[$'My Sheet'.A1]"],
     ['"a;b"', 'of:="a;b"'],
   ])('toOpenFormula(%s) = %s', (internalFormula, expected) => {
     expect(OpenFormulaTranslator.toOpenFormula(internalFormula)).toBe(expected);
@@ -52,7 +56,7 @@ describe('OpenFormulaTranslator round-trips what it cannot rewrite', () => {
   it.each([
     ['of:=SUM([.A:.A])', 'SUM(A:A)'],
     ['of:=SUM([.$B:.$C])', 'SUM($B:$C)'],
-    ['of:=SUM([Sheet2.A:.B])', 'SUM(Sheet2.A:B)'],
+    ['of:=SUM([$Sheet2.A:.B])', 'SUM(Sheet2.A:B)'],
     ['of:=SUM([.1:.1])', 'SUM(1:1)'],
     ['of:=SUM([.$2:.$4])', 'SUM($2:$4)'],
   ])('parses whole-column and whole-row ranges: %s', (openFormula, internal) => {
@@ -93,10 +97,10 @@ describe('unary minus and ^ mean the same in both directions', () => {
 
 describe('sheet names that need quoting', () => {
   it.each([
-    ['2024', "'2024'.A1", "of:=['2024'.A1]"],
-    ['AB12', "'AB12'.A1", "of:=['AB12'.A1]"],
-    ['TRUE', "'TRUE'.A1", "of:=['TRUE'.A1]"],
-    ['Sheet1', 'Sheet1.A1', 'of:=[Sheet1.A1]'],
+    ['2024', "'2024'.A1", "of:=[$'2024'.A1]"],
+    ['AB12', "'AB12'.A1", "of:=[$'AB12'.A1]"],
+    ['TRUE', "'TRUE'.A1", "of:=[$'TRUE'.A1]"],
+    ['Sheet1', 'Sheet1.A1', 'of:=[$Sheet1.A1]'],
   ])('%s', (sheet, a1, openFormula) => {
     const written = new CellAddress(0, 0, false, false, sheet).toString();
     expect(written).toBe(a1);

@@ -32,7 +32,7 @@ describe('conditional maps follow structural edits', () => {
     const insert = new StructuralEditCommand('Sheet1', 'row', 'insert', 0, 2);
     insert.apply(workbook);
     moveTo(4, 1);
-    expect(mapOf().baseCellAddress).toBe('Sheet1.$B$5');
+    expect(mapOf().baseCellAddress).toBe('$Sheet1.$B$5');
     expect(mapOf().condition).toBe('is-true-formula([.B5]>[Other.$D$1])');
     insert.undo(workbook);
     moveTo(2, 1);
@@ -44,16 +44,16 @@ describe('conditional maps follow structural edits', () => {
     const { workbook, mapOf, moveTo } = book();
     new StructuralEditCommand('Other', 'column', 'insert', 0, 1).apply(workbook);
     expect(mapOf().baseCellAddress).toBe('$Sheet1.$B$3');
-    expect(mapOf().condition).toBe('is-true-formula([.B3]>[Other.$E$1])');
+    expect(mapOf().condition).toBe('is-true-formula([.B3]>[$Other.$E$1])');
     new StructuralEditCommand('Sheet1', 'column', 'delete', 0, 1).apply(workbook);
     moveTo(2, 0);
-    expect(mapOf().baseCellAddress).toBe('Sheet1.$A$3');
-    expect(mapOf().condition).toBe('is-true-formula([.A3]>[Other.$E$1])');
+    expect(mapOf().baseCellAddress).toBe('$Sheet1.$A$3');
+    expect(mapOf().condition).toBe('is-true-formula([.A3]>[$Other.$E$1])');
   });
 
   it('follows a sheet rename', () => {
     const { workbook, mapOf } = book();
     new RenameSheetCommand('Sheet1', 'Data').apply(workbook);
-    expect(mapOf().baseCellAddress).toBe('Data.$B$3');
+    expect(mapOf().baseCellAddress).toBe('$Data.$B$3');
   });
 });

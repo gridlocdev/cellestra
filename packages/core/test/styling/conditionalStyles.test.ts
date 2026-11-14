@@ -35,7 +35,7 @@ describe('parseMapCondition', () => {
       'cell-content()!=""',
       'cell-content()="Done"',
       'cell-content-is-between(1,10)',
-      'cell-content-is-not-between([.$B$1],[Sheet2.C3])',
+      'cell-content-is-not-between([.$B$1],[$Sheet2.C3])',
       'is-true-formula([.A1]>[.B1])',
     ]) {
       const parsed = parseMapCondition(text);

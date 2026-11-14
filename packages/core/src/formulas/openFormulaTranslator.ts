@@ -60,7 +60,12 @@ function renderBinary(b: BinaryExpr): string {
   return `${left}${BINARY_SYMBOL[b.operator]}${withParens(b.right, p + 1)}`;
 }
 
-const sheetDot = (sheet: string | null): string => (sheet === null ? '.' : `${quoteSheetIfNeeded(sheet)}.`);
+/**
+ * A named sheet is written absolute (`$Data.`), as Calc writes one picked from another sheet: Calc
+ * reads `Data.` as relative, moving it when the cell is copied to another sheet, and a Cellestra
+ * sheet name never moves.
+ */
+const sheetDot = (sheet: string | null): string => (sheet === null ? '.' : `$${quoteSheetIfNeeded(sheet)}.`);
 
 const cell = (a: CellAddress): string =>
   `${a.columnAbsolute ? '$' : ''}${a.columnLabel}${a.rowAbsolute ? '$' : ''}${a.rowLabel}`;
@@ -70,13 +75,10 @@ const renderAddress = (a: CellAddress): string => `[${sheetDot(a.sheet)}${cell(a
 const renderRange = (r: CellRange): string =>
   `[${wholeLinesText(r, sheetDot, '.') ?? `${sheetDot(r.start.sheet)}${cell(r.start)}:.${cell(r.end)}`}]`;
 
-/** Calc writes both sheets of a 3D range absolute: `[$Sheet1.A1:$Sheet3.B2]`. */
-const absoluteSheetDot = (sheet: string | null): string =>
-  sheet === null ? '.' : `$${quoteSheetIfNeeded(sheet)}.`;
-
+/** A 3D range names both sheets: `[$Sheet1.A1:$Sheet3.B2]`. */
 const renderSheetSpan = (r: CellRange, lastSheet: string): string => {
-  const last = absoluteSheetDot(lastSheet);
-  return `[${wholeLinesText(r, absoluteSheetDot, last) ?? `${absoluteSheetDot(r.sheet)}${cell(r.start)}:${last}${cell(r.end)}`}]`;
+  const last = sheetDot(lastSheet);
+  return `[${wholeLinesText(r, sheetDot, last) ?? `${sheetDot(r.sheet)}${cell(r.start)}:${last}${cell(r.end)}`}]`;
 };
 
 function render(expr: Expr): string {
