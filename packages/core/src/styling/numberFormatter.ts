@@ -517,15 +517,31 @@ export const NumberFormatter = {
     return signed && n < 0 && nonZero ? '-' + text : text;
   },
 
-  /** General display: integers plainly (below 1e15), otherwise up to 10 trimmed decimals. */
+  /**
+   * General display: integers plainly (below 1e15), otherwise up to 10 trimmed decimals; a number
+   * too small to show at 10 decimals in scientific notation (`1E-12`).
+   */
   formatGeneral(n: number, locale: string): string {
     if (Number.isNaN(n)) return 'NaN';
     if (!Number.isFinite(n)) return n > 0 ? 'Infinity' : '-Infinity';
     const sign = n < 0 ? '-' : '';
     if (n === Math.floor(n) && Math.abs(n) < 1e15) return n === 0 ? '0' : sign + String(Math.abs(n));
+    // Too small for 10 decimals to show a digit: scientific, as Calc does, rather than a false 0.
+    if (Math.abs(n) < GENERAL_SCIENTIFIC_BELOW) return sign + generalScientific(Math.abs(n), locale);
     const { integer, fraction } = fixedDigits(Math.abs(n), 10);
     const trimmed = fraction.replace(/0+$/, '');
     const body = integer + (trimmed ? localeInfo(locale).decimal + trimmed : '');
     return /[1-9]/.test(body) ? sign + body : body;
   },
 } as const;
+
+/** Below this, 10 decimals would round a non-zero General number to 0. */
+const GENERAL_SCIENTIFIC_BELOW = 5e-11;
+
+/** `1.25E-11`: up to 10 significant digits, trailing zeros trimmed, a two-digit exponent. */
+function generalScientific(abs: number, locale: string): string {
+  const [mantissa = '0', exponent = '0'] = abs.toExponential(9).split('e');
+  const trimmed = mantissa.replace(/\.?0+$/, '').replace('.', localeInfo(locale).decimal);
+  const e = Number(exponent);
+  return `${trimmed}E${e < 0 ? '-' : '+'}${String(Math.abs(e)).padStart(2, '0')}`;
+}

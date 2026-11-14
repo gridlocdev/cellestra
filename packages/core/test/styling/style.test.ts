@@ -158,6 +158,14 @@ describe('NumberFormatter', () => {
     expect(NumberFormatter.formatGeneral(1.5, 'de-DE')).toBe('1,5');
   });
 
+  it('shows tiny numbers in General as scientific, not as 0', () => {
+    expect(NumberFormatter.formatGeneral(1e-12, INVARIANT)).toBe('1E-12');
+    expect(NumberFormatter.formatGeneral(-2.5e-15, INVARIANT)).toBe('-2.5E-15');
+    expect(NumberFormatter.formatGeneral(1.25e-11, 'de-DE')).toBe('1,25E-11');
+    expect(NumberFormatter.formatGeneral(1e-10, INVARIANT)).toBe('0.0000000001');
+    expect(NumberFormatter.formatGeneral(0.5, INVARIANT)).toBe('0.5');
+  });
+
   it('formats booleans and blanks', () => {
     expect(NumberFormatter.format(CellValue.boolean(true), '0.00', INVARIANT)).toBe('TRUE');
     expect(NumberFormatter.format(CellValue.empty, '0.00', INVARIANT)).toBe('');
