@@ -115,12 +115,12 @@ export class CompositeEditCommand implements EditCommand {
     const results: EditResult[] = [];
     try {
       for (const c of this.commands) results.push(c.apply(workbook));
+      return combineResults(results);
     } catch (error) {
       // A refused step: take back the ones before it, so the workbook is as it was.
       for (let i = results.length - 1; i >= 0; i--) this.commands[i]!.undo(workbook);
       throw error;
     }
-    return combineResults(results);
   }
 
   undo(workbook: Workbook): EditResult {
@@ -134,10 +134,12 @@ export function combineResults(results: readonly EditResult[]): EditResult {
   const rows: ChangedLines[] = [];
   const columns: ChangedLines[] = [];
   let structural = false;
+  // A loop, not push(...list): spreading a list of a few hundred thousand cells (a big sort)
+  // overflows the call stack.
   for (const r of results) {
-    cells.push(...r.changedCells);
-    rows.push(...r.changedRows);
-    columns.push(...r.changedColumns);
+    for (const cell of r.changedCells) cells.push(cell);
+    for (const line of r.changedRows) rows.push(line);
+    for (const line of r.changedColumns) columns.push(line);
     structural ||= r.structural;
   }
   return result(cells, rows, columns, structural);
