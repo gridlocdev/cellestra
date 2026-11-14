@@ -207,6 +207,26 @@ export function textFunctions(): FormulaFunction[] {
 
     defineFunction(
       createMetadata(
+        'CONCATENATE',
+        'text',
+        'Joins several text values into one (each argument a single value).',
+        'text',
+        'CONCATENATE(A1, " ", B1)',
+        Arg.text('text', { repeatable: true }),
+      ),
+      (args, ev) => {
+        let out = '';
+        for (const arg of args) {
+          const t = readText(ev, arg);
+          if (isFailure(t)) return t.failed;
+          out += t;
+        }
+        return CellValue.text(out);
+      },
+    ),
+
+    defineFunction(
+      createMetadata(
         'CONCAT',
         'text',
         'Joins several text values into one.',

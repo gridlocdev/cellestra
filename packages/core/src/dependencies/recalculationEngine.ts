@@ -254,6 +254,10 @@ export class RecalculationEngine {
     const entry = this.#formulas.get(key);
     if (!entry) return;
     if (!entry.ast) {
+      // Keep a value the file cached (it came from an app that could read the formula); only a
+      // formula with nothing cached shows the parse failure.
+      const model = this.#workbook.findSheet(entry.ref.sheet)?.find(entry.ref.row, entry.ref.column);
+      if (model && model.value.kind !== 'empty') return;
       this.#writeResult(entry.ref, CellValue.error(CellError.value('The formula could not be parsed.')));
       return;
     }

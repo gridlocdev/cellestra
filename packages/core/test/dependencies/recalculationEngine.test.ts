@@ -198,4 +198,15 @@ describe('RecalculationEngine', () => {
 
     expect(numberAt(sheet, 0, 2)).toBeCloseTo(before + 5, 6);
   });
+
+  it("keeps the value a file cached for a formula it can't parse", () => {
+    const { workbook, sheet } = newBook();
+    sheet.setFormula(0, 0, 'SUM(1;;', CellValue.number(42));
+    sheet.setFormula(1, 0, 'SUM(1;;');
+
+    engineFor(workbook).recalculateAll();
+
+    expect(numberAt(sheet, 0, 0)).toBe(42);
+    expect(errorAt(sheet, 1, 0).token).toBe('#VALUE!');
+  });
 });

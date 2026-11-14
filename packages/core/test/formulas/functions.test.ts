@@ -160,6 +160,7 @@ describe('Functions', () => {
     ['SUBSTITUTE("a-b-c","-","+")', 'a+b+c'],
     ['SUBSTITUTE("a-b-c","-","+",2)', 'a-b+c'],
     ['CONCAT("a","b","c")', 'abc'],
+    ['CONCATENATE("a",1,TRUE())', 'a1TRUE'],
     ['TEXT(0.25,"0.0%")', '25.0%'],
   ])('text function %s', (formula, expected) => {
     expect(text(formula)).toBe(expected);
