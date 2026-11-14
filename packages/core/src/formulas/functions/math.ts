@@ -312,7 +312,9 @@ export function mathFunctions(): FormulaFunction[] {
       (args, ev) => CellValue.number(countValues(args, ev, false)),
     ),
     unary('ABS', 'Returns the absolute value of a number.', 'ABS(-5)', Math.abs),
-    unary('INT', 'Rounds a number down to the nearest integer.', 'INT(3.7)', Math.floor),
+    // Calc floors after stripping binary noise (ScInt uses rtl::math::approxFloor), so
+    // INT((0.7+0.1)*10) is 8, not 7.
+    unary('INT', 'Rounds a number down to the nearest integer.', 'INT(3.7)', approxFloor),
     defineFunction(
       createMetadata(
         'SQRT',

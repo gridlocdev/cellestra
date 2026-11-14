@@ -109,6 +109,9 @@ function scaled(value: number, digits: number): number {
  */
 export function roundScaled(value: number, digits: number, round: (scaled: number) => number): number {
   if (!Number.isFinite(value) || value === 0) return value;
+  // An integer has no decimals to round, and pre-rounding it to 15 digits would change a 16-digit
+  // one: Calc leaves it alone too (rtl::math::round).
+  if (digits >= 0 && Number.isInteger(value)) return value;
   if (digits > 308) return value;
   if (digits < -308)
     return round(Math.sign(value) * Number.MIN_VALUE) === 0 ? 0 : Math.sign(value) * Infinity;
