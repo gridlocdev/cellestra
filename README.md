@@ -2,7 +2,7 @@
 
 A spreadsheet editor for OpenDocument spreadsheets (`.ods`). You can use it in your browser, on your NAS from any browser on your network, or as a desktop app, all from the same code, and LibreOffice files survive the round trip.
 
-![Cellestra in dark mode with the Home ribbon open: a small monthly budget with bold column headings Month, Rent, Groceries, Transit and Total, amounts in dollars for January to April, and an Average row whose selected total cell shows the formula =AVERAGE(E2:E5) in the formula bar](docs/images/budget.webp)
+![Cellestra in dark mode with the Home ribbon open: a small monthly budget with bold column headings Month, Rent, Groceries, Transit and Total, amounts in dollars for January to April, and an Average row whose selected total cell shows the formula =AVERAGE(E2:E5) in the formula bar, with the grid zoomed to 160%](docs/images/budget.webp)
 
 - **Works with LibreOffice files.** It reads and writes `.ods`, keeps anything it doesn't understand intact, and imports and exports CSV and TSV.
 - **Formulas like LibreOffice Calc.** 47 functions with the same syntax, automatic recalculation and circular-reference detection.

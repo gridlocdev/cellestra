@@ -2,7 +2,7 @@
 
 Cellestra is a spreadsheet editor for OpenDocument spreadsheets (`.ods`). It runs in the browser, on your NAS and on the desktop, all from the same code. Every command is in one catalog, so the ribbon, the menus, the command menu and the shortcuts always agree.
 
-![Cellestra in dark mode with the Home ribbon open: a small monthly budget with bold column headings Month, Rent, Groceries, Transit and Total, amounts in dollars for January to April, and an Average row whose selected total cell shows the formula =AVERAGE(E2:E5) in the formula bar](images/budget.webp)
+![Cellestra in dark mode with the Home ribbon open: a small monthly budget with bold column headings Month, Rent, Groceries, Transit and Total, amounts in dollars for January to April, and an Average row whose selected total cell shows the formula =AVERAGE(E2:E5) in the formula bar, with the grid zoomed to 160%](images/budget.webp)
 
 ## Three ways to run it
 
