@@ -89,11 +89,12 @@ export function roundAwayFromZero(x: number): number {
 }
 
 /**
- * `value × 10^digits`, pre-rounded to 15 significant digits so binary noise does not decide the
+ * `value × 10^digits` (a division for negative digits), pre-rounded to 15 significant digits so binary noise does not decide the
  * rounding: 1.005 × 100 is 100.49999999999999 in binary but 100.5 to 15 digits (Calc does the same).
  */
-function scaled(value: number, factor: number): number {
-  const s = value * factor;
+function scaled(value: number, digits: number): number {
+  // Negative digits divide by an exact power of ten: 10^-4 has no exact binary form.
+  const s = digits < 0 ? value / Math.pow(10, -digits) : value * Math.pow(10, digits);
   return Number.isFinite(s) && s !== 0 ? Number(s.toPrecision(15)) : s;
 }
 
@@ -107,11 +108,10 @@ export function roundScaled(value: number, digits: number, round: (scaled: numbe
   if (digits > 308) return value;
   if (digits < -308)
     return round(Math.sign(value) * Number.MIN_VALUE) === 0 ? 0 : Math.sign(value) * Infinity;
-  const factor = Math.pow(10, digits);
-  const s = scaled(value, factor);
+  const s = scaled(value, digits);
   // Scaling overflowed: the value has no digits past that place, so it is already rounded.
   if (!Number.isFinite(s)) return value;
-  return round(s) / factor;
+  return digits < 0 ? round(s) * Math.pow(10, -digits) : round(s) / Math.pow(10, digits);
 }
 
 /** Round half away from zero (Excel/Calc ROUND) to the given decimal places. */
