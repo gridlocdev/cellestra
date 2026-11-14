@@ -2136,12 +2136,27 @@ export class AppController {
     return cmds.length;
   }
 
-  /** Name box: `B7`, `B2:D9`, `Sheet2!A1`. False when it doesn't parse. */
+  /**
+   * A named range (the sheet's own first, then the workbook's) as a `Sheet!A1:B2` reference, or
+   * null when `text` names none. Cell references win: `A1` is never looked up as a name.
+   */
+  #namedTarget(text: string): string | null {
+    if (text.includes('!') || CellRange.tryParse(text) || CellAddress.tryParse(text)) return null;
+    const range = this.session.workbook.peek().findNamedRange(text, this.sheetName)?.target;
+    if (!range) return null;
+    const sheet = range.start.sheet ?? this.sheetName;
+    const bounds = CellRange.fromBounds(range.top, range.left, range.bottom, range.right);
+    return `'${sheet.replaceAll("'", "''")}'!${bounds.toString()}`;
+  }
+
+  /** Name box: `B7`, `B2:D9`, `Sheet2!A1`, or a named range. False when it doesn't parse. */
   goTo(reference: string): boolean {
     const text = reference.trim();
+    const named = this.#namedTarget(text);
+    if (named) return this.goTo(named);
     const bang = text.lastIndexOf('!');
     if (bang > 0) {
-      const name = text.slice(0, bang).replace(/^'|'$/g, '');
+      const name = text.slice(0, bang).replace(/^'|'$/g, '').replaceAll("''", "'");
       const i = this.session.sheetNames.peek().findIndex((n) => n.toLowerCase() === name.toLowerCase());
       if (i < 0) return false;
       this.session.setActiveSheet(i);

@@ -544,6 +544,21 @@ describe('large removals', () => {
   });
 });
 
+describe('name box', () => {
+  it('jumps to a named range, on its own sheet', async () => {
+    const app = await makeApp();
+    app.session.addSheet();
+    const wb = app.session.workbook.peek();
+    const other = wb.worksheets[wb.worksheets.length - 1]!.name;
+    wb.addNamedRange({ name: 'Totals', target: CellRange.fromBounds(1, 1, 3, 2, other) });
+    app.session.setActiveSheet(0);
+    expect(app.goTo('totals')).toBe(true);
+    expect(app.sheetName).toBe(other);
+    expect(app.range.toString()).toBe('B2:C4');
+    expect(app.goTo('Nope')).toBe(false);
+  });
+});
+
 describe('zoom', () => {
   it('zooms by a pinch or ⌘-wheel factor, within the zoom range', async () => {
     const { wheelZoomFactor } = await import('../src/app/controller.ts');
