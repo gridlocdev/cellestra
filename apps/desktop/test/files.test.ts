@@ -52,6 +52,17 @@ describe('writeAtomic', () => {
     await link(p, other);
     await writeAtomic(p, new TextEncoder().encode('two'));
     expect(await readFile(other, 'utf8')).toBe('two');
+    await writeAtomic(p, new TextEncoder().encode('a longer third version'));
+    expect(await readFile(other, 'utf8')).toBe('a longer third version');
+  });
+
+  // root may write anything, so the permission check cannot be seen when the tests run as root.
+  it.skipIf(process.getuid?.() === 0)('refuses to replace a read-only file', async () => {
+    const p = path.join(dir, 'readonly.ods');
+    await writeFile(p, 'keep');
+    await chmod(p, 0o444);
+    await expect(writeAtomic(p, new TextEncoder().encode('replaced'))).rejects.toThrow(/read-only/);
+    expect(await readFile(p, 'utf8')).toBe('keep');
   });
 
   it('replaces the target of a symlink and keeps the link', async () => {

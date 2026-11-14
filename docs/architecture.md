@@ -64,7 +64,9 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
   - A LibreOffice `.~lock` file next to the target blocks the save (423).
   - Only `.ods`, `.csv` and `.tsv` files can be read or written, and no path segment may start with a dot.
   - Writes to one file are serialized, so the If-Match check and the rename cannot interleave. If-Match on a missing file is 412.
-  - The replacement keeps the file's mode and, where permitted, its owner. A hard-linked file is written in place.
+  - The replacement keeps the file's mode and, where permitted, its owner.
+  - A file the server may not write (for example mode `0444`) is refused with 403, not replaced. The desktop app refuses it the same way.
+  - A hard-linked file is written in place, because a rename would split the link. That write is not atomic: the new bytes go over the old ones, then the file is cut to length and fsynced. A crash part-way can leave a mix of new and old bytes, but never an empty file.
 - **Auth.** `CELLESTRA_TOKEN` makes every `/api` call except `/api/info` need a bearer token. The server refuses to start on a non-loopback address without one, unless `CELLESTRA_NO_AUTH=1` says a reverse proxy in front authenticates. On a loopback address it runs without a token.
 - **Host check.** Without a token, a request whose `Host` is not an IP literal, `localhost`, or a name in `CELLESTRA_HOSTS` gets 421. This blocks DNS rebinding.
 

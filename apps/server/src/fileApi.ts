@@ -1,6 +1,17 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import { chown, mkdir, open, readdir, readFile, realpath, rename, stat, unlink } from 'node:fs/promises';
+import {
+  access,
+  chown,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  stat,
+  unlink,
+} from 'node:fs/promises';
 import path from 'node:path';
 
 /** A named folder on the NAS that the web client may browse and save into. */
@@ -171,7 +182,8 @@ export class FileApi {
    * A LibreOffice `.~lock.<name>#` file means someone has it open there (PRD §10.2) → 423.
    * Writes to one path run one at a time, so two saves from the same etag cannot both win. The
    * replacement keeps the target's mode (and owner, where permitted); a hard-linked target is
-   * written in place so the link survives.
+   * written in place so the link survives. A file we may not write (mode 0444, say) is refused with
+   * 403 rather than replaced, even though the folder would allow the rename.
    */
   async write(
     rootId: string | null,
@@ -225,16 +237,10 @@ export class FileApi {
     }
 
     const target = await stat(full).catch(() => null);
+    if (target && !(await writable(full))) throw new ApiError(403, 'The file is read-only on the server');
     try {
       if (target && target.nlink > 1) {
-        // A rename would split the hard link; write through it instead (not atomic, but keeps the link).
-        const handle = await open(full, fsConstants.O_WRONLY | fsConstants.O_TRUNC);
-        try {
-          await handle.writeFile(bytes);
-          await handle.sync();
-        } finally {
-          await handle.close();
-        }
+        await writeInPlace(full, bytes);
         return { etag: etagOf(bytes) };
       }
     } catch (e) {
@@ -259,6 +265,33 @@ export class FileApi {
       throw fsError(e);
     }
     return { etag: etagOf(bytes) };
+  }
+}
+
+/** May this process write to the existing file at `full`? */
+async function writable(full: string): Promise<boolean> {
+  try {
+    await access(full, fsConstants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Overwrite a hard-linked file through the link, since a rename would split it. This cannot be
+ * atomic, so it is made as safe as it can be: the new bytes are written over the old ones first and
+ * the file is cut to length only after, then fsynced. A crash part-way leaves the new bytes at the
+ * front and old ones after them, never an empty file, but it can still leave a mix of the two.
+ */
+async function writeInPlace(full: string, bytes: Uint8Array): Promise<void> {
+  const handle = await open(full, fsConstants.O_WRONLY);
+  try {
+    await handle.writeFile(bytes);
+    await handle.truncate(bytes.length);
+    await handle.sync();
+  } finally {
+    await handle.close();
   }
 }
 

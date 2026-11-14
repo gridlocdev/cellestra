@@ -205,6 +205,22 @@ describe('read and write rules', () => {
     await link(linked, other);
     expect((await put('linked.ods', 'two')).status).toBe(200);
     expect(await readFile(other, 'utf8')).toBe('two');
+    expect((await put('linked.ods', 'a longer third version')).status).toBe(200);
+    expect(await readFile(other, 'utf8')).toBe('a longer third version');
+    expect((await put('linked.ods', '4')).status).toBe(200);
+    expect(await readFile(other, 'utf8')).toBe('4');
+  });
+
+  // root may write anything, so the permission check cannot be seen when the tests run as root.
+  it.skipIf(process.getuid?.() === 0)('refuses to replace a read-only file', async () => {
+    const file = path.join(dir, 'readonly.ods');
+    await writeFile(file, 'keep');
+    await chmod(file, 0o444);
+    const res = await put('readonly.ods', 'replaced');
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toMatch(/read-only/);
+    expect(await readFile(file, 'utf8')).toBe('keep');
+    expect((await stat(file)).mode & 0o777).toBe(0o444);
   });
 });
 

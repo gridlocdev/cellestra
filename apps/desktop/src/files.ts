@@ -1,7 +1,18 @@
 // File-system helpers for the main process. No Electron imports, so the tests can run them in Node.
-import { watch, type FSWatcher } from 'node:fs';
+import { constants as fsConstants, watch, type FSWatcher } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { chown, mkdir, open, readFile, readlink, realpath, rename, stat, unlink } from 'node:fs/promises';
+import {
+  access,
+  chown,
+  mkdir,
+  open,
+  readFile,
+  readlink,
+  realpath,
+  rename,
+  stat,
+  unlink,
+} from 'node:fs/promises';
 import path from 'node:path';
 
 const SPREADSHEET = /\.(ods|csv|tsv)$/i;
@@ -42,17 +53,23 @@ export function spreadsheetArgs(argv: readonly string[], cwd: string): string[] 
  * Atomic save: a temp file beside the target, fsync, rename. A symlink is followed, so the link
  * stays and its target is replaced. The replacement keeps the target's mode (and owner, where
  * permitted). A hard-linked target is written in place instead, since a rename would split the link.
+ * A file we may not write (read-only, mode 0444) is refused, not replaced, even though the folder
+ * would allow the rename.
  * Each call uses its own random temp name and only ever removes that one, so two saves of one file
  * cannot delete each other's temp; `withFileLock` orders them.
  */
 export async function writeAtomic(p: string, bytes: Uint8Array): Promise<void> {
   const real = await realTarget(path.resolve(p));
   const target = await stat(real).catch(() => null);
+  if (target && !(await writable(real))) throw new Error(`“${path.basename(p)}” is read-only`);
   if (target && target.nlink > 1) {
+    // Not atomic: write the new bytes over the old ones first and cut to length only after, so a
+    // crash part-way leaves the new bytes at the front (possibly with old ones after), never an
+    // empty file.
     const h = await open(real, 'r+');
     try {
-      await h.truncate(0);
       await h.writeFile(bytes);
+      await h.truncate(bytes.length);
       await h.sync();
     } finally {
       await h.close();
@@ -77,6 +94,15 @@ export async function writeAtomic(p: string, bytes: Uint8Array): Promise<void> {
   } catch (e) {
     if (created) await unlink(tmp).catch(() => {});
     throw e;
+  }
+}
+
+async function writable(p: string): Promise<boolean> {
+  try {
+    await access(p, fsConstants.W_OK);
+    return true;
+  } catch {
+    return false;
   }
 }
 
