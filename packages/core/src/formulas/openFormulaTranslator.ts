@@ -1,3 +1,4 @@
+import type { UnparsedFormulaSource } from '../model/cell.ts';
 import { quoteSheetIfNeeded, type CellAddress } from '../model/cellAddress.ts';
 import type { CellRange } from '../model/cellRange.ts';
 import type { BinaryExpr, Expr, UnaryExpr } from './ast/expr.ts';
@@ -156,43 +157,36 @@ function convertCorner(corner: string): string {
 }
 
 /**
- * The original OpenFormula text of formulas the parser could not read, by the internal text they
- * were loaded as, so saving writes them back exactly as they came (bounded: oldest entries go).
- */
-const unparsedOriginals = new Map<string, string>();
-const MAX_UNPARSED_ORIGINALS = 10_000;
-
-function rememberUnparsed(internal: string, original: string): void {
-  unparsedOriginals.delete(internal);
-  unparsedOriginals.set(internal, original);
-  if (unparsedOriginals.size > MAX_UNPARSED_ORIGINALS) {
-    const oldest = unparsedOriginals.keys().next().value;
-    if (oldest !== undefined) unparsedOriginals.delete(oldest);
-  }
-}
-
-/**
  * Converts between internal A1 formula text and ODF OpenFormula: bracketed sheet-dot references
  * (`[.A1]`, `[Sheet2.A1]`), `;` argument separators, and the `of:=` prefix. Always go through here
  * when reading/writing `.ods` formulas.
  */
 export const OpenFormulaTranslator = {
-  /** Internal A1 formula (no leading `=`) → OpenFormula with the `of:=` prefix. */
-  toOpenFormula(internalFormula: string): string {
+  /**
+   * Internal A1 formula (no leading `=`) → OpenFormula with the `of:=` prefix. A formula the parser
+   * cannot read is written as the file gave it when `source` is its loaded text, else as typed.
+   */
+  toOpenFormula(internalFormula: string, source: UnparsedFormulaSource | null = null): string {
     const parsed = Parser.tryParse(internalFormula);
     if (parsed.ok) return PREFIX + render(parsed.expr);
-    // Unparseable: the OpenFormula it was loaded from, unchanged; else the text as typed.
-    return unparsedOriginals.get(internalFormula) ?? PREFIX + internalFormula;
+    return source?.formula === internalFormula ? source.openFormula : PREFIX + internalFormula;
   },
 
   /** OpenFormula string → internal A1 formula (no leading `=`). */
   fromOpenFormula(openFormula: string): string {
+    return OpenFormulaTranslator.read(openFormula).formula;
+  },
+
+  /**
+   * OpenFormula string → internal A1 formula, plus the original text to keep with the cell when the
+   * parser cannot read it, so a save writes it back unchanged.
+   */
+  read(openFormula: string): { formula: string; source: UnparsedFormulaSource | null } {
     const internal = convertReferencesAndSeparators(stripPrefix(openFormula));
     // Normalize through the parser when possible; keep the converted text otherwise so formulas
     // using unmodeled functions still survive the round-trip.
     const parsed = Parser.tryParse(internal);
-    if (parsed.ok) return FormulaWriter.write(parsed.expr);
-    rememberUnparsed(internal, openFormula);
-    return internal;
+    if (parsed.ok) return { formula: FormulaWriter.write(parsed.expr), source: null };
+    return { formula: internal, source: { formula: internal, openFormula } };
   },
 } as const;

@@ -93,6 +93,7 @@ function writeCell(
     source.formula === null
       ? null
       : rewriteFormula(source.formula, (expr) => ReferenceAdjuster.forCopy(expr, columnDelta, rowDelta));
+  cell.formulaSource = source.formulaSource;
   cell.styleId = source.styleId;
   sheet.putCell(row, column, cell);
 }

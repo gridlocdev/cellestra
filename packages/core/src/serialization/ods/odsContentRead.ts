@@ -1,6 +1,6 @@
 import { DateConversion } from '../../formulas/evaluation/dateConversion.ts';
 import { OpenFormulaTranslator } from '../../formulas/openFormulaTranslator.ts';
-import type { CellRichText, UnmodeledCellContent } from '../../model/cell.ts';
+import type { CellRichText, UnmodeledCellContent, UnparsedFormulaSource } from '../../model/cell.ts';
 import { CellAddress } from '../../model/cellAddress.ts';
 import { CellRange } from '../../model/cellRange.ts';
 import type { Hyperlink } from '../../model/hyperlink.ts';
@@ -314,6 +314,7 @@ function rowIsInert(row: XmlElement): boolean {
 interface ParsedCell {
   readonly value: CellValue;
   readonly formula: string | null;
+  readonly formulaSource: UnparsedFormulaSource | null;
   readonly styleId: number | null;
   readonly hyperlink: Hyperlink | null;
   readonly preserved: UnmodeledCellContent | null;
@@ -435,6 +436,7 @@ function storeCell(sheet: Worksheet, row: number, column: number, parsed: Parsed
   const cell = sheet.getOrCreate(row, column);
   cell.value = parsed.value;
   cell.formula = parsed.formula;
+  cell.formulaSource = parsed.formulaSource;
   cell.hyperlink = parsed.hyperlink;
   if (parsed.styleId !== null) cell.styleId = parsed.styleId;
   if (parsed.preserved) cell.unmodeled = parsed.preserved;
@@ -462,9 +464,11 @@ function parseCell(element: XmlElement, context: ReadContext): ParsedCell {
 
   const value = readValue(element, paragraphs);
   const hyperlink = readHyperlink(paragraphs);
+  const read = formula !== null ? OpenFormulaTranslator.read(formula) : null;
   return {
     value,
-    formula: formula !== null ? OpenFormulaTranslator.fromOpenFormula(formula) : null,
+    formula: read?.formula ?? null,
+    formulaSource: read?.source ?? null,
     styleId: styleName === null ? null : context.styles.cellStyleId(styleName),
     hyperlink,
     preserved: before.length > 0 || after.length > 0 ? { before, after } : null,

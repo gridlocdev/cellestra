@@ -19,7 +19,7 @@ describe('Ranges across several sheets', () => {
 
   it('saves a loaded 3D range back unchanged', () => {
     const original = 'of:=SUM([$Sheet1.A1:$Sheet3.B2])';
-    const internal = OpenFormulaTranslator.fromOpenFormula(original);
-    expect(OpenFormulaTranslator.toOpenFormula(internal)).toBe(original);
+    const { formula, source } = OpenFormulaTranslator.read(original);
+    expect(OpenFormulaTranslator.toOpenFormula(formula, source)).toBe(original);
   });
 });

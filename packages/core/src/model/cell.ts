@@ -25,6 +25,15 @@ export interface CellRichText {
 }
 
 /**
+ * The OpenFormula text a file gave a formula the parser could not read, kept so a save writes it
+ * back exactly. It stands for the cell only while the cell's formula is still `formula`.
+ */
+export interface UnparsedFormulaSource {
+  readonly formula: string;
+  readonly openFormula: string;
+}
+
+/**
  * One cell's content. A literal cell has `formula === null` and `value` is the content; a formula
  * cell holds the source without its leading `=` and `value` is the cached/computed result — shown
  * immediately on open, then refreshed by recalculation (PRD §8.6).
@@ -39,6 +48,8 @@ export class Cell {
   unmodeled: UnmodeledCellContent | null = null;
   /** The marked-up form of the cell's text, read from a file. */
   richText: CellRichText | null = null;
+  /** The file's text of an unparsed formula, read from a file. */
+  formulaSource: UnparsedFormulaSource | null = null;
 
   get isFormula(): boolean {
     return this.formula !== null;
@@ -63,6 +74,7 @@ export class Cell {
     c.hyperlink = this.hyperlink;
     c.unmodeled = this.unmodeled;
     c.richText = this.richText;
+    c.formulaSource = this.formulaSource;
     return c;
   }
 }

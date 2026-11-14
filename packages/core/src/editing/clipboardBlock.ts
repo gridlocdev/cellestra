@@ -1,3 +1,4 @@
+import type { UnparsedFormulaSource } from '../model/cell.ts';
 import { CellRange } from '../model/cellRange.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import type { CellValue } from '../values/cellValue.ts';
@@ -7,6 +8,8 @@ import { clampToUsed, OVERSIZED_CELL_CAP } from './editCommands.ts';
 export interface ClipboardCell {
   readonly value: CellValue;
   readonly formula: string | null;
+  /** A loaded formula's file text, kept while the parser cannot read the formula. */
+  readonly formulaSource: UnparsedFormulaSource | null;
   readonly styleId: number;
 }
 
@@ -51,7 +54,16 @@ export class ClipboardBlock {
       const row: (ClipboardCell | null)[] = [];
       for (let c = 0; c < r0.columnCount; c++) {
         const cell = sheet.find(r0.top + r, r0.left + c);
-        row.push(cell ? { value: cell.value, formula: cell.formula, styleId: cell.styleId } : null);
+        row.push(
+          cell
+            ? {
+                value: cell.value,
+                formula: cell.formula,
+                formulaSource: cell.formulaSource,
+                styleId: cell.styleId,
+              }
+            : null,
+        );
       }
       cells.push(row);
     }

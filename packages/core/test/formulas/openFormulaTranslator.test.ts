@@ -39,8 +39,8 @@ describe('OpenFormulaTranslator', () => {
 describe('OpenFormulaTranslator round-trips what it cannot rewrite', () => {
   it('writes an unparsed formula back exactly as it was read', () => {
     const original = 'of:=MYSTERY([.A1] ~ [.B1]; {1;2})';
-    const internal = OpenFormulaTranslator.fromOpenFormula(original);
-    expect(OpenFormulaTranslator.toOpenFormula(internal)).toBe(original);
+    const { formula, source } = OpenFormulaTranslator.read(original);
+    expect(OpenFormulaTranslator.toOpenFormula(formula, source)).toBe(original);
   });
 
   it('parses empty arguments', () => {

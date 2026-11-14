@@ -208,6 +208,7 @@ export class PasteBlockCommand implements EditCommand {
     const cell = new Cell();
     cell.value = source.value;
     cell.formula = this.mode === 'values' ? null : formula;
+    cell.formulaSource = source.formulaSource;
     cell.styleId = styleId;
     dest.putCell(row, column, cell);
   }

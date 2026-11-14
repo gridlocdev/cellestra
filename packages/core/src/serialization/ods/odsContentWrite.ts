@@ -517,7 +517,7 @@ function writeCell(
 
 function writeCellContent(element: XmlElement, cell: Cell, registry: StyleRegistry): void {
   if (cell.formula !== null) {
-    element.setAttr(Table('formula'), OpenFormulaTranslator.toOpenFormula(cell.formula));
+    element.setAttr(Table('formula'), OpenFormulaTranslator.toOpenFormula(cell.formula, cell.formulaSource));
   }
 
   const value = cell.value;
