@@ -723,6 +723,7 @@ describe('double-click on a column edge', () => {
     app.selection.select(MAX_ROW, 2, { extend: true });
 
     app.autofitColumn(2);
+    expect(app.session.lastAction.peek()).toBe('Autofitted columns A:A, C:C');
     expect(sheet.getColumnWidth(0)).toBe(140 + 12);
     expect(sheet.getColumnWidth(2)).toBe(140 + 12);
     expect(sheet.getColumnWidth(1)).toBe(before);

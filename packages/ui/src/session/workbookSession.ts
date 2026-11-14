@@ -238,7 +238,7 @@ export class WorkbookSession {
 
   /** `target` names where the edit landed in the status line when it reports no cells and the
    * selection isn't it (a column fitted by double-clicking its edge). */
-  execute(command: EditCommand, target?: GridRange): void {
+  execute(command: EditCommand, target?: GridRange | readonly GridRange[]): void {
     const entry = this.#entry();
     // A command that throws (a refused edit) leaves the history as it was, so the selection
     // stacks only move once it has run.

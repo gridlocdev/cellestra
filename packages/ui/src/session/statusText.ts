@@ -90,14 +90,25 @@ export function describeRange(r: GridRange): string {
   return `${part(from)}:${part(to)}`;
 }
 
+/** One range, or several joined: "A:A, C:D". */
+function describeRanges(ranges: GridRange | readonly GridRange[]): string | null {
+  const list: readonly GridRange[] = Array.isArray(ranges) ? ranges : [ranges as GridRange];
+  return list.length === 0 ? null : list.map(describeRange).join(', ');
+}
+
 /**
  * The last-action line for an edit: "Pasted A1:C4", "Sorted 40 cells", "Inserted rows",
  * "Bold · B2:C4". `selection` stands in for the target when the edit reports no cells (a style).
  */
-export function narrateEdit(label: string, result: EditResult, selection: GridRange | null): string {
+export function narrateEdit(
+  label: string,
+  result: EditResult,
+  selection: GridRange | readonly GridRange[] | null,
+): string {
   const { text, verb } = pastTense(label);
   if (result.structural) return text;
-  const target = describeCells(result.changedCells) ?? (selection === null ? null : describeRange(selection));
+  const target =
+    describeCells(result.changedCells) ?? (selection === null ? null : describeRanges(selection));
   if (target === null) return text;
   return verb ? `${text} ${target}` : `${text} · ${target}`;
 }

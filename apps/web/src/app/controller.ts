@@ -1169,7 +1169,7 @@ export class AppController {
     return DataRegion.currentRegion(this.sheet, r.top, r.left);
   }
 
-  run(command: EditCommand | null, target?: GridRange): void {
+  run(command: EditCommand | null, target?: GridRange | readonly GridRange[]): void {
     if (!command) return;
     try {
       this.session.execute(command, target);
@@ -1631,8 +1631,7 @@ export class AppController {
       .sort((a, b) => a[0] - b[0])
       .map(([c, width]) => EditCommands.setColumnWidth(this.sheetName, c, Math.ceil(width)));
     // Always "Autofitted columns …", even for one column, which on its own would read "Resized".
-    if (cmds.length > 0)
-      this.run(new CompositeEditCommand('Autofit Columns', cmds), spans.length === 1 ? spans[0] : undefined);
+    if (cmds.length > 0) this.run(new CompositeEditCommand('Autofit Columns', cmds), spans);
   }
 
   toggleFreeze(): void {

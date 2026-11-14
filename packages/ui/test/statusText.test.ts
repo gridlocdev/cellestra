@@ -52,6 +52,11 @@ describe('narrateEdit', () => {
     expect(narrateEdit('Bold', EditResult.none, sel)).toBe('Bold · B2:C4');
     expect(narrateEdit('Format Cells', EditResult.none, sel)).toBe('Formatted cells B2:C4');
     expect(narrateEdit('Bold', EditResult.none, null)).toBe('Bold');
+    const columns = [
+      { top: 0, left: 0, bottom: MAX_ROW, right: 0 },
+      { top: 0, left: 2, bottom: MAX_ROW, right: 3 },
+    ];
+    expect(narrateEdit('Autofit Columns', EditResult.none, columns)).toBe('Autofitted columns A:A, C:D');
   });
 
   it('names whole columns and rows the way the headers do', () => {
