@@ -64,6 +64,29 @@ export function approxSub(a: number, b: number): number {
   return a - b;
 }
 
+/** Fraction bits below which `approxValue` leaves a number alone (LibreOffice's threshold). */
+const FEW_FRACTION_BITS = 2 ** 11;
+const SIGNIFICANT_DIGITS = 15;
+
+/**
+ * `value` rounded to 15 significant digits, unless it is an integer a double holds exactly or has
+ * at most 11 fraction bits: LibreOffice's `rtl::math::approxValue`, which strips binary noise
+ * (2.9999999999999996 → 3) before a floor.
+ */
+export function approxValue(value: number): number {
+  if (value === 0 || !Number.isFinite(value)) return value;
+  const abs = Math.abs(value);
+  if (isRepresentableInteger(abs) || Number.isInteger((abs - Math.floor(abs)) * FEW_FRACTION_BITS))
+    return value;
+  const rounded = Number(value.toPrecision(SIGNIFICANT_DIGITS));
+  return Number.isFinite(rounded) ? rounded : value;
+}
+
+/** floor(approxValue(value)): `rtl::math::approxFloor`. */
+export function approxFloor(value: number): number {
+  return Math.floor(approxValue(value));
+}
+
 /** .NET OrdinalIgnoreCase: compare upper-cased UTF-16 code units. */
 export function compareOrdinalIgnoreCase(a: string, b: string): number {
   const x = a.toUpperCase();

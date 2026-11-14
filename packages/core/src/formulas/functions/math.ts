@@ -2,6 +2,7 @@ import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import type { Expr } from '../ast/expr.ts';
 import { Coercion } from '../evaluation/coercion.ts';
+import { approxFloor, approxSub } from '../evaluation/valueComparer.ts';
 import { CriteriaMatcher } from './criteriaMatcher.ts';
 import { defineFunction, type FormulaFunction, type FunctionEvaluator } from './formulaFunction.ts';
 import { Arg, createMetadata, type FunctionCategory } from './functionMetadata.ts';
@@ -295,9 +296,11 @@ export function mathFunctions(): FormulaFunction[] {
         const d = readNumber(ev, args[1]!);
         if (isFailure(d)) return d.failed;
         if (d === 0) return CellValue.error(CellError.divideByZero('MOD by zero.'));
-        // Excel/Calc MOD: the result takes the sign of the divisor. When precision runs out the
-        // remainder can land on the divisor itself (MOD(-1E-20, 1) = 1); Calc reports #VALUE! there.
-        const result = n - d * Math.floor(n / d);
+        // Calc's MOD (ScInterpreter::ScMod): the result takes the sign of the divisor, and the
+        // quotient's floor and the subtraction both strip binary noise, so MOD(0.3, 0.1) is 0. When
+        // precision runs out the remainder can land on the divisor itself (MOD(-1E-20, 1) = 1);
+        // Calc reports #VALUE! there.
+        const result = approxSub(n, approxFloor(n / d) * d);
         if (d > 0 ? result >= 0 && result < d : result <= 0 && result > d) return CellValue.number(result);
         return CellValue.error(CellError.value('MOD has no exact remainder at this precision.'));
       },
