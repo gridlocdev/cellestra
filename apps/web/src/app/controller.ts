@@ -183,6 +183,19 @@ export function autoSaveFailure(e: unknown): string {
   return `Auto-save couldn't write the file: ${message(e)}. ${resume}`;
 }
 
+/** PRD §8.7: clearing or deleting more non-empty cells than this asks first. */
+export const LARGE_REMOVAL_CELLS = 100;
+
+/** How many cells holding a value or formula lie in any of `ranges`, each counted once. */
+export function filledCellCount(sheet: Worksheet, ranges: readonly CellRange[]): number {
+  let count = 0;
+  for (const [row, column, cell] of sheet.enumerateCells()) {
+    if (cell.formula === null && cell.value.kind === 'empty') continue;
+    if (ranges.some((r) => r.contains(row, column))) count++;
+  }
+  return count;
+}
+
 function stored(key: string): string | null {
   try {
     return localStorage.getItem(key);
@@ -1146,7 +1159,22 @@ export class AppController {
     return false;
   }
 
+  /**
+   * PRD §8.7: removing data from more than 100 non-empty cells asks first; fewer just happen
+   * (undo covers them). True when the removal may go ahead.
+   */
+  confirmLargeRemoval(ranges: readonly CellRange[], what: string): boolean {
+    const count = filledCellCount(this.sheet, ranges);
+    if (count <= LARGE_REMOVAL_CELLS) return true;
+    const ok = window.confirm(
+      `${what}? This removes data from ${count.toLocaleString()} cells. You can undo it.`,
+    );
+    this.grid.current?.focus();
+    return ok;
+  }
+
   clearContents(): void {
+    if (!this.confirmLargeRemoval(this.ranges, 'Clear the contents')) return;
     this.run(
       each(
         'Clear Contents',
@@ -1156,6 +1184,7 @@ export class AppController {
   }
 
   clearAll(): void {
+    if (!this.confirmLargeRemoval(this.ranges, 'Clear everything in the selection')) return;
     this.run(
       each(
         'Clear All',
@@ -1328,6 +1357,12 @@ export class AppController {
 
   deleteRows(): void {
     const r = this.range;
+    const rows = new CellRange(
+      new CellAddress(0, r.top),
+      new CellAddress(SheetDimensions.maxColumns - 1, r.bottom),
+    );
+    if (!this.confirmLargeRemoval([rows], r.rowCount === 1 ? 'Delete this row' : `Delete ${r.rowCount} rows`))
+      return;
     this.run(
       new StructuralEditCommand(
         this.sheetName,
@@ -1341,6 +1376,12 @@ export class AppController {
 
   deleteColumns(): void {
     const r = this.range;
+    const columns = new CellRange(
+      new CellAddress(r.left, 0),
+      new CellAddress(r.right, SheetDimensions.maxRows - 1),
+    );
+    const what = r.columnCount === 1 ? 'Delete this column' : `Delete ${r.columnCount} columns`;
+    if (!this.confirmLargeRemoval([columns], what)) return;
     this.run(new StructuralEditCommand(this.sheetName, 'column', 'delete', r.left, r.columnCount));
   }
 

@@ -480,6 +480,52 @@ describe('replace all', () => {
   });
 });
 
+describe('large removals', () => {
+  async function filled(rows: number) {
+    const app = await makeApp();
+    const sheet = app.session.activeSheet.peek();
+    for (let r = 0; r < rows; r++) sheet.setValue(r, 0, CellValue.number(r));
+    const asked: string[] = [];
+    let answer = false;
+    vi.stubGlobal('window', {
+      confirm: (text: string) => {
+        asked.push(text);
+        return answer;
+      },
+    });
+    return { app, sheet, asked, answer: (v: boolean) => (answer = v) };
+  }
+
+  it('clears 100 filled cells without asking', async () => {
+    const { app, sheet, asked } = await filled(100);
+    app.selection.selectRange({ top: 0, left: 0, bottom: 999, right: 5 });
+    app.clearContents();
+    expect(asked).toHaveLength(0);
+    expect(sheet.getValue(5, 0)).toEqual(CellValue.empty);
+  });
+
+  it('asks before clearing or deleting more than 100 filled cells', async () => {
+    const { app, sheet, asked, answer } = await filled(101);
+    app.selection.selectRange({ top: 0, left: 0, bottom: 200, right: 0 });
+    app.clearContents();
+    app.clearAll();
+    app.deleteRows();
+    app.deleteColumns();
+    expect(asked).toHaveLength(4);
+    expect(asked[0]).toMatch(/101 cells/);
+    expect(sheet.getValue(5, 0)).toEqual(CellValue.number(5));
+
+    answer(true);
+    app.selection.selectRange({ top: 0, left: 1, bottom: 0, right: 1 }); // B1: its column is empty
+    app.deleteColumns();
+    expect(asked).toHaveLength(4);
+    app.selection.selectRange({ top: 0, left: 0, bottom: 0, right: 0 });
+    app.deleteColumns();
+    expect(asked).toHaveLength(5);
+    expect(sheet.getValue(5, 0)).toEqual(CellValue.empty);
+  });
+});
+
 describe('zoom', () => {
   it('opens a file at its saved zoom, and writes the zoom back without marking it modified', async () => {
     const app = await makeApp();
