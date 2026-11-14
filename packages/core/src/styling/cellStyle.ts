@@ -86,7 +86,6 @@ export interface NumberFormat {
   readonly code: string;
 }
 
-/** A cell's complete formatting. Immutable; intern via `StylePool`. */
 /**
  * The file style a style was read from, kept so a save can write back what the model has no field
  * for. Opaque here: the reader that made it knows what else it holds. Edits that spread a style
@@ -97,6 +96,7 @@ export interface CellStyleSource {
   readonly id: number;
 }
 
+/** A cell's complete formatting. Immutable; intern via `StylePool`. */
 export interface CellStyle {
   readonly font: Font;
   readonly fill: Fill;
