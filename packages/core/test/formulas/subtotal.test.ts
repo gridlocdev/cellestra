@@ -59,7 +59,7 @@ describe('SUBTOTAL', () => {
 
   it('counts hidden rows for 1–11 and leaves them out for 101–111', () => {
     const wb = workbook();
-    wb.worksheets[0]!.getOrCreateRow(1).hidden = true;
+    wb.worksheets[0]!.getOrCreateRow(1).manuallyHidden = true;
     expect(number(evaluate('SUBTOTAL(9, A1:A4)', wb))).toBe(100);
     expect(number(evaluate('SUBTOTAL(109, A1:A4)', wb))).toBe(80);
     expect(number(evaluate('SUBTOTAL(102, A1:A4)', wb))).toBe(3);
@@ -69,7 +69,7 @@ describe('SUBTOTAL', () => {
     const wb = workbook();
     const sheet = wb.worksheets[0]!;
     sheet.activeFilter = CellRange.parse('A1:A4');
-    sheet.getOrCreateRow(2).hidden = true;
+    sheet.getOrCreateRow(2).filtered = true;
     expect(number(evaluate('SUBTOTAL(9, A1:A4)', wb))).toBe(70);
     expect(number(evaluate('SUBTOTAL(109, A1:A4)', wb))).toBe(70);
   });
@@ -87,7 +87,7 @@ describe('SUBTOTAL', () => {
     engine.rebuildGraph();
     engine.recalculateAll();
     expect(number(sheet.getValue(6, 0))).toBe(100);
-    sheet.getOrCreateRow(0).hidden = true;
+    sheet.getOrCreateRow(0).manuallyHidden = true;
     engine.recalculateVolatile();
     expect(number(sheet.getValue(6, 0))).toBe(90);
   });

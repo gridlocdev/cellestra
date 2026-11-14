@@ -9,7 +9,7 @@ import type { Worksheet } from '../../src/model/worksheet.ts';
 const fresh = (): Worksheet => Workbook.createNew().activeSheet;
 
 function hideRows(sheet: Worksheet, ...rows: number[]): void {
-  for (const row of rows) sheet.getOrCreateRow(row).hidden = true;
+  for (const row of rows) sheet.getOrCreateRow(row).manuallyHidden = true;
 }
 
 describe('HiddenLines', () => {
@@ -69,5 +69,28 @@ describe('HiddenLines', () => {
     hideRows(sheet, 0, 1);
     expect(HiddenLines.rowsToUnhide(sheet, 2, 2)).toEqual([[0, 1]]);
     expect(HiddenLines.rowsToUnhide(sheet, 0, 0)).toEqual([[0, 1]]);
+  });
+});
+
+describe('Unhide and filtered rows', () => {
+  it('reaches through rows a filter hid but reveals only the rows hidden by hand', () => {
+    const sheet = fresh();
+    sheet.getOrCreateRow(4).manuallyHidden = true;
+    sheet.getOrCreateRow(5).filtered = true;
+    sheet.getOrCreateRow(6).manuallyHidden = true;
+    expect(HiddenLines.rowsToUnhide(sheet, 3, 3)).toEqual([
+      [4, 4],
+      [6, 6],
+    ]);
+    expect(HiddenLines.rowsToUnhide(sheet, 7, 7)).toEqual([
+      [4, 4],
+      [6, 6],
+    ]);
+  });
+
+  it('has nothing to reveal when only a filter hid the rows', () => {
+    const sheet = fresh();
+    sheet.getOrCreateRow(5).filtered = true;
+    expect(HiddenLines.rowsToUnhide(sheet, 4, 6)).toEqual([]);
   });
 });

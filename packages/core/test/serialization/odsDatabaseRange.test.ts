@@ -76,8 +76,8 @@ describe('OdsDatabaseRange', () => {
     const sort = sortSpec([[1, false]]);
 
     // The filter apple AND qty>2 hides rows 2 (banana) and 3 (cherry).
-    sheet.getOrCreateRow(2).hidden = true;
-    sheet.getOrCreateRow(3).hidden = true;
+    sheet.getOrCreateRow(2).filtered = true;
+    sheet.getOrCreateRow(3).filtered = true;
     sheet.activeFilter = range;
     sheet.activeFilterSpec = spec;
     sheet.activeSort = sort;
@@ -145,7 +145,7 @@ describe('OdsDatabaseRange', () => {
     sheet.setValue(3, 0, CellValue.text('blue'));
 
     const range = CellRange.parse('A1:A4');
-    sheet.getOrCreateRow(2).hidden = true; // the filter hides it: green is not in the checklist
+    sheet.getOrCreateRow(2).filtered = true; // the filter hides it: green is not in the checklist
     sheet.activeFilter = range;
     sheet.activeFilterSpec = filterSpec({ 0: { allowedValues: new Set(['red', 'blue']) } });
 

@@ -331,14 +331,15 @@ export const EditCommands = {
         const ws = requireSheet(wb, sheet);
         for (let r = firstRow; r <= lastRow; r++) {
           const model = ws.getOrCreateRow(r);
-          previous[r - firstRow] = model.hidden;
-          model.hidden = hidden;
+          previous[r - firstRow] = model.manuallyHidden;
+          model.manuallyHidden = hidden;
         }
         return EditResult.rows(sheet, firstRow, lastRow);
       },
       (wb) => {
         const ws = requireSheet(wb, sheet);
-        for (let r = firstRow; r <= lastRow; r++) ws.getOrCreateRow(r).hidden = previous[r - firstRow]!;
+        for (let r = firstRow; r <= lastRow; r++)
+          ws.getOrCreateRow(r).manuallyHidden = previous[r - firstRow]!;
         return EditResult.rows(sheet, firstRow, lastRow);
       },
     );

@@ -150,7 +150,7 @@ describe('DataEditCommands', () => {
       fill: Fills.solid(Argb.fromRgb(255, 0, 0)),
     });
     sheet.getOrCreateColumn(1).styleId = fillId;
-    sheet.getOrCreateRow(2).hidden = true;
+    sheet.getOrCreateRow(2).manuallyHidden = true;
     sheet.activeFilter = R('A1:B3');
     sheet.activeFilterSpec = filterSpec(new Map([[0, { condition: '>0' }]]));
 

@@ -214,8 +214,13 @@ export class Worksheet {
   getColumnWidth(column: number): number {
     return this.columnMap.get(column)?.width ?? Defaults.columnWidth;
   }
+  /** Not shown, whether hidden by hand or by a filter. */
   isRowHidden(row: number): boolean {
     return this.rowMap.get(row)?.hidden ?? false;
+  }
+  /** Hidden by a filter (it may be hidden by hand as well). */
+  isRowFiltered(row: number): boolean {
+    return this.rowMap.get(row)?.filtered ?? false;
   }
   isColumnHidden(column: number): boolean {
     return this.columnMap.get(column)?.hidden ?? false;

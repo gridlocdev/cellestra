@@ -37,7 +37,7 @@ function buildSample(): Workbook {
   sheet.getOrCreateColumn(0).width = 100;
   sheet.getOrCreateRow(0).height = 30;
   sheet.getOrCreateColumn(2).hidden = true;
-  sheet.getOrCreateRow(3).hidden = true;
+  sheet.getOrCreateRow(3).manuallyHidden = true;
 
   sheet.addMerge(new MergedRegion(CellRange.parse('A5:B6')));
   workbook.addNamedRange({ name: 'Rate', target: CellRange.parse('Sheet1.A1') });

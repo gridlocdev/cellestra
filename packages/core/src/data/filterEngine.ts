@@ -39,22 +39,24 @@ export function filterSpec(columns: ReadonlyMap<number, ColumnFilter>, hasHeader
  */
 export const FilterEngine = {
   /**
-   * Hide the data rows that fail, show the ones that pass. Rows below the sheet's last stored cell
-   * hold no data and are left as they are, so a whole-column filter doesn't walk a million rows; a
-   * row model is only created where a row's flag actually changes.
+   * Mark the data rows that fail as filtered and clear the mark on the ones that pass. A row hidden
+   * by hand stays hidden either way: the filter owns only its own flag. Rows below the sheet's last
+   * stored cell hold no data and are left as they are, so a whole-column filter doesn't walk a
+   * million rows; a row model is only created where a row's flag actually changes.
    */
   apply(sheet: Worksheet, range: CellRange, spec: FilterSpec, locale: string): void {
     const test = compile(spec, null, locale);
     const last = dataBottom(sheet, range);
     for (let row = firstDataRow(range, spec.hasHeader); row <= last; row++) {
-      const hidden = !test(sheet, row);
-      if (sheet.isRowHidden(row) !== hidden) sheet.getOrCreateRow(row).hidden = hidden;
+      const filtered = !test(sheet, row);
+      if (sheet.isRowFiltered(row) !== filtered) sheet.getOrCreateRow(row).filtered = filtered;
     }
   },
 
-  /** Unhide every row of the range (only rows that have a stored model can be hidden). */
+  /** Show the rows the filter hid; rows hidden by hand stay hidden. Only stored rows can be filtered. */
   clear(sheet: Worksheet, range: CellRange): void {
-    for (const [row, model] of sheet.rows) if (row >= range.top && row <= range.bottom) model.hidden = false;
+    for (const [row, model] of sheet.rows)
+      if (row >= range.top && row <= range.bottom) model.filtered = false;
   },
 
   /** How many data rows the spec would leave visible — a preview that hides nothing. */

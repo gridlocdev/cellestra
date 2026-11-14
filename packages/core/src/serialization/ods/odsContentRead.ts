@@ -478,6 +478,11 @@ function isHidden(element: XmlElement): boolean {
   return visibility === 'collapse' || visibility === 'filter';
 }
 
+/** A row a filter hid (`filter`), as against one hidden by hand (`collapse`). */
+function isFiltered(element: XmlElement): boolean {
+  return element.attr(Table('visibility')) === 'filter';
+}
+
 function defaultStyleIdOf(element: XmlElement, styles: OdsStyleIndex): number | null {
   const name = element.attr(Table('default-cell-style-name'));
   if (name === null) return null;
@@ -619,6 +624,7 @@ class TableGridReader {
     const styles = this.context.styles;
     const styleName = element.attr(Table('style-name'));
     const hidden = isHidden(element);
+    const filtered = isFiltered(element);
     const height = styleName === null ? null : styles.rowHeight(styleName);
     const defaultStyleId = defaultStyleIdOf(element, styles);
     if (height === null && !hidden && defaultStyleId === null) return;
@@ -626,7 +632,8 @@ class TableGridReader {
       const model = this.sheet.getOrCreateRow(r);
       if (height !== null) model.height = height;
       if (defaultStyleId !== null) model.styleId = defaultStyleId;
-      model.hidden = hidden;
+      model.filtered = filtered;
+      model.manuallyHidden = hidden && !filtered;
     }
   }
 }

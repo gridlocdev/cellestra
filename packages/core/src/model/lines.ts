@@ -16,10 +16,15 @@ export function bumpLineLayout(): void {
   generation++;
 }
 
-/** Per-row layout. Only rows that differ from defaults are stored. */
+/**
+ * Per-row layout. Only rows that differ from defaults are stored. A row can be hidden by hand and
+ * hidden by a filter at once; the two are kept apart, as in LibreOffice, so clearing a filter shows
+ * only what the filter hid, and a save writes `table:visibility="filter"` or `"collapse"`.
+ */
 export class Row {
   #height: number = Defaults.rowHeight;
-  #hidden = false;
+  #manuallyHidden = false;
+  #filtered = false;
   #styleId = 0;
 
   get height(): number {
@@ -29,13 +34,25 @@ export class Row {
     if (value !== this.#height) generation++;
     this.#height = value;
   }
-  /** Manual or filter-driven (PRD §8.14 / ODF `table:visibility`). */
+  /** Not shown, whether hidden by hand or by a filter. */
   get hidden(): boolean {
-    return this.#hidden;
+    return this.#manuallyHidden || this.#filtered;
   }
-  set hidden(value: boolean) {
-    if (value !== this.#hidden) generation++;
-    this.#hidden = value;
+  /** Hidden with Hide Rows (PRD §8.14; ODF `table:visibility="collapse"`). */
+  get manuallyHidden(): boolean {
+    return this.#manuallyHidden;
+  }
+  set manuallyHidden(value: boolean) {
+    if (value !== this.#manuallyHidden) generation++;
+    this.#manuallyHidden = value;
+  }
+  /** Hidden by an AutoFilter or a table's filter (PRD §8.12; ODF `table:visibility="filter"`). */
+  get filtered(): boolean {
+    return this.#filtered;
+  }
+  set filtered(value: boolean) {
+    if (value !== this.#filtered) generation++;
+    this.#filtered = value;
   }
   get styleId(): number {
     return this.#styleId;
@@ -46,13 +63,14 @@ export class Row {
   }
 
   get isDefault(): boolean {
-    return this.#height === Defaults.rowHeight && !this.#hidden && this.#styleId === 0;
+    return this.#height === Defaults.rowHeight && !this.hidden && this.#styleId === 0;
   }
 
   clone(): Row {
     const r = new Row();
     r.#height = this.#height;
-    r.#hidden = this.#hidden;
+    r.#manuallyHidden = this.#manuallyHidden;
+    r.#filtered = this.#filtered;
     r.#styleId = this.#styleId;
     return r;
   }

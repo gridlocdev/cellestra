@@ -7,7 +7,7 @@ describe('ODS writer on sparse extremes', () => {
     const ws = wb.worksheets[0]!;
     ws.setValue(0, 0, CellValue.text('a'));
     ws.setValue(1_048_575, 16_383, CellValue.text('z'));
-    for (let r = 1; r < 20_000; r++) ws.getOrCreateRow(r).hidden = true;
+    for (let r = 1; r < 20_000; r++) ws.getOrCreateRow(r).manuallyHidden = true;
     const t = performance.now();
     const bytes = OdsWriter.write(wb);
     expect(performance.now() - t).toBeLessThan(3000);
@@ -21,7 +21,7 @@ describe('ODS writer on sparse extremes', () => {
     const wb = Workbook.createNew();
     const ws = wb.worksheets[0]!;
     ws.setValue(0, 0, CellValue.text('head'));
-    for (let r = 1; r <= 200_000; r++) ws.getOrCreateRow(r).hidden = true;
+    for (let r = 1; r <= 200_000; r++) ws.getOrCreateRow(r).manuallyHidden = true;
     ws.setValue(100_000, 0, CellValue.number(1)); // breaks the run in two
     ws.getOrCreateRow(150_000).height = 40; // and a different layout breaks it again
     const t = performance.now();

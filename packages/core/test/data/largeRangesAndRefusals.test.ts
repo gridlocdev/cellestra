@@ -67,7 +67,7 @@ describe('filtering whole columns', () => {
     const { history, sheet } = setup();
     sheet.setValue(0, 0, CellValue.text('H'));
     [1, -1, 2, -2].forEach((v, i) => sheet.setValue(i + 1, 0, CellValue.number(v)));
-    sheet.getOrCreateRow(10).hidden = true; // hidden by hand, past the data
+    sheet.getOrCreateRow(10).manuallyHidden = true; // hidden by hand, past the data
 
     history.execute(
       DataEditCommands.applyFilter(
@@ -91,7 +91,7 @@ describe('filtering whole columns', () => {
     const { history, sheet } = setup();
     sheet.setValue(0, 0, CellValue.text('H'));
     sheet.setValue(1, 0, CellValue.number(1));
-    sheet.getOrCreateRow(1).hidden = true;
+    sheet.getOrCreateRow(1).filtered = true;
     history.execute(DataEditCommands.clearFilter(sheet.name, R('A1:A1048576')));
     expect(sheet.isRowHidden(1)).toBe(false);
     history.undo();

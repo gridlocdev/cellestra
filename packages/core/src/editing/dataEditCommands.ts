@@ -22,7 +22,8 @@ import {
 } from './editCommand.ts';
 import { clampToUsed, coversWholeColumns, EditCommands } from './editCommands.ts';
 
-type LineState = [index: number, styleId: number, hidden: boolean];
+/** A row's or column's style and visibility; `filtered` is always false for a column. */
+type LineState = [index: number, styleId: number, hidden: boolean, filtered: boolean];
 
 /** Undoable data-menu edits: sort, filter, duplicates, text to columns, tables, validation. */
 export const DataEditCommands = {
@@ -246,7 +247,7 @@ export const DataEditCommands = {
           for (const r of ws.rows.keys()) if (r >= range.top && r <= range.bottom) touchedRows.add(r);
         if (filterRange) {
           for (const r of ws.rows.keys()) {
-            if (r >= filterRange.top && r <= filterRange.bottom && ws.isRowHidden(r)) touchedRows.add(r);
+            if (r >= filterRange.top && r <= filterRange.bottom && ws.isRowFiltered(r)) touchedRows.add(r);
           }
         }
         const sortedRows = [...touchedRows].sort((a, b) => a - b);
@@ -255,21 +256,26 @@ export const DataEditCommands = {
           : [];
         rowState = sortedRows.map((r) => {
           const row = ws.getOrCreateRow(r);
-          return [r, row.styleId, row.hidden];
+          return [r, row.styleId, row.manuallyHidden, row.filtered];
         });
         columnState = touchedColumns.map((c) => {
           const col = ws.getOrCreateColumn(c);
-          return [c, col.styleId, col.hidden];
+          return [c, col.styleId, col.hidden, false];
         });
         if (clearedFilter) {
           ws.activeFilter = null;
           ws.activeFilterSpec = null;
           ws.activeSort = null;
         }
+        // Whole rows lose their layout; a cleared filter shows only the rows it hid.
         for (const r of sortedRows) {
           const row = ws.getOrCreateRow(r);
-          if (wholeRows) row.styleId = StylePool.defaultId;
-          row.hidden = false;
+          const whole = wholeRows && r >= range.top && r <= range.bottom;
+          if (whole) {
+            row.styleId = StylePool.defaultId;
+            row.manuallyHidden = false;
+          }
+          if (whole || clearedFilter) row.filtered = false;
         }
         for (const c of touchedColumns) {
           const col = ws.getOrCreateColumn(c);
@@ -311,8 +317,8 @@ export const DataEditCommands = {
       'Reset Sheet Data',
       (wb) => {
         const ws = requireSheet(wb, sheet);
-        rowState = [...ws.rows].map(([k, r]) => [k, r.styleId, r.hidden]);
-        columnState = [...ws.columns].map(([k, c]) => [k, c.styleId, c.hidden]);
+        rowState = [...ws.rows].map(([k, r]) => [k, r.styleId, r.manuallyHidden, r.filtered]);
+        columnState = [...ws.columns].map(([k, c]) => [k, c.styleId, c.hidden, false]);
         filter = ws.activeFilter;
         filterSpec = ws.activeFilterSpec;
         sortState = ws.activeSort;
@@ -323,7 +329,8 @@ export const DataEditCommands = {
         frozenColumns = ws.frozenColumns;
         for (const row of ws.rows.values()) {
           row.styleId = StylePool.defaultId;
-          row.hidden = false;
+          row.manuallyHidden = false;
+          row.filtered = false;
         }
         for (const col of ws.columns.values()) {
           col.styleId = StylePool.defaultId;
@@ -564,25 +571,26 @@ function filteredRowsCommand(sheet: string, range: CellRange): EditCommand {
         filtered.push(ws.activeFilter);
       for (const t of ws.tables) if (t.filter && t.range.intersects(range)) filtered.push(t.range);
       hiddenBefore = new Set();
-      for (const r of filtered) for (const row of hiddenRowsIn(ws, r)) hiddenBefore.add(row);
+      for (const r of filtered) for (const row of filteredRowsIn(ws, r)) hiddenBefore.add(row);
       return EditResult.none;
     },
     (wb) => {
       const ws = requireSheet(wb, sheet);
       for (const r of filtered) {
         for (const [row, model] of ws.rows) {
-          if (row >= r.top && row <= r.bottom) model.hidden = hiddenBefore.has(row);
+          if (row >= r.top && row <= r.bottom) model.filtered = hiddenBefore.has(row);
         }
       }
-      for (const row of hiddenBefore) if (!ws.isRowHidden(row)) ws.getOrCreateRow(row).hidden = true;
+      for (const row of hiddenBefore) if (!ws.isRowFiltered(row)) ws.getOrCreateRow(row).filtered = true;
       return EditResult.none;
     },
   );
 }
 
 /**
- * Run a change to row visibility over the range; undo puts back the hidden flag of each row it
- * changed (found from the sparse row models, so a whole-column range costs nothing extra).
+ * Run a change to which rows a filter hides over the range; undo puts back the filtered flag of
+ * each row it changed (found from the sparse row models, so a whole-column range costs nothing
+ * extra). Rows hidden by hand are not the filter's and are left alone.
  */
 function rowVisibilityCommand(
   label: string,
@@ -590,14 +598,14 @@ function rowVisibilityCommand(
   range: CellRange,
   apply: (ws: Worksheet) => void,
 ): EditCommand {
-  let changed: (readonly [row: number, hidden: boolean])[] = [];
+  let changed: (readonly [row: number, filtered: boolean])[] = [];
   return new ActionCommand(
     label,
     (wb) => {
       const ws = requireSheet(wb, sheet);
-      const hiddenBefore = hiddenRowsIn(ws, range);
+      const hiddenBefore = filteredRowsIn(ws, range);
       apply(ws);
-      const hiddenAfter = hiddenRowsIn(ws, range);
+      const hiddenAfter = filteredRowsIn(ws, range);
       changed = [];
       for (const row of hiddenBefore) if (!hiddenAfter.has(row)) changed.push([row, true]);
       for (const row of hiddenAfter) if (!hiddenBefore.has(row)) changed.push([row, false]);
@@ -605,7 +613,7 @@ function rowVisibilityCommand(
     },
     (wb) => {
       const ws = requireSheet(wb, sheet);
-      for (const [row, hidden] of changed) ws.getOrCreateRow(row).hidden = hidden;
+      for (const [row, filtered] of changed) ws.getOrCreateRow(row).filtered = filtered;
       return changedRowsResult(sheet, changed);
     },
   );
@@ -626,18 +634,19 @@ function changedRowsResult(
   return EditResult.rows(sheet, first, last);
 }
 
-function hiddenRowsIn(ws: Worksheet, range: CellRange): Set<number> {
+function filteredRowsIn(ws: Worksheet, range: CellRange): Set<number> {
   const out = new Set<number>();
   for (const [row, model] of ws.rows)
-    if (model.hidden && row >= range.top && row <= range.bottom) out.add(row);
+    if (model.filtered && row >= range.top && row <= range.bottom) out.add(row);
   return out;
 }
 
 function restoreLines(ws: Worksheet, rows: readonly LineState[], columns: readonly LineState[]): void {
-  for (const [k, styleId, hidden] of rows) {
+  for (const [k, styleId, hidden, filtered] of rows) {
     const row = ws.getOrCreateRow(k);
     row.styleId = styleId;
-    row.hidden = hidden;
+    row.manuallyHidden = hidden;
+    row.filtered = filtered;
   }
   for (const [k, styleId, hidden] of columns) {
     const col = ws.getOrCreateColumn(k);

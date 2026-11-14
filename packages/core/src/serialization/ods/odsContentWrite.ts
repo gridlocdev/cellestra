@@ -360,9 +360,16 @@ class RowAppender {
 
 /** What decides how an empty row is written: its height, visibility and default style. */
 function rowLayout(
-  model: { readonly height: number; readonly hidden: boolean; readonly styleId: number } | undefined,
+  model:
+    | {
+        readonly height: number;
+        readonly manuallyHidden: boolean;
+        readonly filtered: boolean;
+        readonly styleId: number;
+      }
+    | undefined,
 ): string {
-  return model ? `${model.height}|${model.hidden}|${model.styleId}` : '';
+  return model ? `${model.height}|${model.manuallyHidden}|${model.filtered}|${model.styleId}` : '';
 }
 
 /**
@@ -406,7 +413,10 @@ function writeRow(w: SheetWriter, row: number, cellColumns: readonly number[]): 
   if (rowModel && rowModel.height !== Defaults.rowHeight) {
     element.setAttr(Table('style-name'), registry.rowStyle(rowModel.height));
   }
-  if (rowModel?.hidden) element.setAttr(Table('visibility'), 'collapse');
+  // A filter's rows are `filter`, so LibreOffice shows them again when the filter is cleared; a row
+  // both filtered and hidden by hand is written as filtered, as LibreOffice does.
+  if (rowModel?.filtered) element.setAttr(Table('visibility'), 'filter');
+  else if (rowModel?.manuallyHidden) element.setAttr(Table('visibility'), 'collapse');
   // A whole formatted row travels the same way a formatted column does — one attribute.
   if (rowModel && rowModel.styleId !== StylePool.defaultId) {
     element.setAttr(Table('default-cell-style-name'), registry.cellStyle(rowModel.styleId));
