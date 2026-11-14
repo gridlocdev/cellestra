@@ -37,7 +37,7 @@ import {
   Xlink,
 } from './odsXmlNames.ts';
 
-/** C# `CultureInfo.InvariantCulture` for the cached display text written beside each value. */
+/** A fixed locale for the cached display text written beside each value, whatever the system's. */
 const INVARIANT_LOCALE = 'en-US';
 
 type ValidationTargets = ReadonlyArray<{ readonly range: CellRange; readonly name: string }>;

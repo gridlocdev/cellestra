@@ -11,8 +11,7 @@ import {
 
 export interface XmlParseOptions {
   /**
-   * Keep whitespace-only text nodes (C#'s `LoadOptions.PreserveWhitespace`). Default true. With
-   * false they are dropped, like a plain `XDocument.Parse`; text with any non-blank character is
+   * Keep whitespace-only text nodes. Default true. With false they are dropped; text with any non-blank character is
    * always kept as-is.
    */
   readonly preserveWhitespace?: boolean;

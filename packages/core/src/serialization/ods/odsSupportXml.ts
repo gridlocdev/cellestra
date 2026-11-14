@@ -25,7 +25,7 @@ const MAX_ZOOM = 600;
 const FROZEN_SPLIT_MODE = '2';
 const NO_SPLIT_MODE = '0';
 
-/** The calculation mode as the C# enum spelled it in settings.xml, so files stay interchangeable. */
+/** The calculation mode as Cellestra spells it in settings.xml (`Automatic`, `Manual`). */
 const CALC_MODE_NAMES: Record<CalculationMode, string> = { automatic: 'Automatic', manual: 'Manual' };
 
 /** Builds the smaller ODF parts: meta.xml, settings.xml, styles.xml, and the manifest. */
@@ -284,7 +284,7 @@ function tableEntry(name: string, columns: number, rows: number, zoom: number | 
   );
 }
 
-/** `Enum.TryParse<CalculationMode>`: case-sensitive name match in C#; accepted case-insensitively here. */
+/** The calculation mode from settings.xml, matched case-insensitively. */
 function parseCalculationMode(text: string): CalculationMode | null {
   const t = text.trim().toLowerCase();
   return t === 'automatic' || t === 'manual' ? t : null;

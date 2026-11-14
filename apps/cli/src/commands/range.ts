@@ -98,7 +98,7 @@ export const filter: CommandSpec = {
     jsonOpt,
   ],
   run(p, con) {
-    // Keyed case-insensitively; the first spelling of a column wins, as with C#'s OrdinalIgnoreCase.
+    // Keyed case-insensitively; the first spelling of a column wins.
     const columns = new Map<string, { key: string; criteria: Record<string, unknown> }>();
     const merge = (column: string, key: string, value: unknown): void => {
       const entry = columns.get(column.toLowerCase()) ?? { key: column, criteria: {} };

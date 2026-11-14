@@ -1,6 +1,5 @@
 /**
- * A small namespace-aware XML tree — the stand-in for LINQ-to-XML (`XDocument`/`XElement`) that the
- * `.ods` reader and writer are built on. Every element and attribute keeps its namespace URI, its
+ * A small namespace-aware XML tree that the `.ods` reader and writer are built on. Every element and attribute keeps its namespace URI, its
  * prefix, and its local name; namespace declarations (`xmlns:*`) are ordinary attributes in the
  * reserved xmlns namespace, kept in document order. That is what lets an unmodeled element read from
  * a file be written back verbatim — prefixes, attribute order, whitespace, comments, and all.
@@ -19,8 +18,7 @@ export interface XmlName {
 }
 
 /**
- * A namespace you can call to make names in it: `Table('name')` is `table:name`. Mirrors C#'s
- * `XNamespace + "local"` so the ported code reads the same.
+ * A namespace you can call to make names in it: `Table('name')` is `table:name`.
  */
 export interface XmlNamespace {
   (local: string): XmlName;
@@ -156,7 +154,7 @@ export class XmlElement {
     return this.setAttr(name, uri);
   }
 
-  /** Attributes other than namespace declarations (C#'s `HasAttributes` on a built element). */
+  /** Attributes other than namespace declarations. */
   get hasAttributes(): boolean {
     return this.attributes.some((a) => !isNamespaceDeclaration(a));
   }
@@ -249,7 +247,7 @@ export class XmlElement {
     return out;
   }
 
-  /** The concatenated text of every descendant text node (C#'s `XElement.Value`). Iterative. */
+  /** The concatenated text of every descendant text node. Iterative. */
   get value(): string {
     let s = '';
     const stack: Array<{ e: XmlElement; i: number }> = [{ e: this, i: 0 }];

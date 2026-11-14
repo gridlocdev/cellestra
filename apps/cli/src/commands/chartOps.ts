@@ -34,7 +34,7 @@ export interface ChartLook {
   readonly stacking: string | null;
 }
 
-/** C#'s `ChartType.ToString().ToLowerInvariant()`: `filledRadar` → `filledradar`. */
+/** A chart type as the CLI prints it, all lowercase: `filledRadar` → `filledradar`. */
 const spellType = (type: ChartType): string => type.toLowerCase();
 
 /** Build, validate, and add one chart sheet — shared by the `chart` verb and `apply`. */

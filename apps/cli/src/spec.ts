@@ -7,7 +7,7 @@ import type { Console } from './infra/io.ts';
  */
 
 /**
- * - `flag`: a switch (`--json`); a following `true`/`false` is accepted, as System.CommandLine did.
+ * - `flag`: a switch (`--json`); a following `true`/`false` is accepted.
  * - `value`: takes the next token (`--sheet Data`, `--sheet=Data`).
  * - `optionalValue`: a tri-state switch (`--bold`, `--bold false`); it takes the next token only when
  *   that is a yes/no word or every positional argument is already filled.
@@ -25,8 +25,8 @@ export interface OptionSpec {
   readonly default?: string;
   readonly required?: boolean;
   /**
-   * A `multi` option that also takes the tokens after its first value (`--values B2:B9 C2:C9`), as
-   * System.CommandLine's AllowMultipleArgumentsPerToken did — once every positional is filled.
+   * A `multi` option that also takes the tokens after its first value (`--values B2:B9 C2:C9`),
+   * once every positional is filled.
    */
   readonly greedy?: boolean;
 }
@@ -335,7 +335,7 @@ function twoColumns(rows: readonly (readonly [string, string])[]): string {
   return rows.map(([a, b]) => `  ${a.padEnd(width)}  ${b}`.trimEnd()).join('\n');
 }
 
-/** `--help` for one command, in System.CommandLine's layout. */
+/** `--help` for one command: usage, description, arguments, options and subcommands. */
 export function renderHelp(command: CommandSpec, path: readonly string[], version: string | null): string {
   const out: string[] = [];
   out.push('Description:', `  ${command.description}`, '');

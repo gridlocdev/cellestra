@@ -15,7 +15,7 @@ function runOnce(argv: readonly string[], io: CliIo, version: string): number {
     invocation = parseArgs(root, argv);
   } catch (e) {
     if (e instanceof ParseError) {
-      // System.CommandLine's answer to a parse error: the error on stderr, the help on stdout.
+      // A parse error: the error on stderr, the help on stdout.
       con.errLine(e.message);
       con.errLine();
       const path = [TOOL];

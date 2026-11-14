@@ -56,7 +56,7 @@ describe('Csv', () => {
     expect(writeCsv(workbook, workbook.activeSheet)).toBe('name,score\nAda,99\nBev,87\n');
   });
 
-  // ---- beyond the C# suite: delimiter options and locale inference ----
+  // ---- delimiter options and locale inference ----
 
   it('honours the semicolon and tab delimiters', () => {
     expect(parseCsv('a;b\n', CsvOptions.semicolon)).toEqual([['a', 'b']]);

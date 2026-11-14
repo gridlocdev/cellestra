@@ -28,7 +28,7 @@ import { isExpectedError } from '../src/infra/errors.ts';
 import type { CliIo } from '../src/infra/io.ts';
 
 /**
- * Drives the CLI in-process, the way the C# CliTests did: every case gets a fresh temp folder, the
+ * Drives the CLI in-process: every case gets a fresh temp folder, the
  * streams are captured, and the app launcher is a stub that never opens a window.
  */
 
@@ -76,7 +76,7 @@ function run(...args: string[]): Result {
   return { exit, out, err };
 }
 
-/** A parsed report, loosely typed so a test reads it like C#'s JsonElement.GetProperty chain. */
+/** A parsed report, loosely typed so a test can read nested properties directly. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any;
 const json = (text: string): Json => JSON.parse(text);

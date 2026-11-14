@@ -1,7 +1,7 @@
 import type { Worksheet } from '../../src/model/worksheet.ts';
 import type { CellValue } from '../../src/values/cellValue.ts';
 
-/** The text of a text value, else null (C# `AsText`). */
+/** The text of a text value, else null. */
 export function asText(v: CellValue): string | null {
   return v.kind === 'text' ? v.value : null;
 }

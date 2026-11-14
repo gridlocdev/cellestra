@@ -559,7 +559,7 @@ function compareObjects(
   }
 }
 
-/** A top-level property's text as it sits in the indented document (one level in), like C#'s GetRawText. */
+/** A top-level property's text as it sits in the indented document (one level in). */
 const rawText = (value: unknown): string => JSON.stringify(value, null, 2).replaceAll('\n', '\n  ');
 
 const compact = (json: string | null): string => (json === null ? '(none)' : json.replace(/\s*\n\s*/g, ' '));

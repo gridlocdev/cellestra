@@ -62,7 +62,7 @@ describe('UnknownContentPreservation', () => {
   });
 
   it('a foreign child keeps its position and its exact markup', () => {
-    // Beyond the C# test: the child is re-emitted before the tables when it came before them, and
+    // The child is re-emitted before the tables when it came before them, and
     // byte-for-byte as read (attributes, order, whitespace inside it).
     const foreign =
       '<table:calculation-settings xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" table:automatic-find-labels="false"> <table:iteration table:status="enable"/></table:calculation-settings>';

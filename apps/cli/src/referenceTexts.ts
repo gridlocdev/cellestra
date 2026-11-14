@@ -1,5 +1,5 @@
-// Generated verbatim from the C# tool's reference texts (ApplyCommands.Reference,
-// ReferenceCommands.ReportReference and Conventions) so `man`, `schema`, and the skill agree.
+// The reference texts for `apply`, the JSON reports and the conventions, kept in one place so `man`,
+// `schema`, and the skill agree.
 
 /** The `apply` document reference (`cellestra schema apply`). */
 export const APPLY_REFERENCE = `apply — a batch of typed operations from JSON

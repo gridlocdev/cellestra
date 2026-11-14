@@ -27,7 +27,7 @@ export function readNumber(ev: FunctionEvaluator, arg: Expr): ArgResult<number> 
   return n instanceof CellError ? fail(CellValue.error(n)) : n;
 }
 
-/** A number truncated toward zero, clamped to the int32 range like a C# `(int)` cast. */
+/** A number truncated toward zero, clamped to the 32-bit signed integer range. */
 export function readInt(ev: FunctionEvaluator, arg: Expr): ArgResult<number> {
   const n = readNumber(ev, arg);
   if (isFailure(n)) return n;

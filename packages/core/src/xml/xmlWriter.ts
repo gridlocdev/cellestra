@@ -12,7 +12,7 @@ import {
 
 export interface XmlWriteOptions {
   /**
-   * Pretty-print element-only content two spaces per level (C#'s `XmlWriterSettings.Indent`).
+   * Pretty-print element-only content two spaces per level.
    * Mixed content — an element with any text child — is written exactly as stored, so whitespace
    * that is data (a `text:p`) is never changed. Default true.
    */
@@ -44,7 +44,7 @@ export function serializeXml(doc: XmlDocument, options: XmlWriteOptions = {}): s
 
 /**
  * Serialize one element standalone — every namespace it uses is declared on it, so the string parses
- * on its own (C#'s `XElement.ToString()`). Not indented by default: what was read is what is written.
+ * on its own. Not indented by default: what was read is what is written.
  */
 export function serializeXmlElement(element: XmlElement, options: { indent?: boolean } = {}): string {
   const w = new Writer(options.indent ?? false);

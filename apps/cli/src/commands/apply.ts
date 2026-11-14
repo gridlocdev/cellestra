@@ -74,7 +74,7 @@ type JsonObject = { [key: string]: Json };
 
 const isObject = (v: unknown): v is JsonObject => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** A key, matched case-insensitively (the first match wins, as in the C# tool). */
+/** A key, matched case-insensitively (the first match wins). */
 function property(element: JsonObject, name: string): { found: boolean; value: Json | undefined } {
   const lower = name.toLowerCase();
   for (const key of Object.keys(element)) {

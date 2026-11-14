@@ -266,10 +266,9 @@ function readDatabaseRange(element: XmlElement, workbook: Workbook): void {
     OdsPreserved.setDatabaseRangeSource(localRange, element.clone());
   }
 
-  // The C# reader reapplies the filter here (FilterEngine.Apply) so filtered rows come back hidden.
-  // The TS engine has no FilterEngine yet; the rows still come back hidden because the row writer
+  // The filter isn't re-run here. Filtered rows still come back hidden because the row writer
   // persisted their `table:visibility`, so only a file whose visibility disagrees with its filter
-  // would differ.
+  // would show different rows.
 }
 
 function readSort(databaseRange: XmlElement, rangeLeft: number, hasHeader: boolean): SortSpec | null {

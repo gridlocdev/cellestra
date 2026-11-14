@@ -11,9 +11,8 @@ import { readEntry, roundTrip } from './helpers.ts';
  * conditions, and sort order. A filter + sort must survive save → reopen, and the rows the filter
  * hides must come back hidden.
  *
- * The C# suite applies the filter with `FilterEngine.Apply` before saving; the TS engine has no
- * FilterEngine yet, so these tests hide the same rows by hand (what Apply would have done) and the
- * reader relies on the persisted `table:visibility` rather than re-running the filter.
+ * These tests hide the filtered rows by hand before saving, and the reader relies on the persisted
+ * `table:visibility` rather than re-running the filter.
  */
 function filterSpec(columns: Record<number, ColumnFilter>, hasHeader = true): FilterSpec {
   return { columns: new Map(Object.entries(columns).map(([k, v]) => [Number(k), v])), hasHeader };
@@ -76,7 +75,7 @@ describe('OdsDatabaseRange', () => {
     const spec = filterSpec({ 0: { allowedValues: new Set(['apple']) }, 1: { condition: '>2' } });
     const sort = sortSpec([[1, false]]);
 
-    // What FilterEngine.Apply does in C#: apple AND qty>2 hides rows 2 (banana) and 3 (cherry).
+    // The filter apple AND qty>2 hides rows 2 (banana) and 3 (cherry).
     sheet.getOrCreateRow(2).hidden = true;
     sheet.getOrCreateRow(3).hidden = true;
     sheet.activeFilter = range;
@@ -146,7 +145,7 @@ describe('OdsDatabaseRange', () => {
     sheet.setValue(3, 0, CellValue.text('blue'));
 
     const range = CellRange.parse('A1:A4');
-    sheet.getOrCreateRow(2).hidden = true; // FilterEngine.Apply: green is not in the checklist
+    sheet.getOrCreateRow(2).hidden = true; // the filter hides it: green is not in the checklist
     sheet.activeFilter = range;
     sheet.activeFilterSpec = filterSpec({ 0: { allowedValues: new Set(['red', 'blue']) } });
 

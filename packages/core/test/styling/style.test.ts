@@ -92,8 +92,8 @@ describe('NumberFormatter', () => {
     expect(fmt(value, code)).toBe(expected);
   });
 
-  // Single-character date/time codes are fields, not standard specifiers. The C# test expected
-  // "[12]:30" for "[h]:mm" (a .NET artifact); this engine implements true elapsed hours.
+  // Single-character date/time codes are fields, not standard specifiers. "[h]:mm" shows true
+  // elapsed hours.
   it.each([
     ['h', 0.520834, '12'],
     ['s', 0.520834, '0'],
@@ -120,7 +120,7 @@ describe('NumberFormatter', () => {
     expect(fmt(serial, 'yyyy-mm-dd')).toBe(NumberFormatter.formatGeneral(serial, INVARIANT));
   });
 
-  // ---- Beyond the C# suite: the rest of the format dialect ---------------
+  // ---- The rest of the format dialect ---------------
 
   it.each([
     ['0.00;(0.00)', -3.5, '(3.50)'],
@@ -140,7 +140,7 @@ describe('NumberFormatter', () => {
     expect(fmt(value, code)).toBe(expected);
   });
 
-  it('passes text through unchanged even with a text section (as the C# engine does)', () => {
+  it('passes text through unchanged even with a text section', () => {
     expect(NumberFormatter.format(CellValue.text('x'), '0;0;0;"<"@">"', INVARIANT)).toBe('x');
   });
 
