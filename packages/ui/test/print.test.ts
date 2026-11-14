@@ -93,3 +93,24 @@ describe('page setup form', () => {
     expect(setupOf({ ...d, scaleKind: 'pages', pages: '0' }, null)).toHaveProperty('error');
   });
 });
+
+describe('printHtml row heights', () => {
+  it('paginates and sizes rows by the height their content needs', () => {
+    const { wb, sheet } = grid(40, 2);
+    const plain = printHtml({ sheet, styles: wb.styles, setup: null, range: null, display, title: 'T' });
+    expect(plain.pages).toBe(1);
+    // Every row wraps to three lines: 40 of them no longer fit on one page.
+    const contentHeights = new Map(Array.from({ length: 40 }, (_, r) => [r, 60] as [number, number]));
+    const tall = printHtml({
+      sheet,
+      styles: wb.styles,
+      setup: null,
+      range: null,
+      display,
+      title: 'T',
+      contentHeights,
+    });
+    expect(tall.pages).toBeGreaterThan(1);
+    expect(tall.html).toContain('<tr style="height:60px">');
+  });
+});

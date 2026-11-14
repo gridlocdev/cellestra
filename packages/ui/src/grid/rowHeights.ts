@@ -1,5 +1,5 @@
 import { Defaults, StylePool, type CellStyle, type CellValue, type Worksheet } from '@cellestra/core';
-import { CELL_PAD_Y, rotatedCellBox } from './render.ts';
+import { CELL_PAD_Y, rotatedCellBox, wrap } from './render.ts';
 
 const PT_TO_PX = 96 / 72;
 /**
@@ -140,4 +140,34 @@ export class ContentHeights {
 /** The rows content makes taller, measured in one pass (see `ContentHeights`). */
 export function contentRowHeights(sheet: Worksheet, styles: StylePool, m: RowMeasure): Map<number, number> {
   return new ContentHeights(sheet, styles, m).rows;
+}
+
+/** The CSS font a style's text is measured in, at 100%. */
+export function measureFont(style: CellStyle): string {
+  return `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${(style.font.sizePoints * 96) / 72}px "${style.font.family}", "Helvetica Neue", Arial, sans-serif`;
+}
+
+/**
+ * A `RowMeasure` that measures with a canvas context, as the grid does. Without one (no canvas),
+ * text counts its line breaks and is estimated at 0.6 em per character.
+ */
+export function canvasRowMeasure(
+  sheet: Worksheet,
+  display: (value: CellValue, style: CellStyle) => string,
+  ctx: CanvasRenderingContext2D | null,
+): RowMeasure {
+  return {
+    display,
+    wrappedLines: (text, style, width) => {
+      if (!ctx) return text.split('\n').length;
+      ctx.font = measureFont(style);
+      return wrap(ctx, text, width).length;
+    },
+    columnWidth: (c) => sheet.columns.get(c)?.width ?? Defaults.columnWidth,
+    textWidth: (text, style) => {
+      if (!ctx) return text.length * style.font.sizePoints * 0.6;
+      ctx.font = measureFont(style);
+      return ctx.measureText(text).width;
+    },
+  };
 }

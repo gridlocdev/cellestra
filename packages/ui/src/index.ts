@@ -6,6 +6,7 @@ export * from './grid/viewport.ts';
 export * from './grid/palette.ts';
 export * from './grid/render.ts';
 export * from './grid/chrome.ts';
+export { canvasRowMeasure, contentRowHeights, type RowMeasure } from './grid/rowHeights.ts';
 export { Grid, type GridHost, type GridController, type GridProps } from './grid/Grid.tsx';
 export { Icon } from './components/Icon.tsx';
 export { Dialog } from './components/Dialog.tsx';

@@ -29,6 +29,11 @@ export interface PrintInput {
   readonly display: (value: CellValue, style: CellStyle) => string;
   /** The style conditional formats give a cell. */
   readonly conditional?: (style: CellStyle, row: number, column: number) => CellStyle;
+  /**
+   * Rows their content makes taller than their stored height (a big font, wrapped text), as the
+   * grid measures them (`contentRowHeights`). A row prints at the larger of the two.
+   */
+  readonly contentHeights?: ReadonlyMap<number, number>;
   readonly title: string;
 }
 
@@ -56,7 +61,7 @@ export function printHtml(input: PrintInput): PrintDocument {
   const rows = lines(range.top, range.bottom, (r) => sheet.isRowHidden(r));
   const columns = lines(range.left, range.right, (c) => sheet.isColumnHidden(c));
   const width = (c: number) => sheet.getColumnWidth(c);
-  const height = (r: number) => sheet.getRowHeight(r);
+  const height = rowHeight(input);
 
   const pageW = (setup.paperWidth - setup.margins.left - setup.margins.right) * PX_PER_MM;
   const pageH = (setup.paperHeight - setup.margins.top - setup.margins.bottom) * PX_PER_MM;
@@ -119,6 +124,12 @@ export function printHtml(input: PrintInput): PrintDocument {
   return { html, pages: order.length, setup };
 }
 
+/** A row's printed height: its stored height, or what its content needs when that is more. */
+function rowHeight(input: PrintInput): (row: number) => number {
+  const content = input.contentHeights;
+  return (r) => Math.max(input.sheet.getRowHeight(r), content?.get(r) ?? 0);
+}
+
 /** The used cells of a sheet, merges included; just A1 when it is empty. */
 export function usedRange(sheet: Worksheet): PrintRange {
   const e = sheet.cellExtent();
@@ -169,6 +180,7 @@ function page(
   classes: Map<string, string>,
 ): string {
   const { sheet } = input;
+  const height = rowHeight(input);
   const rowSet = new Set(rows);
   const columnSet = new Set(columns);
   const covered = new Set<string>();
@@ -201,7 +213,7 @@ function page(
     : '';
   const body = rows
     .map((r) => {
-      let tr = `<tr style="height:${sheet.getRowHeight(r)}px">`;
+      let tr = `<tr style="height:${height(r)}px">`;
       if (setup.headers) tr += `<th>${r + 1}</th>`;
       for (const c of columns) {
         const span = spans.get(`${r},${c}`);

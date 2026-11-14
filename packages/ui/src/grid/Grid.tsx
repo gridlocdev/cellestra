@@ -26,14 +26,13 @@ import {
   checkboxRect,
   fillHandleRect,
   renderGrid,
-  wrap,
   CELL_PAD_X,
   CELL_PAD_Y,
   MARQUEE_DASH,
   type DisplayText,
   type GridOverlay,
 } from './render.ts';
-import { ContentHeights } from './rowHeights.ts';
+import { canvasRowMeasure, ContentHeights } from './rowHeights.ts';
 import { insertLineBreak } from '../components/lineBreak.ts';
 import { Viewport, HEADER_HEIGHT, HEADER_WIDTH, type Rect } from './viewport.ts';
 import type { GridPalette } from './palette.ts';
@@ -245,8 +244,6 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   }, []);
 
   const measureCtx = useRef<CanvasRenderingContext2D | null>(null);
-  const fontCss = (style: CellStyle, zoom = 1) =>
-    `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${((style.font.sizePoints * 96) / 72) * zoom}px "${style.font.family}", "Helvetica Neue", Arial, sans-serif`;
 
   /** Recompute the rows content makes taller; true when that changed. */
   const refreshContentHeights = (sheet: Worksheet, version: number): boolean => {
@@ -260,21 +257,11 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const changed = same ? host.cellsChangedSince?.(sheet.name, since) : null;
     if (changed && s.heights) return s.heights.update(changed);
     measureCtx.current ??= document.createElement('canvas').getContext('2d');
-    const ctx = measureCtx.current;
-    s.heights = new ContentHeights(sheet, host.styles, {
-      display: (value, style) => host.display(value, style).text,
-      wrappedLines: (text, style, width) => {
-        if (!ctx) return text.split('\n').length;
-        ctx.font = fontCss(style);
-        return wrap(ctx, text, width).length;
-      },
-      columnWidth: (c) => sheet.columns.get(c)?.width ?? Defaults.columnWidth,
-      textWidth: (text, style) => {
-        if (!ctx) return text.length * style.font.sizePoints * 0.6;
-        ctx.font = fontCss(style);
-        return ctx.measureText(text).width;
-      },
-    });
+    s.heights = new ContentHeights(
+      sheet,
+      host.styles,
+      canvasRowMeasure(sheet, (value, style) => host.display(value, style).text, measureCtx.current),
+    );
     const prev = s.content;
     const next = s.heights.rows;
     s.content = next;

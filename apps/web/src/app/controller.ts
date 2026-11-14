@@ -58,6 +58,8 @@ import {
   lightPalette,
   nativeBridge,
   printHtml,
+  canvasRowMeasure,
+  contentRowHeights,
   printInFrame,
   orphanedRecoveries,
   recentFiles,
@@ -979,12 +981,17 @@ export class AppController {
       return null;
     }
     const r = this.range;
+    const styles = this.session.workbook.peek().styles;
+    const display = (value: CellValue, style: CellStyle) => this.session.display(value, style);
+    // Rows the grid shows taller for their content (wrapped text, big fonts) print that tall too.
+    const ctx = document.createElement('canvas').getContext('2d');
     return printHtml({
       sheet,
-      styles: this.session.workbook.peek().styles,
+      styles,
       setup,
       range: selectionOnly ? { top: r.top, left: r.left, bottom: r.bottom, right: r.right } : null,
-      display: (value, style) => this.session.display(value, style),
+      display,
+      contentHeights: contentRowHeights(sheet, styles, canvasRowMeasure(sheet, display, ctx)),
       conditional: (style, row, column) => this.conditionalStyle(style, row, column),
       title: `${this.session.title.peek().replace(/\.[^.]+$/, '')} — ${sheet.name}`,
     });
