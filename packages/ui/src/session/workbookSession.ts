@@ -8,6 +8,7 @@ import {
   OdsReader,
   OdsWriter,
   RecalculationEngine,
+  DeleteSheetCommand,
   RenameSheetCommand,
   SheetName,
   Workbook,
@@ -339,7 +340,7 @@ export class WorkbookSession {
     if (entry.selection) this.restoreSelection(entry.selection);
   }
 
-  // ── Sheets (PRD §8.5: these clear the history; only rename is undoable) ──
+  // ── Sheets (PRD §8.5: these clear the history; only rename and delete are undoable) ──
 
   setActiveSheet(index: number): void {
     const wb = this.#workbook.peek();
@@ -355,11 +356,15 @@ export class WorkbookSession {
     this.setActiveSheet(wb.sheetCount - 1);
   }
 
+  /**
+   * Delete a sheet as an undoable edit: references to it elsewhere become #REF!, so a sheet added
+   * later under the same name can't silently pick them up.
+   */
   deleteSheet(index: number): void {
     const wb = this.#workbook.peek();
     const sheet = wb.worksheets[index];
-    if (!sheet || wb.sheetCount <= 1 || !wb.removeSheet(sheet)) return;
-    this.#structural();
+    if (!sheet || wb.sheetCount <= 1) return;
+    this.execute(new DeleteSheetCommand(sheet.name));
     this.setActiveSheet(Math.min(index, wb.sheetCount - 1));
   }
 

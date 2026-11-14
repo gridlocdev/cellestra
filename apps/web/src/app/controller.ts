@@ -2077,7 +2077,14 @@ export class AppController {
   }
 
   deleteSheet(index = this.session.activeIndex.peek()): void {
-    if (this.session.sheetNames.peek().length <= 1) return this.info('A workbook needs at least one sheet.');
+    const names = this.session.sheetNames.peek();
+    if (names.length <= 1) return this.info('A workbook needs at least one sheet.');
+    const name = names[index];
+    if (name === undefined) return;
+    // PRD §8.7: deleting a worksheet always asks, even though it can be undone.
+    const ok = window.confirm(`Delete the sheet “${name}”? Formulas that refer to it will show #REF!.`);
+    this.grid.current?.focus();
+    if (!ok) return;
     this.session.deleteSheet(index);
   }
 }

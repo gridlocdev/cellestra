@@ -539,3 +539,21 @@ describe('slow opens', () => {
     expect(app.session.activeSheet.peek().getValue(0, 0)).toEqual(CellValue.empty);
   });
 });
+
+describe('deleting a sheet', () => {
+  it('asks first, and keeps the sheet when the answer is no', async () => {
+    const app = await makeApp();
+    app.session.addSheet();
+    const confirm = vi.fn(() => false);
+    const g = globalThis as { window?: unknown };
+    const before = g.window;
+    g.window = { confirm };
+    app.deleteSheet(1);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(app.session.sheetNames.peek()).toEqual(['Sheet1', 'Sheet2']);
+    confirm.mockReturnValue(true);
+    app.deleteSheet(1);
+    expect(app.session.sheetNames.peek()).toEqual(['Sheet1']);
+    g.window = before;
+  });
+});

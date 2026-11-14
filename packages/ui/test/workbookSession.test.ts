@@ -63,3 +63,28 @@ describe('WorkbookSession.cellsChangedSince', () => {
     expect(session.cellsChangedSince(sheet.name, start)).toBeNull();
   });
 });
+
+describe('WorkbookSession.deleteSheet', () => {
+  it('turns references into #REF!, can be undone, and never re-links to a new sheet of that name', () => {
+    const session = new WorkbookSession();
+    session.addSheet(); // Sheet2
+    const wb = session.workbook.value;
+    wb.worksheets[1]!.setValue(0, 0, CellValue.number(42));
+    session.setActiveSheet(0);
+    session.execute(EditCommands.setInput('Sheet1', 0, 0, '=Sheet2.A1*2'));
+    expect(wb.worksheets[0]!.getValue(0, 0)).toEqual(CellValue.number(84));
+
+    session.deleteSheet(1);
+    expect(session.sheetNames.value).toEqual(['Sheet1']);
+    expect(wb.worksheets[0]!.find(0, 0)?.formula).toContain('#REF!');
+
+    session.undo();
+    expect(session.sheetNames.value).toEqual(['Sheet1', 'Sheet2']);
+    expect(wb.worksheets[0]!.getValue(0, 0)).toEqual(CellValue.number(84));
+
+    session.redo();
+    session.addSheet(); // a new, empty "Sheet2"
+    expect(session.sheetNames.value).toEqual(['Sheet1', 'Sheet2']);
+    expect(wb.worksheets[0]!.getValue(0, 0).kind).toBe('error');
+  });
+});
