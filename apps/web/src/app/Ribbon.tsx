@@ -346,6 +346,9 @@ function FileTab(ctx: Ctx) {
             <Small {...ctx} id="file.download" label="Download" />
             <Small {...ctx} id="file.revert" label="Revert" />
           </Col>
+          <Col>
+            <Small {...ctx} id="file.close" label="Close" />
+          </Col>
         </div>
       </Group>
       <Group label="Recent">

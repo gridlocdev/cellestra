@@ -93,6 +93,16 @@ export function buildCommands(app: AppController): CommandCatalog {
       enabled: () => app.nasAvailable.value,
     },
     {
+      id: 'file.close',
+      title: 'Close',
+      description: app.native ? 'Close the window' : 'Close the workbook and start a blank one',
+      group: 'File',
+      shortcut: 'mod+w',
+      icon: 'x',
+      run: () => app.closeDocument(),
+      global: true,
+    },
+    {
       id: 'file.save',
       title: 'Save',
       description: 'Save the workbook',

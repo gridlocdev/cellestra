@@ -836,6 +836,15 @@ export class AppController {
   }
 
   /**
+   * Close the document (⌘W): ask about unsaved changes, then close the window (desktop) or go
+   * back to a blank, untitled workbook (browser), which is where the app starts.
+   */
+  async closeDocument(): Promise<void> {
+    if (this.native) return this.requestClose();
+    await this.newDocument();
+  }
+
+  /**
    * Record a save. `edits` is the session's edit count when the bytes were serialized, and
    * `generation` the session's document generation then: when another document has been opened
    * since, the file is only remembered, not made the open document's.

@@ -14,7 +14,7 @@ See [Getting started](getting-started.md) for each one.
 
 ## Files
 
-Cellestra reads and writes `.ods` and keeps anything it doesn't understand intact, so LibreOffice files survive a round trip. **Import CSV…** and **Export Sheet as CSV…** bring in and write out CSV and TSV, and **Export Sheet as PDF…** and **Print…** print a sheet with the settings in **Page Setup…**. **Open Recent…** lists the files you used last.
+Cellestra reads and writes `.ods` and keeps anything it doesn't understand intact, so LibreOffice files survive a round trip. **Import CSV…** and **Export Sheet as CSV…** bring in and write out CSV and TSV, and **Export Sheet as PDF…** and **Print…** print a sheet with the settings in **Page Setup…**. **Open Recent…** lists the files you used last. **Close** (`⌘W`) asks about unsaved changes, then closes the window in the desktop app or starts a blank workbook in the browser.
 
 ## Formulas
 

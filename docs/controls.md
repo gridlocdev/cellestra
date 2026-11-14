@@ -10,6 +10,7 @@
 | Keyboard shortcuts             | `⌘/`                  | `Ctrl+/`                                         |
 | New / open / save              | `⌘N` / `⌘O` / `⌘S`    | `Ctrl+N` / `Ctrl+O` / `Ctrl+S`                   |
 | Save as                        | `⇧⌘S`                 | `Ctrl+Shift+S`                                   |
+| Close                          | `⌘W`                  | `Ctrl+W`                                         |
 | Print                          | `⌘P`                  | `Ctrl+P`                                         |
 | Settings                       | `⌘,`                  | `Ctrl+,`                                         |
 | Undo / redo                    | `⌘Z` / `⇧⌘Z`          | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y`            |
@@ -40,6 +41,8 @@
 | Show formulas                  | `` ⌘` ``              | `` Ctrl+` ``                                     |
 
 `⌥⌘→` / `⌥⌘←` (`Ctrl+Alt+→` / `Ctrl+Alt+←` on Windows and Linux) also move to the next and previous sheet.
+
+In a browser tab, `⌘W` (`Ctrl+W`) belongs to the browser and closes the tab, so use **Close** in the File tab or the command menu there.
 
 ## In the grid
 

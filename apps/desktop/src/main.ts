@@ -27,6 +27,7 @@ import {
   pdfExportTarget,
   writeAtomic,
 } from './files.ts';
+import { withStandardMenus } from './menu.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.join(here, 'web');
@@ -396,8 +397,7 @@ function registerIpc(): void {
   ipcMain.on(Channels.setMenu, (e, items: readonly NativeMenuItem[]) => {
     const win = fromEvent(e);
     if (!win || !trusted(e)) return;
-    const template = toTemplate(items, win);
-    if (process.platform === 'darwin') template.unshift({ role: 'appMenu' });
+    const template = withStandardMenus(toTemplate(items, win), process.platform);
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
   });
   ipcMain.on(Channels.closeAck, (e) => {

@@ -1,7 +1,7 @@
 import { CellRange, CellValue, EditCommands, OdsWriter, SheetDimensions, Workbook } from '@cellestra/core';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { ConflictError, type DocumentRef, type FileStore, type OpenedDocument } from '@cellestra/ui';
-import type { AppController as Controller } from '../src/app/controller.ts';
+import type { AppController as Controller, DialogState as DialogShown } from '../src/app/controller.ts';
 
 // The controller expects a browser; give it just enough of one (no IndexedDB: recovery is a no-op).
 beforeAll(() => {
@@ -810,5 +810,66 @@ describe('deleting a sheet', () => {
     app.deleteSheet(1);
     restore();
     expect(confirm.mock.calls[0]![0]).toMatch(/1 formula on another sheet .*#REF!/);
+  });
+});
+
+describe('closing the document', () => {
+  function opened(app: Controller): void {
+    const wb = Workbook.createNew();
+    wb.worksheets[0]!.setValue(0, 0, CellValue.text('kept'));
+    app.session.load(OdsWriter.write(wb, null), ref('a.ods'));
+  }
+
+  it('asks about unsaved changes and keeps the document when cancelled', async () => {
+    const app = await makeApp();
+    opened(app);
+    app.session.touch();
+    const closing = app.closeDocument();
+    expect(app.dialog.peek()?.kind).toBe('confirm-discard');
+    const d = app.dialog.peek() as Extract<DialogShown, { kind: 'confirm-discard' }>;
+    d.resolve('cancel');
+    await closing;
+    expect(app.session.document.peek()?.name).toBe('a.ods');
+    expect(app.session.modified.peek()).toBe(true);
+  });
+
+  it('goes back to a blank untitled workbook in the browser', async () => {
+    const app = await makeApp();
+    opened(app);
+    app.session.touch();
+    const closing = app.closeDocument();
+    (app.dialog.peek() as Extract<DialogShown, { kind: 'confirm-discard' }>).resolve('discard');
+    await closing;
+    expect(app.session.document.peek()).toBeNull();
+    expect(app.session.modified.peek()).toBe(false);
+    expect(app.session.activeSheet.peek().getValue(0, 0)).toEqual(CellValue.empty);
+  });
+
+  it('closes a clean document without asking', async () => {
+    const app = await makeApp();
+    opened(app);
+    await app.closeDocument();
+    expect(app.dialog.peek()).toBeNull();
+    expect(app.session.document.peek()).toBeNull();
+  });
+
+  it('closes the window on the desktop, after the same question', async () => {
+    const app = await makeApp();
+    const native = { confirmClose: vi.fn(), cancelClose: vi.fn() };
+    (app as unknown as { native: typeof native }).native = native;
+    opened(app);
+    app.session.touch();
+    const cancelled = app.closeDocument();
+    (app.dialog.peek() as Extract<DialogShown, { kind: 'confirm-discard' }>).resolve('cancel');
+    await cancelled;
+    expect(native.cancelClose).toHaveBeenCalledOnce();
+    expect(native.confirmClose).not.toHaveBeenCalled();
+
+    const closing = app.closeDocument();
+    (app.dialog.peek() as Extract<DialogShown, { kind: 'confirm-discard' }>).resolve('discard');
+    await closing;
+    expect(native.confirmClose).toHaveBeenCalledOnce();
+    // The window goes; the document in it is not swapped for a blank one first.
+    expect(app.session.document.peek()?.name).toBe('a.ods');
   });
 });
