@@ -33,6 +33,7 @@ import {
   type GridOverlay,
 } from './render.ts';
 import { canvasRowMeasure, ContentHeights } from './rowHeights.ts';
+import { startsComposition } from './keys.ts';
 import { insertLineBreak } from '../components/lineBreak.ts';
 import { Viewport, HEADER_HEIGHT, HEADER_WIDTH, type Rect } from './viewport.ts';
 import type { GridPalette } from './palette.ts';
@@ -218,6 +219,8 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     references: [] as { range: GridRange; color: string }[],
     /** Pointing while typing a formula: the reference the last click or arrow put in the text. */
     point: null as Point | null,
+    /** The editor was opened by a dead key or IME and has not received a character yet. */
+    composing: false,
     /** Marching-ants dash offset. */
     phase: 0,
     /** The last pointer position over the grid (for the cursor when ⌘ goes down or up). */
@@ -457,6 +460,9 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const at = editingRef.current;
     if (!at) return true;
     const text = editorRef.current!.value;
+    // An edit a dead key or IME opened that never produced a character leaves the cell as it was.
+    if (state.current.composing && text === '') commit = false;
+    state.current.composing = false;
     if (commit && host.commit(at.row, at.column, text) === false) {
       if (refocus) editorRef.current!.select();
       return false;
@@ -682,9 +688,14 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (editingRef.current) return;
-    // An IME is composing (keyCode 229 where isComposing isn't set yet): compositionstart hands
-    // it to the editor; the key itself is not a command or a typed character.
-    if (e.isComposing || e.keyCode === 229) return;
+    // A dead key or an IME: its character arrives later as input, and a grid that can't take text
+    // would lose it. Open the editor now, inside this key event and without preventing it, so the
+    // composition lands there. The key itself is not a command.
+    if (startsComposition(e)) {
+      beginEdit('');
+      state.current.composing = true;
+      return;
+    }
     const mod = e.metaKey || e.ctrlKey;
     if (host.shortcut(e, false)) {
       e.preventDefault();
@@ -754,7 +765,9 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
 
   // IME: composition starts in the grid → hand it to the editor so the candidate window works.
   const onCompositionStart = () => {
-    if (!editingRef.current) beginEdit('');
+    if (editingRef.current) return;
+    beginEdit('');
+    state.current.composing = true;
   };
 
   const onEditorKeyDown = (e: KeyboardEvent) => {
@@ -1208,6 +1221,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const typed = (e as InputEvent).inputType === 'insertText';
     // Typing ends pointing: the next click or arrow inserts a new reference.
     state.current.point = null;
+    if (editor.value !== '') state.current.composing = false;
     // Type-ahead: appending to plain text offers the nearest entry above that starts with it,
     // selected, so the next keystroke replaces it and Enter keeps it.
     const at = editingRef.current;
