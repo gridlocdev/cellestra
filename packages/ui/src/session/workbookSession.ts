@@ -24,7 +24,7 @@ import {
   type Worksheet,
 } from '@cellestra/core';
 import type { DocumentRef } from '../platform/fileStore.ts';
-import type { SelectionState } from './selection.ts';
+import type { GridRange, SelectionState } from './selection.ts';
 import { narrateEdit, narrateHistory } from './statusText.ts';
 
 /** A cell's position within its sheet. */
@@ -236,7 +236,9 @@ export class WorkbookSession {
   /** Told when an edit is refused (a sort over merged cells, an insert that would push data off the sheet). */
   onRefused: (message: string) => void = () => {};
 
-  execute(command: EditCommand): void {
+  /** `target` names where the edit landed in the status line when it reports no cells and the
+   * selection isn't it (a column fitted by double-clicking its edge). */
+  execute(command: EditCommand, target?: GridRange): void {
     const entry = this.#entry();
     // A command that throws (a refused edit) leaves the history as it was, so the selection
     // stacks only move once it has run.
@@ -253,7 +255,11 @@ export class WorkbookSession {
     this.#redoSelections.length = 0;
     this.#apply(result);
     const ranges = entry.selection?.ranges;
-    this.#lastAction.value = narrateEdit(command.label, result, ranges?.[ranges.length - 1] ?? null);
+    this.#lastAction.value = narrateEdit(
+      command.label,
+      result,
+      target ?? ranges?.[ranges.length - 1] ?? null,
+    );
   }
 
   undo(): void {

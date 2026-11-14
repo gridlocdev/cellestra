@@ -1,6 +1,6 @@
 import { CellRange, CellValue, EditCommands, OdsWriter, SheetDimensions, Workbook } from '@cellestra/core';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { ConflictError, type DocumentRef, type FileStore, type OpenedDocument } from '@cellestra/ui';
+import { ConflictError, MAX_ROW, type DocumentRef, type FileStore, type OpenedDocument } from '@cellestra/ui';
 import type { AppController as Controller, DialogState as DialogShown } from '../src/app/controller.ts';
 
 // The controller expects a browser; give it just enough of one (no IndexedDB: recovery is a no-op).
@@ -704,6 +704,32 @@ describe('autofit columns', () => {
     expect(slant).toBeGreaterThan(up!);
     expect(slant).toBeLessThan(flat!);
     expect(wrapped).toBe(up);
+  });
+});
+
+describe('double-click on a column edge', () => {
+  it('fits every selected whole column, ⌘-clicked ones included, or else just that column', async () => {
+    Object.assign(document, {
+      createElement: () => ({
+        getContext: () => ({ font: '', measureText: (t: string) => ({ width: t.length * 10 }) }),
+      }),
+    });
+    const app = await makeApp();
+    const sheet = app.session.activeSheet.peek();
+    for (const c of [0, 1, 2]) sheet.setValue(0, c, CellValue.text('a long heading'));
+    const before = sheet.getColumnWidth(1);
+    app.selection.selectRange({ top: 0, left: 0, bottom: MAX_ROW, right: 0 });
+    app.selection.select(0, 2, { add: true });
+    app.selection.select(MAX_ROW, 2, { extend: true });
+
+    app.autofitColumn(2);
+    expect(sheet.getColumnWidth(0)).toBe(140 + 12);
+    expect(sheet.getColumnWidth(2)).toBe(140 + 12);
+    expect(sheet.getColumnWidth(1)).toBe(before);
+
+    app.autofitColumn(1); // not selected: only its own column
+    expect(sheet.getColumnWidth(1)).toBe(140 + 12);
+    expect(app.session.lastAction.peek()).toBe('Autofitted columns B:B');
   });
 });
 

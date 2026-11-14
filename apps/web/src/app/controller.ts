@@ -1169,10 +1169,10 @@ export class AppController {
     return DataRegion.currentRegion(this.sheet, r.top, r.left);
   }
 
-  run(command: EditCommand | null): void {
+  run(command: EditCommand | null, target?: GridRange): void {
     if (!command) return;
     try {
-      this.session.execute(command);
+      this.session.execute(command, target);
     } catch (e) {
       this.error(e);
     }
@@ -1570,18 +1570,23 @@ export class AppController {
     this.run(EditCommands.setRowHeight(this.sheetName, row, height));
   }
 
-  /** Double-click on a column's edge: fit it, or every selected whole column when it is one of them. */
+  /**
+   * Double-click on a column's edge: fit it, or, when it is one of the selected whole columns, every
+   * selected whole column (⌘-clicked ones included).
+   */
   autofitColumn(column: number): void {
-    const r = this.range;
-    const whole = r.top === 0 && r.bottom >= MAX_ROW;
-    this.autofitColumns(
-      whole && column >= r.left && column <= r.right ? r : CellRange.fromBounds(0, column, MAX_ROW, column),
-    );
+    const whole = this.ranges.filter((r) => r.top === 0 && r.bottom >= MAX_ROW);
+    if (!whole.some((r) => column >= r.left && column <= r.right)) {
+      this.autofitColumns(CellRange.fromBounds(0, column, MAX_ROW, column));
+      return;
+    }
+    this.autofitColumns(whole);
   }
 
-  /** Fit each column the range touches to its widest value anywhere in the column. */
-  autofitColumns(range: CellRange = this.range): void {
-    const r = CellRange.fromBounds(0, range.left, MAX_ROW, range.right);
+  /** Fit each column the ranges touch (the selection's, by default) to its widest value in the column. */
+  autofitColumns(ranges: CellRange | readonly CellRange[] = this.ranges): void {
+    const spans = (Array.isArray(ranges) ? ranges : [ranges]) as readonly CellRange[];
+    const touches = (column: number) => spans.some((r) => column >= r.left && column <= r.right);
     const ctx = document.createElement('canvas').getContext('2d')!;
     const wb = this.session.workbook.peek();
     const sheet = this.sheet;
@@ -1591,7 +1596,7 @@ export class AppController {
     const measured = new Map<string, number>();
     const widths = new Map<number, number>();
     for (const [row, column, cell] of sheet.enumerateCells()) {
-      if (column < r.left || column > r.right || row < r.top || row > r.bottom) continue;
+      if (!touches(column)) continue;
       if (cell.value.kind === 'empty' || sheet.findMerge(row, column)) continue;
       const styleId = sheet.effectiveStyleId(row, column);
       const style = wb.styles.get(styleId);
@@ -1625,7 +1630,9 @@ export class AppController {
     const cmds = [...widths]
       .sort((a, b) => a[0] - b[0])
       .map(([c, width]) => EditCommands.setColumnWidth(this.sheetName, c, Math.ceil(width)));
-    this.run(each('Autofit Columns', cmds));
+    // Always "Autofitted columns …", even for one column, which on its own would read "Resized".
+    if (cmds.length > 0)
+      this.run(new CompositeEditCommand('Autofit Columns', cmds), spans.length === 1 ? spans[0] : undefined);
   }
 
   toggleFreeze(): void {
