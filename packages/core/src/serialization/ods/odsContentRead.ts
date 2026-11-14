@@ -9,6 +9,7 @@ import { SheetDimensions } from '../../model/sheetDimensions.ts';
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import { StylePool } from '../../styling/stylePool.ts';
+import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import { serializeXmlElement, XmlElement, type XmlDocument, type XmlName } from '../../xml/index.ts';
 import { parseInvariantFloat } from './mapping/odsCellStyles.ts';
@@ -31,7 +32,7 @@ import {
   recordValidationRect,
   type ValidationCells,
 } from './odsValidation.ts';
-import { Draw, OdsXmlNames as N, Office, Table, Text, Xlink } from './odsXmlNames.ts';
+import { Calcext, Draw, OdsXmlNames as N, Office, Table, Text, Xlink } from './odsXmlNames.ts';
 
 const MAX_COLUMNS = SheetDimensions.maxColumns;
 const MAX_ROWS = SheetDimensions.maxRows;
@@ -485,6 +486,15 @@ function readRichText(paragraphs: readonly XmlElement[], hyperlink: Hyperlink | 
 }
 
 function readValue(element: XmlElement, paragraphs: readonly XmlElement[]): CellValue {
+  if (element.attr(Calcext('value-type')) === 'error') {
+    // LibreOffice writes an error result as an empty string marked as an error, the token as display.
+    // A token we have no code for (Calc's "Err:502") stays the text it shows.
+    const shown = paragraphs.map(paragraphText).join('\n').trim();
+    const code = CellError.codeFromToken(shown);
+    return code === null
+      ? CellValue.text(shown)
+      : CellValue.error(new CellError(code, `The file saved this result as ${shown}.`));
+  }
   switch (element.attr(Office('value-type'))) {
     case 'float':
     case 'percentage':

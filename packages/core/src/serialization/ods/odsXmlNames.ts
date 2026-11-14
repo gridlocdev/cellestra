@@ -13,6 +13,11 @@ export const Config = xmlNamespace('urn:oasis:names:tc:opendocument:xmlns:config
 export const Xlink = xmlNamespace('http://www.w3.org/1999/xlink', 'xlink');
 export const Draw = xmlNamespace('urn:oasis:names:tc:opendocument:xmlns:drawing:1.0', 'draw');
 export const Dc = xmlNamespace('http://purl.org/dc/elements/1.1/', 'dc');
+/** LibreOffice's Calc extension: `calcext:value-type="error"` marks a cell whose result is an error. */
+export const Calcext = xmlNamespace(
+  'urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0',
+  'calcext',
+);
 /** OpenFormula: the `of:` prefix on table:formula values resolves to this namespace. */
 export const Of = xmlNamespace('urn:oasis:names:tc:opendocument:xmlns:of:1.2', 'of');
 

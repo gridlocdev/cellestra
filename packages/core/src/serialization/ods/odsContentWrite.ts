@@ -23,6 +23,7 @@ import { NO_PAGE_PLAN, isGeneratedTableStyle, type PagePlan } from './odsPageSet
 import { StyleRegistry } from './odsStyleRegistry.ts';
 import { addContentValidations } from './odsValidation.ts';
 import {
+  Calcext,
   Dc,
   Draw,
   Fo,
@@ -102,6 +103,7 @@ export function writeContentXml(
     .declare(Ooo.prefix, Ooo.uri)
     .declare(Xlink.prefix, Xlink.uri)
     .declare(Of.prefix, Of.uri)
+    .declare(Calcext.prefix, Calcext.uri)
     // Comments (office:annotation) carry dc:creator and dc:date; declared once here, not per note.
     .declare(Dc.prefix, Dc.uri)
     .setAttr(Office('version'), '1.3')
@@ -535,6 +537,13 @@ function writeCellContent(element: XmlElement, cell: Cell, registry: StyleRegist
       } else if (isDate) {
         element.setAttr(Office('value-type'), 'date');
         element.setAttr(Office('date-value'), dateValueText(value.value));
+      } else if (kind === 'currency') {
+        element.setAttr(Office('value-type'), 'currency');
+        element.setAttr(Office('currency'), currencyCode(format.code));
+        element.setAttr(Office('value'), floatValueText(value.value));
+      } else if (kind === 'percent') {
+        element.setAttr(Office('value-type'), 'percentage');
+        element.setAttr(Office('value'), floatValueText(value.value));
       } else {
         element.setAttr(Office('value-type'), 'float');
         element.setAttr(Office('value'), floatValueText(value.value));
@@ -563,7 +572,10 @@ function writeCellContent(element: XmlElement, cell: Cell, registry: StyleRegist
       lines = value.value.replace(/\r\n?/g, '\n').split('\n');
       break;
     case 'error':
+      // As LibreOffice writes it: an empty string value marked as an error, the token as display.
       element.setAttr(Office('value-type'), 'string');
+      element.setAttr(Office('string-value'), '');
+      element.setAttr(Calcext('value-type'), 'error');
       lines = [value.error.token];
       break;
     case 'empty':
@@ -585,6 +597,20 @@ function writeCellContent(element: XmlElement, cell: Cell, registry: StyleRegist
     }
     element.add(paragraph);
   });
+}
+
+const CURRENCY_BY_SYMBOL: Readonly<Record<string, string>> = { $: 'USD', '€': 'EUR', '£': 'GBP', '¥': 'JPY' };
+
+/**
+ * The ISO 4217 code for `office:currency`, read from the format's symbol: `[$€-407]`, `[$USD]`,
+ * `"$"` or a bare `€`. Null (the attribute is optional) when the code names no currency we know.
+ */
+function currencyCode(code: string): string | null {
+  const tagged = /\[\$([^\]-]+)/.exec(code)?.[1];
+  const symbol = tagged ?? /[$€£¥]/.exec(code)?.[0];
+  if (symbol === undefined) return null;
+  if (/^[A-Z]{3}$/.test(symbol)) return symbol;
+  return CURRENCY_BY_SYMBOL[symbol] ?? null;
 }
 
 /**
