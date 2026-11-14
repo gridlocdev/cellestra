@@ -179,6 +179,20 @@ export async function orphanedRecoveries(): Promise<RecoverySnapshot[]> {
   return all.filter((s) => s.key !== recoveryKey && !held.has(s.key)).sort((a, b) => b.saved - a.saved);
 }
 
+/**
+ * Keep a snapshot after this tab moves on to another document, under a key no tab holds, so the
+ * next start offers it like one a crash left behind. For a document the browser could only
+ * download: it can't tell whether the download was kept.
+ */
+export async function keepRecoveryAside(
+  name: string,
+  ref: DocumentRef | null,
+  bytes: Uint8Array,
+): Promise<void> {
+  const snap: RecoverySnapshot = { key: `kept-${randomId()}`, name, ref, bytes, saved: Date.now() };
+  await tx('recovery', 'readwrite', (s) => s.put(snap)).catch(() => {});
+}
+
 /** Drop a snapshot: this tab's own by default, or an orphan once it was restored or discarded. */
 export async function clearRecovery(key: string = recoveryKey): Promise<void> {
   await tx('recovery', 'readwrite', (s) => s.delete(key)).catch(() => {});

@@ -2,13 +2,21 @@ import { CellRange, CellValue, EditCommands, OdsWriter, SheetDimensions, Workboo
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   ConflictError,
+  keepRecoveryAside,
   MAX_ROW,
   type DocumentRef,
   type FileStore,
   type GridController,
   type OpenedDocument,
 } from '@cellestra/ui';
+import type * as Ui from '@cellestra/ui';
 import type { AppController as Controller, DialogState as DialogShown } from '../src/app/controller.ts';
+
+// Recovery writes are no-ops here (no IndexedDB); watch which ones the controller asks for.
+vi.mock('@cellestra/ui', async (importOriginal) => {
+  const ui = await importOriginal<typeof Ui>();
+  return { ...ui, keepRecoveryAside: vi.fn(ui.keepRecoveryAside) };
+});
 
 // The controller expects a browser; give it just enough of one (no IndexedDB: recovery is a no-op).
 beforeAll(() => {
@@ -302,6 +310,45 @@ describe('overwriting after a conflict', () => {
       { force: true, ignoreLock: false },
       { force: true, ignoreLock: true },
     ]);
+  });
+});
+
+describe('saving from the unsaved-changes question in a browser that can only download', () => {
+  function downloaded(app: Controller, done: 'downloaded' | 'saved') {
+    app.session.load(csvBytes, { store: 'browser', name: 'up.csv', id: 'up.csv', version: '1' });
+    app.session.touch();
+    vi.spyOn(app, 'askCsvLoss').mockResolvedValue('csv');
+    vi.spyOn(app.browser, 'saveAs').mockResolvedValue({
+      store: 'browser',
+      name: 'up.csv',
+      id: 'up.csv',
+      version: null,
+      ...(done === 'downloaded' ? { downloaded: true } : {}),
+    });
+  }
+  const answerSave = (app: Controller) =>
+    (app.dialog.peek() as Extract<DialogShown, { kind: 'confirm-discard' }>).resolve('save');
+
+  it('keeps a recovery snapshot of the document it replaces, since the download is not confirmed', async () => {
+    const app = await makeApp();
+    downloaded(app, 'downloaded');
+    vi.mocked(keepRecoveryAside).mockClear();
+    const replacing = app.newDocument();
+    answerSave(app);
+    await replacing;
+    expect(app.session.document.peek()).toBeNull();
+    expect(keepRecoveryAside).toHaveBeenCalledOnce();
+    expect(vi.mocked(keepRecoveryAside).mock.calls[0]![0]).toBe('up.csv');
+  });
+
+  it('keeps none once the file was really saved', async () => {
+    const app = await makeApp();
+    downloaded(app, 'saved');
+    vi.mocked(keepRecoveryAside).mockClear();
+    const replacing = app.newDocument();
+    answerSave(app);
+    await replacing;
+    expect(keepRecoveryAside).not.toHaveBeenCalled();
   });
 });
 

@@ -57,6 +57,7 @@ import {
   csvLosses,
   darkPalette,
   forgetRecent,
+  keepRecoveryAside,
   lightPalette,
   lockWarning,
   nativeBridge,
@@ -156,6 +157,9 @@ export interface DataTarget {
 const RECOVERY_INTERVAL_MS = 30_000;
 /** A recovery snapshot is also taken this long after the last edit, so a pause in typing is safe. */
 const RECOVERY_IDLE_MS = 3_000;
+/** What a save did: wrote the file, only handed it to the browser as a download, or nothing. */
+type SaveOutcome = 'saved' | 'downloaded' | false;
+
 /** How often a file change on disk that arrived at a bad moment (a dialog, an edit) is tried again. */
 const EXTERNAL_CHANGE_RETRY_MS = 1_000;
 /** How much bigger than raw CSS px the grid draws at 100% zoom. */
@@ -306,7 +310,7 @@ export class AppController {
   /** The session version the last recovery snapshot was taken at. */
   #snapshotVersion = -1;
   /** The save (or Save As) in flight; a second one waits for it instead of racing it. */
-  #saving: Promise<boolean> | null = null;
+  #saving: Promise<SaveOutcome> | null = null;
   /** A close request is showing its prompt; repeated requests don't stack dialogs. */
   #closing = false;
   #autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -589,7 +593,7 @@ export class AppController {
 
   /** Save in place when the store can; otherwise (new document, browser without a handle) Save As. */
   save(force = false): Promise<boolean> {
-    return this.#exclusive(() => this.#save(force, false));
+    return this.#exclusive(() => this.#save(force, false)).then((done) => done !== false);
   }
 
   /** (Re)start auto-save's countdown, when it is on and there is something to save. */
@@ -631,13 +635,13 @@ export class AppController {
       return false;
     const store = this.storeFor(ref);
     if (!store.capabilities.saveInPlace || (ref.store === 'browser' && !ref.handle)) return false;
-    const run = async (): Promise<boolean> => {
+    const run = async (): Promise<SaveOutcome> => {
       const edits = this.session.editCount;
       const generation = this.session.generation;
       const bytes = this.session.serialize();
       try {
         this.saved(await store.save(ref, bytes, { force: false, background: true }), edits, generation);
-        return true;
+        return 'saved';
       } catch (e) {
         this.#autoSaveSuspendedIn = generation;
         this.error(new Error(autoSaveFailure(e)));
@@ -647,7 +651,7 @@ export class AppController {
     const p = run();
     this.#saving = p;
     try {
-      return await p;
+      return (await p) !== false;
     } finally {
       if (this.#saving === p) this.#saving = null;
     }
@@ -656,7 +660,7 @@ export class AppController {
   saveAs(format: 'ods' | 'csv' = this.session.format.peek()): Promise<boolean> {
     // Save As and exports always run: a background save that left the document clean doesn't
     // answer the user's request for a new file.
-    return this.#exclusive(() => this.#saveAs(format), true);
+    return this.#exclusive(() => this.#saveAs(format), true).then((done) => done !== false);
   }
 
   /**
@@ -664,9 +668,9 @@ export class AppController {
    * is still something to save (so a second ⌘S never races the first into a false conflict), or
    * when `always` (Save As, exports) asks for it regardless.
    */
-  async #exclusive(run: () => Promise<boolean>, always = false): Promise<boolean> {
+  async #exclusive(run: () => Promise<SaveOutcome>, always = false): Promise<SaveOutcome> {
     while (this.#saving) {
-      const result = await this.#saving.catch(() => false);
+      const result = await this.#saving.catch((): SaveOutcome => false);
       if (!always && !this.session.modified.peek()) return result;
     }
     const p = run();
@@ -679,7 +683,7 @@ export class AppController {
   }
 
   /** `force` skips the changed-since-opened check; `ignoreLock` the LibreOffice lock. Each is its own answer. */
-  async #save(force: boolean, ignoreLock: boolean): Promise<boolean> {
+  async #save(force: boolean, ignoreLock: boolean): Promise<SaveOutcome> {
     const ref = this.session.document.peek();
     if (!ref) return this.#saveAs(this.session.format.peek());
     const store = this.storeFor(ref);
@@ -696,9 +700,12 @@ export class AppController {
     const bytes = this.session.serialize();
     try {
       const saved = await store.save(ref, bytes, { force, ignoreLock });
-      if (saved.downloaded) this.info(`Downloaded ${saved.name}`);
-      else this.saved(saved, edits, generation);
-      return true;
+      if (saved.downloaded) {
+        this.info(`Downloaded ${saved.name}`);
+        return 'downloaded';
+      }
+      this.saved(saved, edits, generation);
+      return 'saved';
     } catch (e) {
       if (!(e instanceof ConflictError)) {
         this.error(e);
@@ -713,7 +720,7 @@ export class AppController {
     }
   }
 
-  async #saveAs(format: 'ods' | 'csv'): Promise<boolean> {
+  async #saveAs(format: 'ods' | 'csv'): Promise<SaveOutcome> {
     const base = this.session.title.peek().replace(/\.[^.]+$/, '');
     // A CSV export of an .ods document is a copy: the document stays the .ods.
     const isExport = format === 'csv' && this.session.format.peek() === 'ods';
@@ -735,16 +742,16 @@ export class AppController {
       if (!saved) return false;
       if (isExport) {
         this.info(`Exported ${saved.name}`);
-        return true;
+        return 'saved';
       }
       if (saved.downloaded) {
         // The browser can't confirm the download was kept: keep the changes marked unsaved and
         // the recovery snapshot, so closing the tab still warns and nothing is lost.
         this.info(`Downloaded ${saved.name}. This browser can't save in place, so it stays marked unsaved.`);
-        return true;
+        return 'downloaded';
       }
       this.saved(saved, edits, generation);
-      return true;
+      return 'saved';
     } catch (e) {
       this.error(e);
       return false;
@@ -1030,7 +1037,18 @@ export class AppController {
       resolve,
     }));
     if (choice === 'cancel') return false;
-    if (choice === 'save') return this.save();
+    if (choice === 'save') {
+      const done = await this.#exclusive(() => this.#save(false, false));
+      // Only downloaded: the document is about to be replaced and its snapshot cleared, but the
+      // browser can't say the download was kept, so a copy waits for the next start.
+      if (done === 'downloaded')
+        await keepRecoveryAside(
+          this.session.title.peek(),
+          this.session.document.peek(),
+          this.session.serialize('ods'),
+        );
+      return done !== false;
+    }
     return true;
   }
 
