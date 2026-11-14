@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { CellSnapshotCommand } from '../../src/editing/cellSnapshotCommand.ts';
+import type { EditCommand } from '../../src/editing/editCommand.ts';
 import { EditCommands } from '../../src/editing/editCommands.ts';
 import { EditHistory } from '../../src/editing/editHistory.ts';
 import { CellAddress } from '../../src/model/cellAddress.ts';
@@ -96,5 +98,60 @@ describe('clear commands', () => {
 
     history.undo();
     expect(workbook.styles.get(sheet.effectiveStyleId(1, 1)).font.bold).toBe(false);
+  });
+
+  describe('on a sparse sheet the undo snapshot holds only the stored cells', () => {
+    // A1:A20000 plus one value in AX1: the used range is A1:AX20000, a million positions.
+    function sparse() {
+      const { workbook, history, sheet } = setup();
+      for (let r = 0; r < 20_000; r++) sheet.setValue(r, 0, CellValue.number(r));
+      sheet.setValue(0, 49, CellValue.text('far'));
+      sheet.setFormula(5, 0, 'A1+1', CellValue.number(1));
+      sheet.getOrCreate(7, 0).styleId = workbook.styles.intern(bold(workbook.styles.get(0)));
+      return { workbook, history, sheet };
+    }
+    const snapshotSize = (command: EditCommand): number =>
+      (command as CellSnapshotCommand)['snapshot']!.length;
+
+    it('clear contents', () => {
+      const { history, sheet } = sparse();
+      const styleId = sheet.find(7, 0)!.styleId;
+      const command = EditCommands.clearContents(sheet.name, wholeSheet());
+      const result = history.execute(command);
+      expect(snapshotSize(command)).toBe(20_001);
+      expect(result.changedCells).toHaveLength(20_001);
+      expect(sheet.getValue(3, 0).kind).toBe('empty');
+      expect(sheet.find(7, 0)!.styleId).toBe(styleId);
+
+      history.undo();
+      expect(sheet.cellCount).toBe(20_001);
+      expect(sheet.getValue(3, 0)).toEqual(CellValue.number(3));
+      expect(sheet.getValue(0, 49)).toEqual(CellValue.text('far'));
+      expect(sheet.find(5, 0)!.formula).toBe('A1+1');
+      expect(sheet.find(7, 0)!.styleId).toBe(styleId);
+    });
+
+    it('clear all', () => {
+      const { history, sheet } = sparse();
+      const command = EditCommands.clearAll(sheet.name, CellRange.parse('A1:AX20000'));
+      history.execute(command);
+      expect(snapshotSize(command)).toBe(20_001);
+      expect(sheet.cellCount).toBe(0);
+
+      history.undo();
+      expect(sheet.cellCount).toBe(20_001);
+      expect(sheet.getValue(19_999, 0)).toEqual(CellValue.number(19_999));
+      expect(sheet.find(7, 0)!.styleId).not.toBe(StylePool.defaultId);
+    });
+
+    it('insert checkboxes takes back the cells it filled', () => {
+      const { workbook, history, sheet } = setup();
+      sheet.setValue(1, 1, CellValue.number(5));
+      history.execute(EditCommands.insertCheckboxes(workbook, sheet.name, CellRange.parse('A1:C3')));
+      expect(sheet.getValue(0, 0)).toEqual(CellValue.boolean(false));
+      history.undo();
+      expect(sheet.cellCount).toBe(1);
+      expect(sheet.getValue(1, 1)).toEqual(CellValue.number(5));
+    });
   });
 });

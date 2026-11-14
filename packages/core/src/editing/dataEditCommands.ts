@@ -20,7 +20,7 @@ import {
   requireSheet,
   type EditCommand,
 } from './editCommand.ts';
-import { clampedPositions, clampToUsed, coversWholeColumns, EditCommands } from './editCommands.ts';
+import { clampToUsed, coversWholeColumns, EditCommands } from './editCommands.ts';
 
 type LineState = [index: number, styleId: number, hidden: boolean];
 
@@ -39,10 +39,10 @@ export const DataEditCommands = {
         // step keeps those flags so undo shows the same rows again.
         new CompositeEditCommand('Sort', [
           filteredRowsCommand(sheet, range),
-          new CellSnapshotCommand(
+          CellSnapshotCommand.overRange(
             'Sort',
             sheet,
-            (ws) => clampedPositions(ws, range),
+            (ws) => clampToUsed(ws, range),
             (ws) => SortEngine.sort(ws, clampToUsed(ws, range) ?? range, spec, loc),
           ),
         ]),

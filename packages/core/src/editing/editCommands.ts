@@ -37,11 +37,6 @@ export function clampToUsed(sheet: Worksheet, range: CellRange): CellRange | nul
   return CellRange.fromBounds(top, left, bottom, right);
 }
 
-export function clampedPositions(sheet: Worksheet, range: CellRange): Position[] {
-  const clamped = clampToUsed(sheet, range);
-  return clamped ? [...clamped.positions()] : [];
-}
-
 /** The range to style: verbatim when modest, else clamped to the used range, else its top-left cell. */
 function styleRange(sheet: Worksheet, range: CellRange): CellRange {
   if (range.rowCount * range.columnCount < OVERSIZED_CELL_CAP) return range;
@@ -118,14 +113,14 @@ export const EditCommands = {
 
   /** Drop values and formulas; style and hyperlink stay. */
   clearContents: (sheet: string, range: CellRange): EditCommand =>
-    new CellSnapshotCommand(
+    CellSnapshotCommand.overRange(
       'Clear Contents',
       sheet,
-      (ws) => clampedPositions(ws, range),
+      (ws) => clampToUsed(ws, range),
       (ws) => {
-        for (const [row, column] of clampToUsed(ws, range)?.positions() ?? []) {
-          if (ws.find(row, column)) ws.setValue(row, column, CellValue.empty);
-        }
+        const clamped = clampToUsed(ws, range);
+        if (!clamped) return;
+        for (const [row, column] of ws.cellsIn(clamped)) ws.setValue(row, column, CellValue.empty);
       },
     ),
 
@@ -134,14 +129,14 @@ export const EditCommands = {
 
   /** Content, style, hyperlink and the comment or shapes a file gave it — the cell is gone afterwards. */
   clearAll: (sheet: string, range: CellRange): EditCommand =>
-    new CellSnapshotCommand(
+    CellSnapshotCommand.overRange(
       'Clear All',
       sheet,
-      (ws) => clampedPositions(ws, range),
+      (ws) => clampToUsed(ws, range),
       (ws) => {
-        for (const [row, column] of clampToUsed(ws, range)?.positions() ?? []) {
-          const cell = ws.find(row, column);
-          if (!cell) continue;
+        const clamped = clampToUsed(ws, range);
+        if (!clamped) return;
+        for (const [row, column, cell] of ws.cellsIn(clamped)) {
           cell.formula = null;
           cell.value = CellValue.empty;
           cell.styleId = StylePool.defaultId;
@@ -186,10 +181,10 @@ export const EditCommands = {
    * usual. A whole-column or whole-row range fills only up to the sheet's used area.
    */
   insertCheckboxes(workbook: Workbook, sheet: string, range: CellRange): EditCommand {
-    const positions = (ws: Worksheet): Position[] =>
+    const fillRange = (ws: Worksheet): CellRange | null =>
       coversWholeColumns(range) || coversWholeRows(range) || range.cellCount > OVERSIZED_CELL_CAP
-        ? clampedPositions(ws, range)
-        : [...range.positions()];
+        ? clampToUsed(ws, range)
+        : range;
     const style = EditCommands.applyStyle(
       workbook,
       sheet,
@@ -197,8 +192,8 @@ export const EditCommands = {
       (s) => ({ ...s, checkbox: true }),
       'Checkbox',
     );
-    const fill = new CellSnapshotCommand('Checkbox', sheet, positions, (ws) => {
-      for (const [row, column] of positions(ws)) {
+    const fill = CellSnapshotCommand.overRange('Checkbox', sheet, fillRange, (ws) => {
+      for (const [row, column] of fillRange(ws)?.positions() ?? []) {
         const cell = ws.find(row, column);
         if (!cell || (cell.formula === null && cell.value.kind === 'empty'))
           ws.setValue(row, column, CellValue.boolean(false));

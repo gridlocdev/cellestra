@@ -155,6 +155,27 @@ export class Worksheet {
     if (e && (row === e.lastRow || column === e.lastColumn)) this.#cellExtent = undefined;
   }
 
+  /**
+   * The stored cells inside `range`, found by looking up each position or by scanning the storage,
+   * whichever is less work, so a huge, mostly empty range costs only its stored cells.
+   */
+  cellsIn(range: CellRange): [row: number, column: number, cell: Cell][] {
+    const out: [number, number, Cell][] = [];
+    if (range.cellCount <= this.cells.size) {
+      for (const [row, column] of range.positions()) {
+        const cell = this.find(row, column);
+        if (cell) out.push([row, column, cell]);
+      }
+      return out;
+    }
+    for (const [key, cell] of this.cells) {
+      const row = keyRow(key);
+      const column = keyColumn(key);
+      if (range.contains(row, column)) out.push([row, column, cell]);
+    }
+    return out;
+  }
+
   /** Every stored cell, in insertion order. Don't mutate the map while iterating. */
   *enumerateCells(): IterableIterator<[row: number, column: number, cell: Cell]> {
     for (const [key, cell] of this.cells) yield [keyRow(key), keyColumn(key), cell];
