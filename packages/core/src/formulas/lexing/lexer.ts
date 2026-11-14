@@ -43,6 +43,8 @@ export interface Token {
   readonly type: TokenType;
   readonly text: string;
   readonly position: number;
+  /** Whitespace comes right before it. Between two references that is the intersection operator. */
+  readonly spaced?: boolean;
 }
 
 const SINGLE: Readonly<Record<string, TokenType>> = {
@@ -97,7 +99,13 @@ export class Lexer {
   }
 
   next(): Token {
+    const before = this.pos;
     this.skipWhitespace();
+    const token = this.read();
+    return token.position > before ? { ...token, spaced: true } : token;
+  }
+
+  private read(): Token {
     const src = this.source;
     if (this.pos >= src.length) return { type: 'endOfInput', text: '', position: this.pos };
 

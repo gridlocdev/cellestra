@@ -156,8 +156,16 @@ export function parseRuleValue(text: string, formula: boolean): Expr | null {
   const source = t.startsWith('=') ? t.slice(1) : t;
   const parsed = Parser.tryParse(source);
   if (formula || t.startsWith('=')) return parsed.ok ? parsed.expr : null;
-  if (parsed.ok && parsed.expr.kind !== 'name') return parsed.expr;
+  if (parsed.ok && !onlyWords(parsed.expr)) return parsed.expr;
   return { kind: 'literal', value: CellValue.text(t) };
+}
+
+/** A bare name, or words that only parse as names intersected by spaces (`In progress`). */
+function onlyWords(expr: Expr): boolean {
+  if (expr.kind === 'name') return true;
+  return (
+    expr.kind === 'binary' && expr.operator === 'intersect' && onlyWords(expr.left) && onlyWords(expr.right)
+  );
 }
 
 function conditionOf(rule: RuleDraft): MapCondition | string {

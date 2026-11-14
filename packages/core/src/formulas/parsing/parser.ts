@@ -211,14 +211,33 @@ export class Parser {
     return left;
   }
 
-  /** The reference intersection `!`, which binds tightest after `:` (as in Calc and OpenFormula). */
+  /**
+   * The reference intersection `!`, which binds tightest after `:` (as in Calc and OpenFormula). A
+   * space between two references is the same operator, as in Calc and Excel (`A1:C3 B2:D4`); it is
+   * written back as `!`.
+   */
   private parseIntersection(): Expr {
     let left = this.parsePrimary();
-    while (this.current.type === 'bang') {
-      this.advance();
-      left = Expr.binary('intersect', left, this.parsePrimary());
+    for (;;) {
+      if (this.match('bang')) left = Expr.binary('intersect', left, this.parsePrimary());
+      else if (this.atSpaceIntersection(left)) {
+        const at = this.current.position;
+        const right = this.parsePrimary();
+        if (!isReferenceExpr(right))
+          throw new FormulaParseException('Only references can be intersected with a space.', at);
+        left = Expr.binary('intersect', left, right);
+      } else return left;
     }
-    return left;
+  }
+
+  /** After a reference, whitespace and then something that can start another reference. */
+  private atSpaceIntersection(left: Expr): boolean {
+    const { type, spaced } = this.current;
+    return (
+      spaced === true &&
+      (type === 'name' || type === 'leftParen' || type === 'number') &&
+      isReferenceExpr(left)
+    );
   }
 
   /**
