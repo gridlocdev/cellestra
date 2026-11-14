@@ -15,7 +15,7 @@ import { CellValue } from '../values/cellValue.ts';
 export const DuplicateRemover = {
   /**
    * Drop data rows whose key columns (all columns when `keyColumns` is empty) repeat an earlier row,
-   * compacting survivors upward within the range. A moved row's relative references into the range
+   * ignoring case, compacting survivors upward within the range. A moved row's relative references into the range
    * follow it, as they do when sorting. Returns how many rows went.
    */
   remove(sheet: Worksheet, range: CellRange, keyColumns: readonly number[], hasHeader: boolean): number {
@@ -29,7 +29,10 @@ export const DuplicateRemover = {
     const survivors: { originalRow: number; cells: (Cell | null)[] }[] = [];
     let removed = 0;
     for (let row = first; row <= range.bottom; row++) {
-      const key = keys.map((c) => CellValue.toInvariantString(sheet.getValue(row, c))).join('\u001f');
+      // Case-insensitive, as Calc's and Excel's duplicate checks are by default.
+      const key = keys
+        .map((c) => CellValue.toInvariantString(sheet.getValue(row, c)).toUpperCase())
+        .join('\u001f');
       if (seen.has(key)) {
         removed++;
         continue;
