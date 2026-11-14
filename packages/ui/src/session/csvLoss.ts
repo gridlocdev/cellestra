@@ -7,7 +7,8 @@ import { CellStyles, NumberFormats, styleKey, type Workbook, type Worksheet } fr
  */
 export function csvLosses(workbook: Workbook, sheet: Worksheet): string[] {
   const losses: string[] = [];
-  if (workbook.sheetCount > 1) losses.push(`${workbook.sheetCount - 1} other sheet(s)`);
+  if (workbook.sheetCount > 1)
+    losses.push(`${workbook.sheetCount - 1} other sheet(s): only “${sheet.name}” is kept`);
   let formulas = false;
   let styles = false;
   const plain = styleKey(CellStyles.default);

@@ -144,12 +144,24 @@ export class WorkbookSession {
     }
   }
 
-  /** Bytes in the document's own format (CSV writes the active sheet's displayed values). */
+  /**
+   * The sheet CSV writes. A CSV document is its first grid sheet, whichever sheet is on screen, so
+   * Save never swaps the file's data for a scratch sheet or a chart. An export of an .ods writes
+   * the active sheet, unless that is a chart.
+   */
+  csvSheet(format: DocumentFormat = this.#format.peek()): Worksheet {
+    const wb = this.#workbook.peek();
+    const active = this.activeSheet.peek();
+    if (format !== 'csv' && !active.isChartSheet) return active;
+    return wb.worksheets.find((s) => !s.isChartSheet) ?? active;
+  }
+
+  /** Bytes in the document's own format (CSV writes one sheet's displayed values: `csvSheet`). */
   serialize(format: DocumentFormat = this.#format.peek(), name = this.title.peek()): Uint8Array {
     const wb = this.#workbook.peek();
     if (format === 'ods') return OdsWriter.write(wb, this.#package);
     const options = /\.tsv$/i.test(name) ? CsvOptions.tab : CsvOptions.comma;
-    return new TextEncoder().encode(writeCsv(wb, this.activeSheet.peek(), options));
+    return new TextEncoder().encode(writeCsv(wb, this.csvSheet(), options));
   }
 
   /**

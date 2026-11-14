@@ -554,7 +554,7 @@ export class AppController {
     // A CSV that would lose formatting or other sheets asks first; one that wouldn't is fine.
     if (
       this.session.format.peek() === 'csv' &&
-      csvLosses(this.session.workbook.peek(), this.session.activeSheet.peek()).length > 0
+      csvLosses(this.session.workbook.peek(), this.session.csvSheet()).length > 0
     )
       return false;
     const store = this.storeFor(ref);
@@ -690,7 +690,7 @@ export class AppController {
    * formulas, formatting), ask first. Resolves 'csv' straight away when nothing would be lost.
    */
   async askCsvLoss(name: string): Promise<'csv' | 'ods' | 'cancel'> {
-    const losses = csvLosses(this.session.workbook.peek(), this.session.activeSheet.peek());
+    const losses = csvLosses(this.session.workbook.peek(), this.session.csvSheet());
     if (losses.length === 0) return 'csv';
     return this.ask<'csv' | 'ods' | 'cancel'>('cancel', (resolve) => ({
       kind: 'csv-loss',
