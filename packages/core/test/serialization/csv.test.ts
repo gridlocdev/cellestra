@@ -118,6 +118,43 @@ describe('Csv', () => {
     expect(sheet.getValue(0, 2)).toEqual(CellValue.number(17961)); // 4 March 1949
   });
 
+  it('defuses text that a spreadsheet would run as a formula', () => {
+    const workbook = Workbook.createNew();
+    const sheet = workbook.activeSheet;
+    sheet.setValue(0, 0, CellValue.text('=HYPERLINK("http://x","y")'));
+    sheet.setValue(0, 1, CellValue.text('@SUM(A1)'));
+    sheet.setValue(0, 2, CellValue.text("+cmd|' /C calc'!A0"));
+    sheet.setValue(0, 3, CellValue.text('-2+3+cmd'));
+    sheet.setValue(0, 4, CellValue.text('a=b'));
+
+    expect(writeCsv(workbook, sheet)).toBe(
+      `"'=HYPERLINK(""http://x"",""y"")",'@SUM(A1),'+cmd|' /C calc'!A0,'-2+3+cmd,a=b\n`,
+    );
+  });
+
+  it('leaves negative numbers and number-like text unescaped', () => {
+    const workbook = Workbook.createNew();
+    const sheet = workbook.activeSheet;
+    sheet.setValue(0, 0, CellValue.number(-5));
+    sheet.setValue(0, 1, CellValue.text('+1 555 123 4567'));
+    sheet.setValue(0, 2, CellValue.text('-12.5'));
+
+    expect(writeCsv(workbook, sheet)).toBe('-5,+1 555 123 4567,-12.5\n');
+  });
+
+  it('reads its own defused text back unchanged', () => {
+    const workbook = Workbook.createNew();
+    const sheet = workbook.activeSheet;
+    sheet.setValue(0, 0, CellValue.text('=1+1'));
+    sheet.setValue(0, 1, CellValue.text('-x'));
+    sheet.setValue(0, 2, CellValue.text("'quoted"));
+    const back = readCsv(writeCsv(workbook, sheet), INVARIANT).activeSheet;
+
+    expect(back.getValue(0, 0)).toEqual(CellValue.text('=1+1'));
+    expect(back.getValue(0, 1)).toEqual(CellValue.text('-x'));
+    expect(back.getValue(0, 2)).toEqual(CellValue.text("'quoted"));
+  });
+
   it('keeps a lone quote run and an unterminated final record', () => {
     expect(parseCsv('a,b')).toEqual([['a', 'b']]);
     expect(parseCsv('"x"')).toEqual([['x']]);

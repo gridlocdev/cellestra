@@ -3,11 +3,13 @@ import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import { NumberFormatter } from '../../styling/numberFormatter.ts';
 import { CsvOptions } from './csvOptions.ts';
+import { defuseFormulaText } from './formulaInjection.ts';
 
 /**
  * Write a worksheet to CSV. Exports the **displayed/computed** values, never formulas (PRD §8.4):
  * numbers and dates are formatted with each cell's number format and the locale. RFC 4180 quoting;
- * LF line endings. The workbook is passed because a sheet does not know its workbook (styles and
+ * LF line endings. Text another spreadsheet would run as a formula gets a leading apostrophe
+ * (see `formulaInjection.ts`). The workbook is passed because a sheet does not know its workbook (styles and
  * the document locale live there).
  */
 export function writeCsv(
@@ -53,6 +55,7 @@ export function writeCsv(
 function displayValue(workbook: Workbook, cell: Cell, locale: string): string {
   const code = workbook.styles.get(cell.styleId).numberFormat.code;
   const value = cell.value;
+  if (value.kind === 'text') return defuseFormulaText(NumberFormatter.format(value, code, locale));
   if (
     value.kind === 'number' &&
     Number.isFinite(value.value) &&
