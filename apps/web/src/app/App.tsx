@@ -372,6 +372,12 @@ function FormulaBarConnected({
     if (r.top === r.bottom && r.left === r.right) return a;
     return `${SheetDimensions.columnToLetters(r.left)}${r.top + 1}:${SheetDimensions.columnToLetters(r.right)}${r.bottom + 1}`;
   });
+  // The cell typing in the bar belongs to: its document, sheet and position.
+  const target = useComputed(() => {
+    void s.workbook.value;
+    const { row, column } = app.selection.active.value;
+    return `${s.generation}|${s.activeSheet.value.name}|${row}|${column}`;
+  });
   const content = useComputed(() => {
     void s.version.value;
     void s.activeSheet.value;
@@ -385,6 +391,7 @@ function FormulaBarConnected({
       disabled={s.activeSheet.value.isChartSheet}
       address={address.value}
       content={content.value}
+      target={target.value}
       onCommit={(text) => {
         const { row, column } = app.selection.active.peek();
         if (!app.commit(row, column, text)) return;

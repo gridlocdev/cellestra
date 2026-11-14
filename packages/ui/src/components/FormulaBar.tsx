@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { FormulaBarDraft } from './formulaBarDraft.ts';
 import { insertLineBreak } from './lineBreak.ts';
 
 const FIELD_LINE = 18;
@@ -9,15 +10,18 @@ const MAX_LINES = 8;
 export function FormulaBar(props: {
   readonly address: string;
   readonly content: string;
+  /** Identifies the active cell in its sheet and document; typing never carries over to another. */
+  readonly target: string;
   readonly onCommit: (text: string) => void;
   readonly onGoTo: (reference: string) => boolean;
   readonly onDone: () => void;
   /** Nothing to show or edit (a chart sheet is active): both fields are blank and disabled. */
   readonly disabled?: boolean;
 }) {
+  const draft = useRef<FormulaBarDraft | null>(null);
+  draft.current ??= new FormulaBarDraft(props.content);
   const [text, setText] = useState(props.content);
   const [name, setName] = useState(props.address);
-  const editing = useRef(false);
   const nameEditing = useRef(false);
   const [focused, setFocused] = useState(false);
   // A multi-line value shows its first line; while it is being edited the field opens downward
@@ -25,8 +29,9 @@ export function FormulaBar(props: {
   const lines = focused && !props.disabled ? Math.min(MAX_LINES, text.split('\n').length) : 1;
 
   useEffect(() => {
-    if (!editing.current) setText(props.content);
-  }, [props.content]);
+    draft.current!.sync(props.content, props.target);
+    setText(draft.current!.text);
+  }, [props.content, props.target]);
   useEffect(() => {
     if (!nameEditing.current) setName(props.address);
   }, [props.address]);
@@ -73,16 +78,17 @@ export function FormulaBar(props: {
           disabled={props.disabled}
           value={props.disabled ? '' : text}
           style={{ height: `${FIELD_PAD + lines * FIELD_LINE}px` }}
-          onFocus={() => {
-            editing.current = true;
-            setFocused(true);
-          }}
+          onFocus={() => setFocused(true)}
           onBlur={() => {
             setFocused(false);
-            if (editing.current && text !== props.content) props.onCommit(text);
-            editing.current = false;
+            const commit = draft.current!.take(props.content);
+            setText(draft.current!.text);
+            if (commit !== null) props.onCommit(commit);
           }}
-          onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+          onInput={(e) => {
+            draft.current!.input((e.target as HTMLTextAreaElement).value, props.target);
+            setText(draft.current!.text);
+          }}
           onKeyDown={(e) => {
             // Keys that confirm an IME composition belong to the input method.
             if (e.isComposing) return;
@@ -92,12 +98,13 @@ export function FormulaBar(props: {
               insertLineBreak(e.currentTarget);
             } else if (e.key === 'Enter') {
               e.preventDefault();
-              editing.current = false;
-              if (text !== props.content) props.onCommit(text);
+              const commit = draft.current!.take(props.content);
+              setText(draft.current!.text);
+              if (commit !== null) props.onCommit(commit);
               props.onDone();
             } else if (e.key === 'Escape') {
               e.preventDefault();
-              editing.current = false;
+              draft.current!.reset(props.content);
               setText(props.content);
               props.onDone();
             }
