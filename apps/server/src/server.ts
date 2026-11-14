@@ -149,6 +149,8 @@ async function api(
       );
     case 'GET /api/list':
       return send(res, 200, await opts.api.list(q.get('root'), q.get('path')));
+    // HEAD answers with the ETag alone (Node sends no body), so a client can poll for changes.
+    case 'HEAD /api/file':
     case 'GET /api/file': {
       const { bytes, etag, modified, lock } = await opts.api.read(q.get('root'), q.get('path'));
       const ifNoneMatch = header(req, 'if-none-match');

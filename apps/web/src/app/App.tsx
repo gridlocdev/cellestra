@@ -760,6 +760,26 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
           )}
         </Dialog>
       )}
+      {d?.kind === 'outside-change' && (
+        <Dialog
+          title="File changed on the server"
+          onClose={() => d.resolve(false)}
+          actions={
+            <>
+              <button type="button" class="cs-btn" onClick={() => d.resolve(false)}>
+                Keep This Version
+              </button>
+              <button type="submit" class="cs-btn primary" autofocus>
+                Reload
+              </button>
+            </>
+          }
+          onSubmit={() => d.resolve(true)}
+        >
+          <p>“{d.name}” was saved on the server since you opened it. Reload it to see those changes?</p>
+          <p>If you keep this version, saving it later asks before overwriting theirs.</p>
+        </Dialog>
+      )}
       {d?.kind === 'nas' && (
         <NasBrowser
           store={app.nas}

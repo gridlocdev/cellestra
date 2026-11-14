@@ -170,6 +170,21 @@ describe('read and write rules', () => {
     await rm(path.join(dir, '.~lock.shared.ods#'));
   });
 
+  it('answers HEAD with the ETag and no body, so clients can poll for changes', async () => {
+    await writeFile(path.join(dir, 'polled.ods'), 'P1');
+    const head = () => fetch(`${base}/api/file?root=docs&path=polled.ods`, { method: 'HEAD', headers: auth });
+    const first = await head();
+    expect(first.status).toBe(200);
+    expect(await first.text()).toBe('');
+    const etag = first.headers.get('etag');
+    expect(etag).toMatch(/^"/);
+    expect((await head()).headers.get('etag')).toBe(etag);
+    await writeFile(path.join(dir, 'polled.ods'), 'P2');
+    expect((await head()).headers.get('etag')).not.toBe(etag);
+    const unauthorized = await fetch(`${base}/api/file?root=docs&path=polled.ods`, { method: 'HEAD' });
+    expect(unauthorized.status).toBe(401);
+  });
+
   it('refuses to list dot folders', async () => {
     const list = (p: string) => fetch(`${base}/api/list?root=docs&path=${p}`, { headers: auth });
     expect((await list('.git')).status).toBe(403);

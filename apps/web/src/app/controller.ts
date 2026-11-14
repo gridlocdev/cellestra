@@ -44,6 +44,7 @@ import {
 } from '@cellestra/core';
 import {
   BrowserStore,
+  ChangePoller,
   ConflictError,
   NasStore,
   NativeStore,
@@ -110,6 +111,7 @@ export type DialogState =
     }
   | { readonly kind: 'find' }
   | { readonly kind: 'recovery'; readonly name: string; readonly resolve: (restore: boolean) => void }
+  | { readonly kind: 'outside-change'; readonly name: string; readonly resolve: (reload: boolean) => void }
   | {
       readonly kind: 'csv-loss';
       readonly name: string;
@@ -368,6 +370,7 @@ export class AppController {
     try {
       if (!this.native) {
         if (NAS_BUILD) this.nasAvailable.value = (await this.nas.info()) !== null;
+        if (this.nasAvailable.peek()) this.#pollNasDocument();
         addEventListener('beforeunload', (e) => {
           if (this.session.modified.peek()) e.preventDefault();
         });
@@ -822,6 +825,56 @@ export class AppController {
   async externalChange(): Promise<void> {
     if (!this.session.modified.peek() && !this.#saving) return this.reloadFromStore(true, true);
     this.info('The file changed on disk. Saving will ask before overwriting it.');
+  }
+
+  /**
+   * Poll the open NAS document's ETag, so a save from somewhere else is noticed (the server can't
+   * push one). Follows whichever document is open; a hidden tab doesn't poll.
+   */
+  #pollNasDocument(): void {
+    let poller: ChangePoller | null = null;
+    let watching: string | null = null;
+    effect(() => {
+      const ref = this.session.document.value;
+      const id = ref?.store === 'nas' ? ref.id : null;
+      if (id === watching) return;
+      poller?.stop();
+      poller = null;
+      watching = id;
+      if (id === null) return;
+      poller = new ChangePoller({
+        fetchVersion: () => this.nas.currentVersion(id),
+        knownVersion: () => {
+          const open = this.session.document.peek();
+          return open?.id === id && open.store === 'nas' ? open.version : null;
+        },
+        onChange: () => this.nasFileChanged(),
+        isVisible: () => document.visibilityState === 'visible',
+      });
+      poller.start();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') poller?.wake();
+    });
+  }
+
+  /**
+   * The open NAS file was saved by someone else. Without local edits, offer to reload it; with
+   * them, say so: the next save meets the server's conflict check and asks then. Returns false
+   * when now is a bad moment (a save running, a dialog or a cell edit open), so the poller
+   * reports the change again on its next check.
+   */
+  nasFileChanged(): boolean {
+    if (this.#saving || this.dialog.peek() || this.grid.current?.isEditing()) return false;
+    const name = this.session.title.peek();
+    if (this.session.modified.peek()) {
+      this.#showToast(`“${name}” changed on the server. Saving will ask before overwriting it.`, 'error');
+      return true;
+    }
+    void this.ask(false, (resolve) => ({ kind: 'outside-change', name, resolve })).then((reload) => {
+      if (reload) return this.reloadFromStore(true, true);
+    });
+    return true;
   }
 
   /** Before closing the window (Electron): save, discard, or stay. */

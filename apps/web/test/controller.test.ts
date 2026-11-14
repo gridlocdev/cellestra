@@ -894,3 +894,65 @@ describe('LibreOffice locks', () => {
     expect(app.toast.peek()).toBeNull();
   });
 });
+
+describe('NAS file changed on the server', () => {
+  function opened(app: Controller, fake: FakeStore): void {
+    withFake(app, fake);
+    app.session.load(OdsWriter.write(Workbook.createNew(), null), ref('a.ods'));
+  }
+
+  it('offers to reload a document without local edits, and reloads on yes', async () => {
+    const app = await makeApp();
+    const fake = new FakeStore();
+    opened(app, fake);
+    const wb = Workbook.createNew();
+    wb.worksheets[0]!.setValue(0, 0, CellValue.text('their save'));
+    fake.reloadBytes = OdsWriter.write(wb, null);
+    expect(app.nasFileChanged()).toBe(true);
+    const d = app.dialog.peek() as Extract<DialogShown, { kind: 'outside-change' }>;
+    expect(d.kind).toBe('outside-change');
+    expect(d.name).toBe('a.ods');
+    d.resolve(true);
+    await flush();
+    await flush();
+    expect(app.session.activeSheet.peek().getValue(0, 0)).toEqual(CellValue.text('their save'));
+  });
+
+  it('keeps the document when the offer is declined', async () => {
+    const app = await makeApp();
+    const fake = new FakeStore();
+    opened(app, fake);
+    const reload = vi.spyOn(app, 'reloadFromStore');
+    app.nasFileChanged();
+    (app.dialog.peek() as Extract<DialogShown, { kind: 'outside-change' }>).resolve(false);
+    await flush();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('warns instead of asking when there are local edits; the save then meets the conflict', async () => {
+    const app = await makeApp();
+    const fake = new FakeStore();
+    opened(app, fake);
+    app.session.touch();
+    expect(app.nasFileChanged()).toBe(true);
+    expect(app.dialog.peek()).toBeNull();
+    expect(app.toast.peek()?.text).toBe(
+      '“a.ods” changed on the server. Saving will ask before overwriting it.',
+    );
+  });
+
+  it('waits while a save is running or another dialog is open', async () => {
+    const app = await makeApp();
+    const fake = new FakeStore();
+    opened(app, fake);
+    app.dialog.value = { kind: 'about' };
+    expect(app.nasFileChanged()).toBe(false);
+    app.dialog.value = null;
+    app.session.touch();
+    const saving = app.save();
+    await flush();
+    expect(app.nasFileChanged()).toBe(false);
+    fake.saves[0]!.finish();
+    await saving;
+  });
+});

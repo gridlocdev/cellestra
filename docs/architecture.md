@@ -51,6 +51,7 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
 - **Commands.** `CommandCatalog` is the one list of commands. The toolbar, ⌘K, the shortcut dispatcher and the Electron menu bar (sent over IPC) all read it. Shortcuts are written once as `mod+shift+k` and formatted for each platform.
 - **Files.** `FileStore` has three implementations, and the UI only ever sees the interface.
   - Conflict detection uses an ETag (NAS) or a SHA-256 hash of the file's contents (native), so an edit that keeps the size and mtime is still caught.
+  - The server can't push changes, so while a NAS document is open the client polls its ETag with `HEAD /api/file` every 30 seconds (`ChangePoller`), and not while the tab is hidden. A new ETag on a document without local edits offers to reload it; with local edits it only warns, and the save then meets the server's `If-Match` check and the usual conflict dialog.
   - The NAS store exists only in a NAS build (`VITE_CELLESTRA_NAS=1`: the Docker image, `just build-web-nas`, `just run-web`, `just preview-web`). A NAS build still shows NAS open and save only after the server answers `/api/info`. Every other build, the desktop app included, never contacts the server and shows nothing about a NAS.
   - IndexedDB keeps the recent files (including browser file handles) and a crash-recovery snapshot.
 

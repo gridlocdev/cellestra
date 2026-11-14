@@ -18,6 +18,8 @@ Cellestra reads and writes `.ods` and keeps anything it doesn't understand intac
 
 When LibreOffice has a file open, it keeps a `.~lock.<name>#` file beside it. Opening that file in the desktop app or from the NAS reads the lock and warns who opened it and when, for example “Opened by Ada on 14.11.2026 10:22 in LibreOffice – your changes may conflict.” The file still opens, and Cellestra never writes or removes lock files. A plain browser can't see the folder around a file, so it can't warn.
 
+While a file from the NAS is open, Cellestra checks every 30 seconds whether someone else saved it (only while the tab is visible). If you have no unsaved changes it offers to reload the file. If you do, it warns you, and saving then asks whether to overwrite their version, save a copy or reload.
+
 ## Formulas
 
 Formulas have 47 functions, automatic recalculation and circular-reference detection. The formula syntax matches LibreOffice Calc. **Insert Function…** picks a function, autocomplete suggests names and arguments as you type, and **Recalculate** (F9) recalculates everything. **Manual Calculation** (or a click on the Auto/Manual badge in the status bar) stops formulas recalculating after each edit until you press F9, which helps in a slow workbook; the mode is saved with the file, and switching back to automatic recalculates at once. **Show Formulas** shows the formulas in place of their results, and **Named Ranges…** names a cell or range.

@@ -92,6 +92,24 @@ export class NasStore implements FileStore {
     return lock === null ? doc : { ...doc, lock: parseLockFile(lock) };
   }
 
+  /**
+   * The file's ETag now, from a HEAD request (no download), so an open document can notice someone
+   * else saving it. Null when the file is gone.
+   */
+  async currentVersion(id: string): Promise<string | null> {
+    const { root, path } = splitId(id);
+    try {
+      const res = await this.request(`/file?${new URLSearchParams({ root, path })}`, {
+        method: 'HEAD',
+        cache: 'no-store',
+      });
+      return res.headers.get('etag');
+    } catch (e) {
+      if (e instanceof Error && e.name === 'NotFoundError') return null;
+      throw e;
+    }
+  }
+
   reload(ref: DocumentRef): Promise<OpenedDocument> {
     const { root, path } = splitId(ref.id);
     return this.open(root, path);
