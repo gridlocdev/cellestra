@@ -29,6 +29,7 @@ export class OdsStyleIndex {
   private readonly rowHeights = new Map<string, number>();
   private readonly styleIds = new Map<string, number | null>();
   private readonly formats = new Map<string, NumberFormat>();
+  private plainId: number | null = null;
   /**
    * Content automatic styles the model does not regenerate (table, graphic, paragraph, text): the
    * styles preserved content (a sheet's `table:style-name`, a comment's shapes) refers to.
@@ -106,6 +107,18 @@ export class OdsStyleIndex {
       style === null ? null : this.pool.intern(element ? OdsCellStyles.withSource(style, element) : style);
     this.styleIds.set(name, id);
     return id;
+  }
+
+  /**
+   * A style that looks like the default but is a style of its own. A cell under a column format
+   * keeps it, where the default style would show the column's format instead (as a cell that
+   * names `Default` does in LibreOffice). It is written back as a plain automatic style.
+   */
+  plainCellStyleId(): number {
+    this.plainId ??= this.pool.intern(
+      OdsCellStyles.withSource(CellStyles.default, OdsCellStyles.build('Default', CellStyles.default, null)),
+    );
+    return this.plainId;
   }
 
   columnWidth(name: string): number | null {

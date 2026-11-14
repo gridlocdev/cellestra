@@ -725,23 +725,24 @@ function readCells(
       // format anyway, as it always was: a lossy read beats refusing the file.
       const tooBigForCells = area > CONTENT_RUN_CELL_LIMIT;
       const reachesRowEnd = column + repeat >= LEGACY_COLUMNS;
-      if (
+      const rowFormat =
         !hasContent &&
         lastInRow &&
         (big || (column + repeat >= MAX_COLUMNS && repeat > 1)) &&
         ((reachesRowEnd && (rowStyleBefore === undefined || rowStyleBefore === parsed.styleId)) ||
-          tooBigForCells)
-      ) {
+          tooBigForCells);
+      const columnRun = !rowFormat && !hasContent && big && trailingRows;
+      // Columns formatted below a header: the cells above that a column format would restyle.
+      const pins = columnRun ? pinsAbove(sheet, row, column, repeat, parsed.styleId!, context) : null;
+      if (rowFormat) {
         // A styled run to the end of the row (LibreOffice writes one for a formatted whole row):
         // that is a row format, not 16384 cells.
         for (let r = row; r < row + rowCount; r++) sheet.getOrCreateRow(r).styleId = parsed.styleId!;
-      } else if (
-        !hasContent &&
-        big &&
-        trailingRows &&
-        (columnStyledAbove(sheet, row, column, repeat, parsed.styleId!) || tooBigForCells)
-      ) {
-        // A styled run down to the end of the sheet: that is a column format.
+      } else if (columnRun && (pins !== null || tooBigForCells)) {
+        // A styled run down to the end of the sheet: that is a column format. The few cells above
+        // it that look otherwise keep their style; when there are too many to keep, a run too big
+        // to hold as cells is a format anyway.
+        if (pins !== null) pinCells(sheet, pins, context);
         columnFormats.push({ from: column, to: column + repeat, styleId: parsed.styleId! });
       } else {
         if (tooBigForCells) {
@@ -799,22 +800,56 @@ function readCells(
   }
 }
 
+/** A cell above a column format and the style it keeps. */
+interface Pin {
+  readonly row: number;
+  readonly column: number;
+  readonly styleId: number;
+}
+
 /**
- * Every cell of `column … column + width - 1` above `row` already has `styleId` (the run's
- * column format would not change them). Gives up (false) when that is too many cells to look at.
+ * The cells of `column … column + width - 1` above `row` that a column format of `styleId` would
+ * restyle, each with the style it has now; null when there are more than `STYLED_RUN_CELL_LIMIT`
+ * (then the run is cheaper to hold as cells) or more than `CONTENT_RUN_CELL_LIMIT` to look at. A cell or row with a style of its own keeps it
+ * anyway, so in the usual layout (a styled header row over formatted columns) there is nothing to
+ * pin; a header in the default style is pinned to a plain style of its own.
  */
-function columnStyledAbove(
+function pinsAbove(
   sheet: Worksheet,
   row: number,
   column: number,
   width: number,
   styleId: number,
-): boolean {
-  if (row * width > CONTENT_RUN_CELL_LIMIT) return false;
-  for (let c = column; c < column + width; c++) {
-    for (let r = 0; r < row; r++) if (sheet.effectiveStyleId(r, c) !== styleId) return false;
+  context: ReadContext,
+): Pin[] | null {
+  if (row * width > CONTENT_RUN_CELL_LIMIT) return null;
+  const pins: Pin[] = [];
+  for (let r = 0; r < row; r++) {
+    if ((sheet.findRow(r)?.styleId ?? StylePool.defaultId) !== StylePool.defaultId) continue;
+    for (let c = column; c < column + width; c++) {
+      if ((sheet.find(r, c)?.styleId ?? StylePool.defaultId) !== StylePool.defaultId) continue;
+      const now = sheet.findColumn(c)?.styleId ?? StylePool.defaultId;
+      if (now === styleId) continue;
+      if (pins.length === STYLED_RUN_CELL_LIMIT) return null;
+      pins.push({
+        row: r,
+        column: c,
+        styleId: now === StylePool.defaultId ? context.styles.plainCellStyleId() : now,
+      });
+    }
   }
-  return true;
+  return pins;
+}
+
+/** Give each pinned cell its style; the new cells count against the workbook's repeat budget. */
+function pinCells(sheet: Worksheet, pins: readonly Pin[], context: ReadContext): void {
+  context.repeats.cells += pins.length;
+  if (context.repeats.cells > REPEATED_CELL_BUDGET) {
+    throw new OdsContentTooLargeError(
+      `Sheet '${sheet.name}' repeats cells past ${REPEATED_CELL_BUDGET} in the workbook, the most repeats may create.`,
+    );
+  }
+  for (const pin of pins) sheet.getOrCreate(pin.row, pin.column).styleId = pin.styleId;
 }
 
 /**

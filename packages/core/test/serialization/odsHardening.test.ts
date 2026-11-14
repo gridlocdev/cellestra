@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { dataValidation } from '../../src/data/types.ts';
 import { CellRange } from '../../src/model/cellRange.ts';
 import { MergedRegion } from '../../src/model/mergedRegion.ts';
+import { SheetDimensions } from '../../src/model/sheetDimensions.ts';
 import { Workbook } from '../../src/model/workbook.ts';
 import {
   CsvOptions,
@@ -219,6 +220,85 @@ describe('ODS grid structure', () => {
     const sheet = workbook.activeSheet;
     expect(sheet.cellCount).toBe(0);
     expect(workbook.styles.get(sheet.findColumn(0)!.styleId).font.bold).toBe(true);
+  });
+
+  describe('columns formatted below a header row', () => {
+    // A header in A1:F1 over columns A:F formatted from row 2 to the end of the sheet, written as
+    // LibreOffice writes it: one repeated row of a run per column (here each its own fill).
+    const fills = ['ff0000', '00ff00', '0000ff', 'ffff00', '00ffff', 'ff00ff'];
+    const automaticStyles =
+      `<style:style style:name="ce1" style:family="table-cell"><style:text-properties fo:font-weight="bold"/></style:style>` +
+      fills
+        .map(
+          (fill, i) =>
+            `<style:style style:name="ce${i + 2}" style:family="table-cell"><style:table-cell-properties fo:background-color="#${fill}"/></style:style>`,
+        )
+        .join('');
+    const headerOver = (headerStyle: string | null): Uint8Array => {
+      const style = headerStyle === null ? '' : ` table:style-name="${headerStyle}"`;
+      const header = ['A', 'B', 'C', 'D', 'E', 'F']
+        .map(
+          (h) =>
+            `<table:table-cell${style} office:value-type="string"><text:p>${h}</text:p></table:table-cell>`,
+        )
+        .join('');
+      const runs = fills.map((_, i) => `<table:table-cell table:style-name="ce${i + 2}"/>`).join('');
+      return ods(
+        `<table:table table:name="Sheet1">
+          <table:table-row>${header}<table:table-cell table:number-columns-repeated="16378"/></table:table-row>
+          <table:table-row table:number-rows-repeated="1048575">${runs}<table:table-cell table:number-columns-repeated="16378"/></table:table-row>
+        </table:table>`,
+        { automaticStyles },
+      );
+    };
+    const fillAt = (workbook: Workbook, row: number, column: number): number | null =>
+      workbook.styles.get(workbook.activeSheet.effectiveStyleId(row, column)).fill.background;
+    const boldAt = (workbook: Workbook, row: number, column: number): boolean =>
+      workbook.styles.get(workbook.activeSheet.effectiveStyleId(row, column)).font.bold;
+
+    it('a styled header keeps its style and the columns become column formats', () => {
+      // Held as cells, these six runs are 6,291,450 cells: past the repeat budget, so refused.
+      const workbook = readOds(headerOver('ce1'));
+      expect(workbook.activeSheet.cellCount).toBe(6);
+      for (const reopened of [workbook, roundTrip(workbook)]) {
+        expect(reopened.activeSheet.cellCount).toBe(6);
+        expect(boldAt(reopened, 0, 0)).toBe(true);
+        expect(fillAt(reopened, 0, 0)).toBeNull();
+        expect(fillAt(reopened, 1, 0)! >>> 0).toBe(0xffff0000);
+        expect(fillAt(reopened, SheetDimensions.maxRows - 1, 5)! >>> 0).toBe(0xffff00ff);
+        expect(fillAt(reopened, 1, 6)).toBeNull();
+      }
+      const content = readEntry(writeOds(workbook), OdsXmlNames.contentPart);
+      expect(content).toContain('table:default-cell-style-name');
+    });
+
+    it('a header in the default style stays plain over the formatted columns', () => {
+      const workbook = readOds(headerOver(null));
+      for (const reopened of [workbook, roundTrip(workbook)]) {
+        expect(reopened.activeSheet.cellCount).toBe(6);
+        expect(reopened.activeSheet.getValue(0, 2)).toEqual(CellValue.text('C'));
+        expect(fillAt(reopened, 0, 2)).toBeNull();
+        expect(boldAt(reopened, 0, 2)).toBe(false);
+        expect(fillAt(reopened, 1, 2)! >>> 0).toBe(0xff0000ff);
+      }
+    });
+
+    it('a blank row above the header is kept plain too', () => {
+      const bytes = ods(
+        `<table:table table:name="Sheet1">
+          <table:table-row><table:table-cell table:number-columns-repeated="16384"/></table:table-row>
+          <table:table-row><table:table-cell table:style-name="ce1" office:value-type="string"><text:p>A</text:p></table:table-cell><table:table-cell table:number-columns-repeated="16383"/></table:table-row>
+          <table:table-row table:number-rows-repeated="1048574"><table:table-cell table:style-name="ce2"/><table:table-cell table:number-columns-repeated="16383"/></table:table-row>
+        </table:table>`,
+        { automaticStyles },
+      );
+      for (const workbook of [readOds(bytes), roundTrip(readOds(bytes))]) {
+        expect(fillAt(workbook, 0, 0)).toBeNull();
+        expect(boldAt(workbook, 1, 0)).toBe(true);
+        expect(fillAt(workbook, 2, 0)! >>> 0).toBe(0xffff0000);
+        expect(workbook.activeSheet.cellCount).toBe(2);
+      }
+    });
   });
 
   it('a styled run to the end of a row after a cell styled otherwise stays cells', () => {
