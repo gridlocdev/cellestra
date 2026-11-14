@@ -13,9 +13,8 @@ import type { PageSetup } from './pageSetup.ts';
 
 const DEFAULT_STYLE_ID = 0;
 
-/** A snapshot of a sheet's mutable structure, for structural undo. */
-export interface WorksheetState {
-  readonly cells: ReadonlyMap<number, Cell>;
+/** A snapshot of a sheet's line layout, merges, tables and panes (not its cells), for structural undo. */
+export interface WorksheetLayout {
   readonly rows: ReadonlyMap<number, Row>;
   readonly columns: ReadonlyMap<number, Column>;
   readonly merges: readonly MergedRegion[];
@@ -386,11 +385,10 @@ export class Worksheet {
     return copy;
   }
 
-  // ---- State capture (structural undo) ------------------------------------
+  // ---- Structural edits ---------------------------------------------------
 
-  capture(): WorksheetState {
+  captureLayout(): WorksheetLayout {
     return {
-      cells: new Map([...this.cells].map(([k, c]) => [k, c.clone()])),
       rows: new Map([...this.rowMap].map(([k, r]) => [k, r.clone()])),
       columns: new Map([...this.columnMap].map(([k, c]) => [k, c.clone()])),
       merges: [...this.mergedRegions],
@@ -400,19 +398,35 @@ export class Worksheet {
     };
   }
 
-  restore(state: WorksheetState): void {
-    this.cells.clear();
-    for (const [k, c] of state.cells) this.cells.set(k, c.clone());
-    this.#cellExtent = undefined;
+  restoreLayout(layout: WorksheetLayout): void {
     bumpLineLayout();
     this.rowMap.clear();
-    for (const [k, r] of state.rows) this.rowMap.set(k, r.clone());
+    for (const [k, r] of layout.rows) this.rowMap.set(k, r.clone());
     this.columnMap.clear();
-    for (const [k, c] of state.columns) this.columnMap.set(k, c.clone());
-    this.mergedRegions = [...state.merges];
-    this.tableList = [...state.tables];
-    this.frozenRows = state.frozenRows;
-    this.frozenColumns = state.frozenColumns;
+    for (const [k, c] of layout.columns) this.columnMap.set(k, c.clone());
+    this.mergedRegions = [...layout.merges];
+    this.tableList = [...layout.tables];
+    this.frozenRows = layout.frozenRows;
+    this.frozenColumns = layout.frozenColumns;
+  }
+
+  /**
+   * Move every cell to the key `move` gives its position, keeping the same cell objects (nothing is
+   * copied). A cell `move` maps to null is taken out; the removed cells come back by their old key.
+   * `move` must not send two cells to one key.
+   */
+  moveCells(move: (row: number, column: number) => number | null): Map<number, Cell> {
+    const moved = new Map<number, Cell>();
+    const removed = new Map<number, Cell>();
+    for (const [key, cell] of this.cells) {
+      const target = move(keyRow(key), keyColumn(key));
+      if (target === null) removed.set(key, cell);
+      else moved.set(target, cell);
+    }
+    this.cells.clear();
+    for (const [key, cell] of moved) this.cells.set(key, cell);
+    this.#cellExtent = undefined;
+    return removed;
   }
 }
 

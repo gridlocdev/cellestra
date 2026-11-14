@@ -6,8 +6,7 @@ import { Column, Row } from '../model/lines.ts';
 import { MergedRegion } from '../model/mergedRegion.ts';
 import { cellKey, keyColumn, keyRow, SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
-import type { Worksheet, WorksheetState } from '../model/worksheet.ts';
-import { captureFormulas, restoreFormulas } from './deleteSheetCommand.ts';
+import type { Worksheet, WorksheetLayout } from '../model/worksheet.ts';
 import {
   EditRefusedError,
   EditResult,
@@ -32,7 +31,8 @@ export type StructuralOperation = 'insert' | 'delete';
  * Insert or delete whole rows/columns: cells, layout, merges, and tables shift; inserted lines
  * inherit the formatting of the line before them (PRD §8.14); every formula in the workbook is
  * adjusted (deleted references become `#REF!`), and so are named ranges, data validations, the
- * AutoFilter and sort keys, and chart ranges. Undo restores the captured state.
+ * AutoFilter and sort keys, and chart ranges. Undo shifts the cells back and restores only what the
+ * edit lost or rewrote (removed cells, changed formulas, the layout), never a copy of the sheet.
  */
 export class StructuralEditCommand implements EditCommand {
   readonly label: string;
@@ -41,8 +41,11 @@ export class StructuralEditCommand implements EditCommand {
   private readonly operation: StructuralOperation;
   private readonly at: number;
   private readonly count: number;
-  private editedBefore: WorksheetState | null = null;
-  private otherFormulasBefore: [ChangedCell, string][] | null = null;
+  private layoutBefore: WorksheetLayout | null = null;
+  /** Cells the edit took out of the sheet (deleted, or pushed off the edge), by their old key. */
+  private removedCells: Map<number, Cell> | null = null;
+  /** Formulas the edit rewrote, at the cell's position after the edit, with their old text. */
+  private formulasBefore: [ChangedCell, string][] | null = null;
   private referencesBefore: ReferenceSnapshot | null = null;
 
   constructor(
@@ -63,20 +66,41 @@ export class StructuralEditCommand implements EditCommand {
   apply(workbook: Workbook): EditResult {
     const sheet = requireSheet(workbook, this.sheetName);
     this.refuseDataLoss(sheet);
-    this.editedBefore = sheet.capture();
-    this.otherFormulasBefore = captureFormulas(workbook, sheet);
+    const layout = sheet.captureLayout();
+    this.layoutBefore = layout;
     this.referencesBefore = captureReferences(workbook);
-    sheet.restore(this.buildShiftedState(this.editedBefore));
-    this.adjustFormulas(workbook);
+    const rows = this.axis === 'row';
+    this.removedCells = sheet.moveCells((row, column) => {
+      const mapped = this.mapCoord(rows ? row : column);
+      if (mapped === null) return null;
+      return rows ? cellKey(mapped, column) : cellKey(row, mapped);
+    });
+    sheet.restoreLayout(this.shiftedLayout(layout));
+    // Inserting at the very top/left has no source line, so nothing to inherit.
+    if (this.operation === 'insert' && this.at > 0) this.inheritCellFormatting(sheet, rows);
+    this.formulasBefore = this.adjustFormulas(workbook);
     transformReferences(workbook, this.transform);
     return EditResult.structuralChange;
   }
 
   undo(workbook: Workbook): EditResult {
-    if (!this.editedBefore || !this.otherFormulasBefore || !this.referencesBefore) return EditResult.none;
-    requireSheet(workbook, this.sheetName).restore(this.editedBefore);
-    restoreFormulas(workbook, this.otherFormulasBefore);
-    restoreReferences(workbook, this.referencesBefore);
+    const { layoutBefore, removedCells, formulasBefore, referencesBefore } = this;
+    if (!layoutBefore || !removedCells || !formulasBefore || !referencesBefore) return EditResult.none;
+    const sheet = requireSheet(workbook, this.sheetName);
+    // Formulas first, while the cells still sit where the edit put them.
+    for (const [ref, formula] of formulasBefore) {
+      const cell = workbook.findSheet(ref.sheet)?.find(ref.row, ref.column);
+      if (cell) cell.formula = formula;
+    }
+    const rows = this.axis === 'row';
+    sheet.moveCells((row, column) => {
+      const original = this.unmapCoord(rows ? row : column);
+      if (original === null) return null;
+      return rows ? cellKey(original, column) : cellKey(row, original);
+    });
+    for (const [key, cell] of removedCells) sheet.putCell(keyRow(key), keyColumn(key), cell);
+    sheet.restoreLayout(layoutBefore);
+    restoreReferences(workbook, referencesBefore);
     return EditResult.structuralChange;
   }
 
@@ -108,24 +132,14 @@ export class StructuralEditCommand implements EditCommand {
 
   // ---- The post-shift sheet state -------------------------------------------
 
-  private buildShiftedState(before: WorksheetState): WorksheetState {
+  private shiftedLayout(before: WorksheetLayout): WorksheetLayout {
     const rows = this.axis === 'row';
-    const cells = new Map<number, Cell>();
-    for (const [key, cell] of before.cells) {
-      const row = keyRow(key);
-      const column = keyColumn(key);
-      const mapped = this.mapCoord(rows ? row : column);
-      if (mapped === null) continue;
-      cells.set(rows ? cellKey(mapped, column) : cellKey(row, mapped), cell);
-    }
     const shiftedRows = rows ? this.shiftMap(before.rows) : new Map(before.rows);
     const shiftedColumns = rows ? new Map(before.columns) : this.shiftMap(before.columns);
-    // Inserting at the very top/left has no source line, so nothing to inherit.
     if (this.operation === 'insert' && this.at > 0) {
-      this.inheritFormatting(before, cells, shiftedRows, shiftedColumns, rows);
+      this.inheritLineFormatting(before, shiftedRows, shiftedColumns, rows);
     }
     return {
-      cells,
       rows: shiftedRows,
       columns: shiftedColumns,
       merges: this.shiftMerges(before.merges, rows),
@@ -188,9 +202,8 @@ export class StructuralEditCommand implements EditCommand {
       : CellRange.fromBounds(range.top, lo, range.bottom, hi);
   }
 
-  private inheritFormatting(
-    before: WorksheetState,
-    cells: Map<number, Cell>,
+  private inheritLineFormatting(
+    before: WorksheetLayout,
     shiftedRows: Map<number, Row>,
     shiftedColumns: Map<number, Column>,
     rows: boolean,
@@ -210,19 +223,23 @@ export class StructuralEditCommand implements EditCommand {
           shiftedColumns.set(c, Object.assign(new Column(), { styleId: src.styleId }));
       }
     }
-    // The per-cell styles along the source line, as empty styled cells.
-    for (const [key, cell] of before.cells) {
-      const row = keyRow(key);
-      const column = keyColumn(key);
-      if ((rows ? row : column) !== source || cell.styleId === 0) continue;
-      const cross = rows ? column : row;
+  }
+
+  /** The per-cell styles along the source line, copied into the inserted lines as empty styled cells. */
+  private inheritCellFormatting(sheet: Worksheet, rows: boolean): void {
+    const source = this.at - 1;
+    const end = this.at + this.count;
+    const styled: [cross: number, styleId: number][] = [];
+    for (const [row, column, cell] of sheet.enumerateCells()) {
+      if ((rows ? row : column) === source && cell.styleId !== 0)
+        styled.push([rows ? column : row, cell.styleId]);
+    }
+    for (const [cross, styleId] of styled) {
       for (let i = this.at; i < end; i++) {
-        const k = rows ? cellKey(i, cross) : cellKey(cross, i);
-        if (!cells.has(k)) {
-          const styled = new Cell();
-          styled.styleId = cell.styleId;
-          cells.set(k, styled);
-        }
+        const cell = new Cell();
+        cell.styleId = styleId;
+        if (rows) sheet.putCell(i, cross, cell);
+        else sheet.putCell(cross, i, cell);
       }
     }
   }
@@ -251,14 +268,20 @@ export class StructuralEditCommand implements EditCommand {
       : ReferenceAdjuster.forDeleteColumns(expr, home, sheetName, at, count);
   };
 
-  private adjustFormulas(workbook: Workbook): void {
+  /** Rewrite every formula in the workbook; returns the ones that changed, with their old text. */
+  private adjustFormulas(workbook: Workbook): [ChangedCell, string][] {
+    const changed: [ChangedCell, string][] = [];
     for (const sheet of workbook.worksheets) {
       const home = sheet.name;
-      for (const [, , cell] of sheet.enumerateCells()) {
+      for (const [row, column, cell] of sheet.enumerateCells()) {
         if (cell.formula === null) continue;
-        cell.formula = rewriteFormula(cell.formula, (expr) => this.transform(expr, home));
+        const rewritten = rewriteFormula(cell.formula, (expr) => this.transform(expr, home));
+        if (rewritten === cell.formula) continue;
+        changed.push([{ sheet: home, row, column }, cell.formula]);
+        cell.formula = rewritten;
       }
     }
+    return changed;
   }
 
   // ---- Coordinate mapping (mirrors ReferenceAdjuster's axis edit) -------------
@@ -274,6 +297,13 @@ export class StructuralEditCommand implements EditCommand {
       const shifted = coord + this.count;
       return shifted >= this.limit ? null : shifted;
     }
+    return coord < this.at + this.count ? null : coord - this.count;
+  }
+
+  /** Where a line after the edit was before it, or null for a line the edit inserted. */
+  private unmapCoord(coord: number): number | null {
+    if (coord < this.at) return coord;
+    if (this.operation === 'delete') return coord + this.count;
     return coord < this.at + this.count ? null : coord - this.count;
   }
 
