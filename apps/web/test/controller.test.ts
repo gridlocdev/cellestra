@@ -453,3 +453,42 @@ describe('autofit columns', () => {
     expect(wrapped).toBe(up);
   });
 });
+
+describe('clipboard across documents', () => {
+  const dt = () => ({ setData: () => {} }) as unknown as DataTransfer;
+  const odsWith = (text: string) => {
+    const wb = Workbook.createNew();
+    wb.worksheets[0]!.setValue(0, 0, CellValue.text(text));
+    return OdsWriter.write(wb, null);
+  };
+
+  it('never moves a cut from one document into the next', async () => {
+    const app = await makeApp();
+    app.session.load(odsWith('from A'), ref('a.ods'));
+    app.selection.select(0, 0);
+    app.copy(true, dt());
+
+    app.session.load(odsWith('kept in B'), ref('b.ods'));
+    app.selection.select(2, 2);
+    app.paste(null);
+
+    const sheet = app.session.activeSheet.peek();
+    expect(sheet.getValue(0, 0)).toEqual(CellValue.text('kept in B'));
+    expect(sheet.getValue(2, 2)).toEqual(CellValue.empty);
+  });
+
+  it('still pastes a plain copy into another document', async () => {
+    const app = await makeApp();
+    app.session.load(odsWith('from A'), ref('a.ods'));
+    app.selection.select(0, 0);
+    app.copy(false, dt());
+
+    app.session.load(odsWith('kept in B'), ref('b.ods'));
+    app.selection.select(2, 2);
+    app.paste(null);
+
+    const sheet = app.session.activeSheet.peek();
+    expect(sheet.getValue(0, 0)).toEqual(CellValue.text('kept in B'));
+    expect(sheet.getValue(2, 2)).toEqual(CellValue.text('from A'));
+  });
+});

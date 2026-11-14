@@ -227,7 +227,8 @@ export class AppController {
     null,
   );
 
-  #clipboard: { block: ClipboardBlock; text: string } | null = null;
+  /** Our last copy or cut, stamped with the document generation it came from. */
+  #clipboard: { block: ClipboardBlock; text: string; generation: number } | null = null;
   /** Set while reloading the same document, so the cursor stays put. */
   #keepSelection = false;
   #toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -401,6 +402,7 @@ export class AppController {
   async newDocument(): Promise<void> {
     if (!(await this.confirmDiscard())) return;
     this.session.newDocument();
+    this.clearMarquee();
     void clearRecovery();
     this.grid.current?.focus();
   }
@@ -483,6 +485,7 @@ export class AppController {
     } catch (e) {
       return this.error(new Error(`${opened.ref.name} could not be opened: ${message(e)}`));
     }
+    this.clearMarquee();
     void clearRecovery();
     void this.remember(opened.ref);
     this.native?.watch(opened.ref.store === 'native' ? opened.ref.id : null);
@@ -1849,7 +1852,7 @@ export class AppController {
   copy(cut = false, data?: DataTransfer | null): void {
     const block = ClipboardBlock.capture(this.sheet, this.range, cut);
     const text = this.blockText(block);
-    this.#clipboard = { block, text };
+    this.#clipboard = { block, text, generation: this.session.generation };
     this.marquee.value = { sheet: this.sheetName, range: this.selection.range.peek(), cut };
     if (data) data.setData('text/plain', text);
     else void navigator.clipboard?.writeText(text).catch(() => {});
@@ -1858,7 +1861,12 @@ export class AppController {
 
   /** Paste: our own block when the system clipboard still holds what we copied, else TSV text. */
   paste(text: string | null, mode: 'all' | 'values' = 'all'): void {
-    const own = this.#clipboard;
+    let own = this.#clipboard;
+    // A cut belongs to the document it came from: moving it into another one would clear cells there.
+    if (own?.block.isCut && own.generation !== this.session.generation) {
+      this.#clipboard = own = null;
+      this.marquee.value = null;
+    }
     const sheet = this.sheetName;
     if (own && (text === null || normalize(text) === normalize(own.text))) {
       const cut = own.block.isCut;
