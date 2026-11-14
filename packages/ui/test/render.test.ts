@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CellRange, CellStyles, DataEditCommands, Workbook, table } from '@cellestra/core';
+import { CellRange, CellStyles, CellValue, DataEditCommands, Workbook, table } from '@cellestra/core';
 import { Axis } from '../src/grid/axis.ts';
 import { lightPalette } from '../src/grid/palette.ts';
 import { checkboxRect, fillHandleRect, renderGrid, wrap } from '../src/grid/render.ts';
@@ -169,5 +169,46 @@ describe('wrap', () => {
     // '😀' is two UTF-16 units (12px here); a 3-unit line would end inside it.
     expect(wrap(ctx, 'ab😀cd', 18)).toEqual(['ab', '😀c', 'd']);
     expect(wrap(ctx, 'abc def', 0)).toEqual(['abc def']);
+  });
+});
+
+describe('text spilling in from off screen', () => {
+  function textsDrawn(scrollX: number, value: string, column = 0, width = HEADER_WIDTH + 64 * 10) {
+    const workbook = Workbook.createNew();
+    const sheet = workbook.worksheets[0]!;
+    sheet.setValue(0, column, CellValue.text(value));
+    const texts: string[] = [];
+    const { ctx } = recordingContext();
+    (ctx as unknown as { fillText: (t: string) => void }).fillText = (t: string) => void texts.push(t);
+    renderGrid({
+      ctx,
+      viewport: new Viewport({
+        columns: new Axis(16384, 64, []),
+        rows: new Axis(1048576, 20, []),
+        frozenColumns: 0,
+        frozenRows: 0,
+        scrollX,
+        scrollY: 0,
+        zoom: 1,
+        width,
+        height: HEADER_HEIGHT + 20 * 20,
+      }),
+      sheet,
+      styles: workbook.styles,
+      palette: lightPalette,
+      selection: ONE_CELL,
+      display: (v) => ({ text: v.kind === 'text' ? v.value : '' }),
+    });
+    return texts;
+  }
+  const long = 'x'.repeat(60); // 360px at 6px a character: spills across five more columns
+
+  it('still draws text whose cell has scrolled off to the left', () => {
+    expect(textsDrawn(64 * 2, long)).toContain(long);
+  });
+
+  it('leaves out text that does not reach the screen', () => {
+    expect(textsDrawn(64 * 8, long)).not.toContain(long);
+    expect(textsDrawn(64 * 2, 'short')).not.toContain('short');
   });
 });

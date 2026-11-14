@@ -15,6 +15,8 @@ import { HEADER_HEIGHT, HEADER_WIDTH, type Band, type Rect, type Viewport } from
 
 /** Table frame thickness in CSS pixels (gridlines are 1). */
 const TABLE_OUTLINE_WIDTH = 2;
+/** How many columns beyond a pane's edge to look for text that spills into it. */
+const SPILL_SCAN_COLUMNS = 256;
 
 export const CELL_PAD_X = 5;
 export const CELL_PAD_Y = 2;
@@ -213,6 +215,7 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
       const rect = { x: cb.start, y: rb.start, w: cb.size, h: rb.size };
       drawCellText(input, cell, rb.index, cb.index, rect, { cols, ci, firstColumn, lastColumn });
     }
+    drawOffscreenSpills(input, rb, cols);
   }
   // A merge's text belongs to its anchor, which may be scrolled out of view while the merge shows.
   for (const m of merges) {
@@ -412,7 +415,14 @@ function drawCellText(
   row: number,
   column: number,
   rect: Rect,
-  spill: { cols: readonly Band[]; ci: number; firstColumn: Band; lastColumn: Band } | null,
+  spill: {
+    cols: readonly Band[];
+    ci: number;
+    firstColumn: Band;
+    lastColumn: Band;
+    /** For a cell drawn from off screen: the x span it must reach to be worth drawing. */
+    reach?: { from: number; to: number };
+  } | null,
 ): void {
   const { ctx, sheet, palette, viewport: v } = input;
   // A cell with the default style takes its row's or column's (font, alignment, format).
@@ -479,6 +489,9 @@ function drawCellText(
         : rect.y + rect.h - total - CELL_PAD_Y * v.zoom;
   y = Math.max(rect.y, y);
   const x = align === 'left' ? rect.x + pad : align === 'right' ? rect.x + rect.w - pad : rect.x + rect.w / 2;
+
+  const reach = spill?.reach;
+  if (reach && (clip.x + clip.w <= reach.from || clip.x >= reach.to)) return;
 
   ctx.save();
   ctx.beginPath();
@@ -559,6 +572,84 @@ export function rotatedBox(w: number, h: number, degrees: number): { width: numb
   const c = Math.abs(Math.cos(t));
   const s = Math.abs(Math.sin(t));
   return { width: w * c + h * s, height: w * s + h * c };
+}
+
+/** A value that takes up its cell: text spills over cells without one, and stops at the next. */
+function holdsValue(cell: Cell | undefined): boolean {
+  const kind = cell?.value.kind;
+  return kind === 'number' || kind === 'text' || kind === 'boolean' || kind === 'error';
+}
+
+/**
+ * Text whose cell is scrolled out of this quadrant can still spill into it. When the quadrant's
+ * edge cell on this row is empty, find the nearest cell with a value beyond that edge (within
+ * SPILL_SCAN_COLUMNS) and draw it where it is; the quadrant's clip keeps only the part that shows.
+ */
+function drawOffscreenSpills(input: RenderInput, rb: Band, cols: readonly Band[]): void {
+  const { sheet, viewport: v } = input;
+  const first = cols[0]!;
+  const last = cols[cols.length - 1]!;
+  const row = rb.index;
+  const at = (c: number) => sheet.find(row, c);
+  // The scrolled quadrant looks left only as far as the frozen columns; the frozen one never looks right.
+  if (!first.frozen && !holdsValue(at(first.index))) {
+    const stop = Math.max(v.frozenColumns, first.index - SPILL_SCAN_COLUMNS);
+    for (let c = first.index - 1; c >= stop; c--)
+      if (holdsValue(at(c))) {
+        drawSpillSource(input, rb, c, c, last.index, first, last);
+        break;
+      }
+  }
+  const extent = sheet.cellExtent()?.lastColumn ?? -1;
+  if (!last.frozen && !holdsValue(at(last.index))) {
+    const stop = Math.min(extent, last.index + SPILL_SCAN_COLUMNS);
+    for (let c = last.index + 1; c <= stop; c++)
+      if (holdsValue(at(c))) {
+        drawSpillSource(input, rb, c, first.index, c, first, last);
+        break;
+      }
+  }
+}
+
+/** Draw the off-screen cell at `column` with bands for `from`…`to`, if any of it reaches the quadrant. */
+function drawSpillSource(
+  input: RenderInput,
+  rb: Band,
+  column: number,
+  from: number,
+  to: number,
+  first: Band,
+  last: Band,
+): void {
+  const { sheet, viewport: v } = input;
+  const row = rb.index;
+  const cell = sheet.find(row, column);
+  if (!cell || cell.isBlank || sheet.findMerge(row, column)) return;
+  if (input.editing && input.editing.row === row && input.editing.column === column) return;
+  const band = (index: number): Band => ({
+    index,
+    start: v.columnX(index),
+    size: v.columns.size(index) * v.zoom,
+    frozen: false,
+  });
+  const bands: Band[] = [];
+  for (let j = from; j <= to; j++) bands.push(band(j));
+  const own = bands[column - from]!;
+  if (own.size <= 0) return; // a hidden column shows nothing
+  drawCellText(
+    input,
+    cell,
+    row,
+    column,
+    { x: own.start, y: rb.start, w: own.size, h: rb.size },
+    {
+      cols: bands,
+      ci: column - from,
+      firstColumn: bands[0]!,
+      lastColumn: bands[bands.length - 1]!,
+      reach: { from: first.start, to: last.start + last.size },
+    },
+  );
 }
 
 function spillRect(
