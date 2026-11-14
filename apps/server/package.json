@@ -7,7 +7,7 @@
   "description": "Serves the Cellestra web client and a small file API over folders on a NAS.",
   "scripts": {
     "start": "node src/main.ts",
-    "dev": "CELLESTRA_ROOTS=Sample=../../.nas-data CELLESTRA_STATIC=../web/dist node --watch src/main.ts",
+    "dev": "CELLESTRA_HOST=127.0.0.1 CELLESTRA_ROOTS=Sample=../../.nas-data CELLESTRA_STATIC=../web/dist node --watch src/main.ts",
     "build": "echo 'server runs from source (node type stripping)'"
   }
 }

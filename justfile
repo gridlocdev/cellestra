@@ -31,7 +31,7 @@ run-desktop: build-web
 [group('run')]
 preview-web: build-web-nas
     mkdir -p "{{ nas_data }}"
-    CELLESTRA_ROOTS="Sample={{ nas_data }}" CELLESTRA_STATIC="{{ justfile_directory() }}/apps/web/dist" node apps/server/src/main.ts
+    CELLESTRA_HOST=127.0.0.1 CELLESTRA_ROOTS="Sample={{ nas_data }}" CELLESTRA_STATIC="{{ justfile_directory() }}/apps/web/dist" node apps/server/src/main.ts
 
 # Run the cellestra CLI from source (paths resolve from where you run it; quoting is kept).
 [group('run')]
@@ -113,7 +113,7 @@ build-docker tag="cellestra:latest":
 [group('build')]
 run-docker tag="cellestra:latest":
     mkdir -p "{{ nas_data }}"
-    docker run --rm -p 8787:8787 -v "{{ nas_data }}:/data" {{ tag }}
+    docker run --rm -p 127.0.0.1:8787:8787 -e CELLESTRA_NO_AUTH=1 -v "{{ nas_data }}:/data" {{ tag }}
 
 # ── Quality ───────────────────────────────────────────────────────────────
 

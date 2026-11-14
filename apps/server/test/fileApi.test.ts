@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FileApi, parseRoots } from '../src/fileApi.ts';
-import { createServer, hostAllowed, parseHosts } from '../src/server.ts';
+import { bindAuthProblem, createServer, hostAllowed, parseHosts } from '../src/server.ts';
 
 let dir: string;
 let outside: string;
@@ -286,5 +286,22 @@ describe('Host check without a token', () => {
     expect(hostAllowed(undefined, [])).toBe(false);
     expect(hostAllowed('10.0.0.5', [])).toBe(true);
     expect(hostAllowed('attacker.test', [])).toBe(false);
+  });
+});
+
+describe('token requirement when binding', () => {
+  it('lets a loopback address run without a token', () => {
+    for (const host of ['127.0.0.1', '127.1.2.3', '::1', '[::1]', 'localhost', 'LOCALHOST'])
+      expect(bindAuthProblem(host, null, false)).toBeNull();
+  });
+
+  it('refuses a non-loopback address without a token', () => {
+    for (const host of ['0.0.0.0', '::', '192.168.1.10', 'nas.lan', ''])
+      expect(bindAuthProblem(host, null, false)).toMatch(/CELLESTRA_TOKEN/);
+  });
+
+  it('allows a non-loopback address with a token, or with the reverse-proxy opt-out', () => {
+    expect(bindAuthProblem('0.0.0.0', 'secret', false)).toBeNull();
+    expect(bindAuthProblem('0.0.0.0', null, true)).toBeNull();
   });
 });

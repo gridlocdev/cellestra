@@ -26,6 +26,6 @@ export default defineConfig({
   build: { outDir: 'dist', emptyOutDir: true, sourcemap: true },
   server: {
     // `pnpm dev` talks to a locally running `apps/server` for the NAS file store.
-    proxy: { '/api': 'http://localhost:8787' },
+    proxy: { '/api': 'http://127.0.0.1:8787' },
   },
 });

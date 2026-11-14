@@ -43,6 +43,32 @@ export function hostAllowed(hostHeader: string | undefined, allowed: readonly st
   return allowed.includes(bare);
 }
 
+/** Is `host` (a bind address such as `127.0.0.1`, `::1` or `localhost`) reachable only from this machine? */
+export function isLoopbackHost(host: string): boolean {
+  const bare = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '');
+  if (bare === 'localhost' || bare === '::1') return true;
+  return isIP(bare) === 4 && bare.startsWith('127.');
+}
+
+/**
+ * Why the server must not start with this bind address and token, or null when it may. Without a
+ * token, anyone who can reach a non-loopback address could read and overwrite every file in the
+ * roots, so that needs `CELLESTRA_TOKEN`, or `noAuth` (`CELLESTRA_NO_AUTH=1`) when a reverse proxy
+ * in front already authenticates.
+ */
+export function bindAuthProblem(host: string, token: string | null, noAuth: boolean): string | null {
+  if (token !== null || noAuth || isLoopbackHost(host)) return null;
+  return (
+    `Refusing to listen on ${host || 'all addresses'} without CELLESTRA_TOKEN: anyone on the network ` +
+    'could read and overwrite your files. Set CELLESTRA_TOKEN to a long random secret, bind to ' +
+    'CELLESTRA_HOST=127.0.0.1, or set CELLESTRA_NO_AUTH=1 if a reverse proxy in front already ' +
+    'requires a login.'
+  );
+}
+
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',

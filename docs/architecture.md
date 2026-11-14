@@ -65,7 +65,7 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
   - Only `.ods`, `.csv` and `.tsv` files can be read or written, and no path segment may start with a dot.
   - Writes to one file are serialized, so the If-Match check and the rename cannot interleave. If-Match on a missing file is 412.
   - The replacement keeps the file's mode and, where permitted, its owner. A hard-linked file is written in place.
-- **Auth.** Optional: set `CELLESTRA_TOKEN` to require a bearer token, or put the server behind the NAS's reverse proxy.
+- **Auth.** `CELLESTRA_TOKEN` makes every `/api` call except `/api/info` need a bearer token. The server refuses to start on a non-loopback address without one, unless `CELLESTRA_NO_AUTH=1` says a reverse proxy in front authenticates. On a loopback address it runs without a token.
 - **Host check.** Without a token, a request whose `Host` is not an IP literal, `localhost`, or a name in `CELLESTRA_HOSTS` gets 421. This blocks DNS rebinding.
 
 ## Desktop (`apps/desktop`)

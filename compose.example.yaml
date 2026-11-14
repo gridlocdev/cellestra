@@ -8,8 +8,10 @@ services:
     environment:
       # One or more folders, Name=/container/path;Other=/container/path2
       CELLESTRA_ROOTS: 'Documents=/data/documents;Shared=/data/shared'
-      # Optional shared secret. Leave unset if your NAS reverse proxy already authenticates.
-      # CELLESTRA_TOKEN: change-me
+      # Shared secret the browser asks for. Required: the server will not start without it.
+      CELLESTRA_TOKEN: change-me-to-a-long-random-secret
+      # Only if your NAS reverse proxy already requires a login, drop the token and set:
+      # CELLESTRA_NO_AUTH: '1'
       # Without a token, only IP addresses and localhost are answered. Add the names you browse to:
       # CELLESTRA_HOSTS: 'nas.lan,cellestra.home.arpa'
     volumes:
