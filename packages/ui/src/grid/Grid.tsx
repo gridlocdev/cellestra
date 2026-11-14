@@ -1295,6 +1295,9 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         onBlur={(e) => {
           // Grid clicks are handled (and any rejection reported) by onPointerDown.
           if (rootRef.current?.contains(e.relatedTarget as Node | null)) return;
+          // The window lost focus (⌘Tab to look something up): the edit stays open, and the browser
+          // gives the editor its focus back when the window returns.
+          if (!e.currentTarget.ownerDocument.hasFocus()) return;
           endEdit(true, [0, 0], false);
         }}
       />
