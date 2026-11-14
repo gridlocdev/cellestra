@@ -61,6 +61,7 @@ import {
   lockWarning,
   nativeBridge,
   printHtml,
+  printableRange,
   canvasRowMeasure,
   contentRowHeights,
   printInFrame,
@@ -1121,6 +1122,13 @@ export class AppController {
       return null;
     }
     const r = this.range;
+    const range = selectionOnly
+      ? printableRange(sheet, { top: r.top, left: r.left, bottom: r.bottom, right: r.right })
+      : null;
+    if (selectionOnly && !range) {
+      this.info('The selection is empty: there is nothing to print.');
+      return null;
+    }
     const styles = this.session.workbook.peek().styles;
     const display = (value: CellValue, style: CellStyle) => this.session.display(value, style);
     // Rows the grid shows taller for their content (wrapped text, big fonts) print that tall too.
@@ -1129,7 +1137,7 @@ export class AppController {
       sheet,
       styles,
       setup,
-      range: selectionOnly ? { top: r.top, left: r.left, bottom: r.bottom, right: r.right } : null,
+      range,
       display,
       contentHeights: contentRowHeights(sheet, styles, canvasRowMeasure(sheet, display, ctx)),
       conditional: (style, row, column) => this.conditionalStyle(style, row, column),

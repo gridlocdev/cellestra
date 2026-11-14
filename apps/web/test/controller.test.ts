@@ -1132,6 +1132,19 @@ describe('an open cell edit', () => {
   });
 });
 
+describe('printing the selection', () => {
+  it('says so instead of printing when the selection holds no used cells', async () => {
+    const app = await makeApp();
+    app.session.activeSheet.peek().setValue(0, 0, CellValue.text('x'));
+    app.selection.selectRange({ top: 5, left: 0, bottom: MAX_ROW, right: 0 });
+    await app.print(true);
+    expect(app.toast.peek()).toEqual({
+      text: 'The selection is empty: there is nothing to print.',
+      tone: 'info',
+    });
+  });
+});
+
 describe('LibreOffice locks', () => {
   it('warns on open when LibreOffice has the file, and opens it anyway', async () => {
     const app = await makeApp();

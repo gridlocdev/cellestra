@@ -1,7 +1,15 @@
-import { CellRange, CellValue, MergedRegion, PageSetups, Workbook, type PageSetup } from '@cellestra/core';
+import {
+  CellRange,
+  CellValue,
+  MergedRegion,
+  PageSetups,
+  SheetDimensions,
+  Workbook,
+  type PageSetup,
+} from '@cellestra/core';
 import { describe, expect, it } from 'vitest';
 import { draftOf, setupOf } from '../src/components/pageSetupForm.ts';
-import { printHtml, usedRange } from '../src/print/printHtml.ts';
+import { printHtml, printableRange, usedRange } from '../src/print/printHtml.ts';
 
 const display = (v: CellValue) => (v.kind === 'number' ? String(v.value) : v.kind === 'text' ? v.value : '');
 
@@ -112,5 +120,43 @@ describe('printHtml row heights', () => {
     });
     expect(tall.pages).toBeGreaterThan(1);
     expect(tall.html).toContain('<tr style="height:60px">');
+  });
+});
+
+describe('printing a selection', () => {
+  const lastRow = SheetDimensions.maxRows - 1;
+  const lastColumn = SheetDimensions.maxColumns - 1;
+
+  it('prints only the used part of whole columns, rows or the whole sheet', () => {
+    const { wb, sheet } = grid(3, 3);
+    const all = { top: 0, left: 0, bottom: lastRow, right: lastColumn };
+    expect(printableRange(sheet, all)).toEqual({ top: 0, left: 0, bottom: 2, right: 2 });
+    expect(printableRange(sheet, { top: 0, left: 1, bottom: lastRow, right: 1 })).toEqual({
+      top: 0,
+      left: 1,
+      bottom: 2,
+      right: 1,
+    });
+    const range = printableRange(sheet, all);
+    const doc = printHtml({ sheet, styles: wb.styles, setup: null, range, display, title: 'T' });
+    expect(doc.pages).toBe(1);
+    expect(doc.html).toContain('>202<');
+  });
+
+  it('keeps a merge that reaches past the last value', () => {
+    const { sheet } = grid(2, 2);
+    sheet.addMerge(new MergedRegion(CellRange.parse('B2:D5')));
+    expect(printableRange(sheet, { top: 0, left: 0, bottom: lastRow, right: lastColumn })).toEqual({
+      top: 0,
+      left: 0,
+      bottom: 4,
+      right: 3,
+    });
+  });
+
+  it('has nothing to print for a selection wholly outside the used cells', () => {
+    const { sheet } = grid(3, 3);
+    expect(printableRange(sheet, { top: 10, left: 0, bottom: lastRow, right: 0 })).toBeNull();
+    expect(printableRange(sheet, { top: 0, left: 5, bottom: 1, right: 6 })).toBeNull();
   });
 });

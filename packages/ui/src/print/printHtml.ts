@@ -23,7 +23,10 @@ export interface PrintInput {
   readonly styles: StylePool;
   /** The sheet's page setup; null prints on the default page. */
   readonly setup: PageSetup | null;
-  /** What to print; null prints every used cell of the sheet. */
+  /**
+   * What to print, as given; null prints every used cell of the sheet. A selection goes through
+   * `printableRange` first, or a whole column is a million rows of HTML.
+   */
   readonly range: PrintRange | null;
   /** A value as the grid shows it in `style` (number format applied). */
   readonly display: (value: CellValue, style: CellStyle) => string;
@@ -140,6 +143,18 @@ export function usedRange(sheet: Worksheet): PrintRange {
     right = Math.max(right, m.range.right);
   }
   return { top: 0, left: 0, bottom, right };
+}
+
+/**
+ * The part of `range` that holds used cells (merges included), so a whole-column or whole-sheet
+ * selection prints what is in it. Null when the two don't overlap: there is nothing to print.
+ */
+export function printableRange(sheet: Worksheet, range: PrintRange): PrintRange | null {
+  const used = usedRange(sheet);
+  const bottom = Math.min(range.bottom, used.bottom);
+  const right = Math.min(range.right, used.right);
+  if (range.top > bottom || range.left > right) return null;
+  return { top: range.top, left: range.left, bottom, right };
 }
 
 function lines(from: number, to: number, hidden: (i: number) => boolean): number[] {
