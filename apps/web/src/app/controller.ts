@@ -401,6 +401,7 @@ export class AppController {
 
   async newDocument(): Promise<void> {
     if (!(await this.confirmDiscard())) return;
+    this.#openSeq++; // an open still on its way must not replace the new document
     this.session.newDocument();
     this.clearMarquee();
     void clearRecovery();
@@ -408,7 +409,8 @@ export class AppController {
   }
 
   async open(): Promise<void> {
-    if (!(await this.confirmDiscard())) return;
+    const ticket = await this.#startOpen();
+    if (!ticket) return;
     const kind = this.primaryStore;
     let opened: OpenedDocument | null;
     try {
@@ -420,15 +422,16 @@ export class AppController {
     } catch (e) {
       return this.error(e);
     }
-    if (opened) this.adopt(opened);
+    if (opened) await this.#finishOpen(opened, ticket);
   }
 
   /** Upload from this computer even when the NAS is the primary store. */
   async openLocal(): Promise<void> {
-    if (!(await this.confirmDiscard())) return;
+    const ticket = await this.#startOpen();
+    if (!ticket) return;
     try {
       const opened = await this.browser.pick();
-      if (opened) this.adopt(opened);
+      if (opened) await this.#finishOpen(opened, ticket);
     } catch (e) {
       this.error(e);
     }
@@ -436,11 +439,13 @@ export class AppController {
 
   /** Open a dropped file; with a File System Access handle it can be saved back in place. */
   async openFile(file: File, handle?: Promise<FileSystemHandle | null>): Promise<void> {
-    if (!(await this.confirmDiscard())) return;
+    const ticket = await this.#startOpen();
+    if (!ticket) return;
     try {
       const h = await handle?.catch(() => null);
-      this.adopt(
+      await this.#finishOpen(
         await this.browser.openFile(file, h?.kind === 'file' ? (h as FileSystemFileHandle) : undefined),
+        ticket,
       );
     } catch (e) {
       this.error(e);
@@ -450,16 +455,19 @@ export class AppController {
   async openNativePath(path: string): Promise<void> {
     // A file passed at launch waits for the recovery prompt, so neither replaces the other unasked.
     await this.#ready;
-    if (!this.nativeStore || !(await this.confirmDiscard())) return;
+    if (!this.nativeStore) return;
+    const ticket = await this.#startOpen();
+    if (!ticket) return;
     try {
-      this.adopt(await this.nativeStore.openPath(path));
+      await this.#finishOpen(await this.nativeStore.openPath(path), ticket);
     } catch (e) {
       this.error(e);
     }
   }
 
   async openRecent(entry: RecentEntry): Promise<void> {
-    if (!(await this.confirmDiscard())) return;
+    const ticket = await this.#startOpen();
+    if (!ticket) return;
     try {
       const ref = entry.ref;
       const opened =
@@ -468,7 +476,7 @@ export class AppController {
           : ref.store === 'native' && this.nativeStore
             ? await this.nativeStore.openPath(ref.id)
             : await this.browser.reload(ref);
-      this.adopt(opened);
+      await this.#finishOpen(opened, ticket);
     } catch (e) {
       // Only a file that is gone leaves the list; a denied permission or an offline NAS doesn't.
       if (isNotFound(e)) {
@@ -477,6 +485,26 @@ export class AppController {
       }
       this.error(e);
     }
+  }
+
+  /** Bumped by every open and New: an open whose number is no longer current lost the race. */
+  #openSeq = 0;
+
+  /** Ask about unsaved changes, then note what the document looked like when the open began. */
+  async #startOpen(): Promise<OpenTicket | null> {
+    if (!(await this.confirmDiscard())) return null;
+    return { seq: ++this.#openSeq, generation: this.session.generation, edits: this.session.editCount };
+  }
+
+  /**
+   * Adopt a document that took a while to arrive. A newer open or New wins outright; edits made
+   * while it downloaded are asked about again instead of being replaced unasked.
+   */
+  async #finishOpen(opened: OpenedDocument, ticket: OpenTicket): Promise<void> {
+    if (ticket.seq !== this.#openSeq) return;
+    const changed = this.session.generation !== ticket.generation || this.session.editCount !== ticket.edits;
+    if (changed && (!(await this.confirmDiscard()) || ticket.seq !== this.#openSeq)) return;
+    this.adopt(opened);
   }
 
   adopt(opened: OpenedDocument): void {
@@ -680,10 +708,11 @@ export class AppController {
   }
 
   async importCsv(): Promise<void> {
-    if (!(await this.confirmDiscard())) return;
+    const ticket = await this.#startOpen();
+    if (!ticket) return;
     try {
       const opened = await this.browser.pick();
-      if (opened) this.adopt(opened);
+      if (opened) await this.#finishOpen(opened, ticket);
     } catch (e) {
       this.error(e);
     }
@@ -710,8 +739,11 @@ export class AppController {
     if (!ref) return;
     if (!force && !(await this.confirmDiscard())) return;
     const edits = this.session.editCount;
+    const generation = this.session.generation;
     try {
       const opened = await this.storeFor(ref).reload(ref);
+      // Another document was opened meanwhile: this reload is for a file no longer on screen.
+      if (this.session.generation !== generation) return;
       if (onlyIfClean && (this.session.editCount !== edits || this.session.document.peek() !== ref)) {
         this.info('The file changed on disk. Saving will ask before overwriting it.');
         return;
@@ -2048,6 +2080,12 @@ export class AppController {
     if (this.session.sheetNames.peek().length <= 1) return this.info('A workbook needs at least one sheet.');
     this.session.deleteSheet(index);
   }
+}
+
+interface OpenTicket {
+  readonly seq: number;
+  readonly generation: number;
+  readonly edits: number;
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────

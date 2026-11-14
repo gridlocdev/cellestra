@@ -492,3 +492,50 @@ describe('clipboard across documents', () => {
     expect(sheet.getValue(2, 2)).toEqual(CellValue.text('from A'));
   });
 });
+
+describe('slow opens', () => {
+  /** A store whose reloads (Open Recent) resolve when the test says so. */
+  function gated(app: Controller) {
+    const fake = new FakeStore();
+    withFake(app, fake);
+    let release!: () => void;
+    fake.reloadGate = new Promise<void>((r) => (release = r));
+    const wb = Workbook.createNew();
+    wb.worksheets[0]!.setValue(0, 0, CellValue.text('from the NAS'));
+    fake.reloadBytes = OdsWriter.write(wb, null);
+    (app as unknown as { nas: { open: (root: string, path: string) => Promise<OpenedDocument> } }).nas.open =
+      () => fake.reload(ref('slow.ods'));
+    return { release };
+  }
+
+  it('asks again before replacing edits made while the file downloaded', async () => {
+    const app = await makeApp();
+    const { release } = gated(app);
+    const asked = vi.spyOn(app, 'confirmDiscard');
+    const opening = app.openRecent({
+      ref: { store: 'nas', id: 'root:/slow.ods', name: 'slow.ods' },
+    } as never);
+    await flush();
+    app.session.activeSheet.peek().setValue(4, 4, CellValue.text('typed meanwhile'));
+    app.session.touch();
+    asked.mockResolvedValueOnce(false); // the user keeps their edits
+    release();
+    await opening;
+    expect(asked).toHaveBeenCalledTimes(2);
+    expect(app.session.activeSheet.peek().getValue(4, 4)).toEqual(CellValue.text('typed meanwhile'));
+  });
+
+  it('drops a slow open once New was chosen after it', async () => {
+    const app = await makeApp();
+    const { release } = gated(app);
+    const opening = app.openRecent({
+      ref: { store: 'nas', id: 'root:/slow.ods', name: 'slow.ods' },
+    } as never);
+    await flush();
+    await app.newDocument();
+    release();
+    await opening;
+    expect(app.session.document.peek()).toBeNull();
+    expect(app.session.activeSheet.peek().getValue(0, 0)).toEqual(CellValue.empty);
+  });
+});
