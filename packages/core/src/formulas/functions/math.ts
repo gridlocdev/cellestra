@@ -185,6 +185,64 @@ function sumOrCountIf(args: readonly Expr[], ev: FunctionEvaluator, sum: boolean
   return CellValue.number(sum ? total.get() : count);
 }
 
+/**
+ * SUMPRODUCT over ranges, inline arrays or single values, all the same size (else #VALUE!). As in
+ * Calc, text and empty cells are 0, a boolean cell is 1 or 0, and an error anywhere is the result.
+ */
+function sumProduct(args: readonly Expr[], ev: FunctionEvaluator): CellValue {
+  type Grid = {
+    rows: number;
+    columns: number;
+    /** How many rows from the top can hold a value. */
+    reach: number;
+    get: (r: number, c: number) => CellValue;
+    /** Cells on a sheet, where a boolean is a number (not an inline array or a typed value). */
+    cells: boolean;
+  };
+  const grids: Grid[] = [];
+  for (const arg of args) {
+    const range = ev.tryEvaluateRange(arg);
+    if (range) {
+      grids.push({
+        rows: range.rowCount,
+        columns: range.columnCount,
+        reach: range.reach.rows,
+        get: (r, c) => range.get(r, c),
+        cells: !range.isArray,
+      });
+    } else {
+      const value = ev.evaluate(arg);
+      grids.push({ rows: 1, columns: 1, reach: 1, get: () => value, cells: true });
+    }
+  }
+  const { rows, columns } = grids[0]!;
+  if (grids.some((g) => g.rows !== rows || g.columns !== columns))
+    return CellValue.error(CellError.value('SUMPRODUCT needs ranges of the same size.'));
+  // Rows past every range's data are all empty, so their products are 0.
+  const reach = Math.min(rows, ...grids.map((g) => g.reach));
+  const total = new KahanSum();
+  for (let r = 0; r < reach; r++) {
+    for (let c = 0; c < columns; c++) {
+      let product = 1;
+      for (const grid of grids) {
+        const value = grid.get(r, c);
+        if (value.kind === 'error') return value;
+        product *=
+          value.kind === 'number'
+            ? value.value
+            : value.kind === 'boolean' && grid.cells && value.value
+              ? 1
+              : 0;
+      }
+      total.add(product);
+    }
+  }
+  const sum = total.get();
+  return Number.isFinite(sum)
+    ? CellValue.number(sum)
+    : CellValue.error(CellError.number('The result is not a finite number.'));
+}
+
 /** The math & statistics functions. */
 export function mathFunctions(): FormulaFunction[] {
   return [
@@ -329,6 +387,17 @@ export function mathFunctions(): FormulaFunction[] {
     ),
     rounding('ROUNDDOWN', 'Rounds a number toward zero.', 'ROUNDDOWN(3.14159, 2)', (v, d) =>
       directional(v, d, false),
+    ),
+    defineFunction(
+      createMetadata(
+        'SUMPRODUCT',
+        'math',
+        'Multiplies matching cells of same-sized ranges and adds up the products.',
+        'number',
+        'SUMPRODUCT(A1:A5, B1:B5)',
+        Arg.any('array', { repeatable: true }),
+      ),
+      sumProduct,
     ),
     defineFunction(
       createMetadata(
