@@ -275,6 +275,13 @@ export class Parser {
   private parseRangeEnd(start: CellAddress): Expr {
     const end = this.current.type === 'name' ? CellAddress.tryParse(this.current.text) : null;
     if (!end) throw new FormulaParseException("Expected a cell reference after ':'.", this.current.position);
+    // A range from one sheet to another (`Sheet1.A1:Sheet3.B2`) spans every sheet between them.
+    // That is not modelled, so refuse it rather than read it as one sheet and change its meaning.
+    if (end.sheet !== null && end.sheet.toLowerCase() !== start.sheet?.toLowerCase())
+      throw new FormulaParseException(
+        'Ranges across several sheets are not supported.',
+        this.current.position,
+      );
     this.advance();
     // A sheet qualifier on the left corner applies to the whole range.
     const qualified = start.sheet !== null && end.sheet === null ? end.withSheet(start.sheet) : end;
