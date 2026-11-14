@@ -1,5 +1,6 @@
 import {
   ACCEPT,
+  ConflictError,
   mimeFor,
   SPREADSHEET_TYPES,
   type DocumentRef,
@@ -79,13 +80,24 @@ export class BrowserStore implements FileStore {
     return this.fromHandle(ref.handle);
   }
 
-  async save(ref: DocumentRef, bytes: Uint8Array, opts?: { background?: boolean }): Promise<DocumentRef> {
+  async save(
+    ref: DocumentRef,
+    bytes: Uint8Array,
+    opts?: { force?: boolean; background?: boolean },
+  ): Promise<DocumentRef> {
     if (ref.handle) {
       await ensurePermission(ref.handle, 'readwrite', !opts?.background);
+      // Another app (or tab) saved the file since we read it: don't write over its changes unasked.
+      if (!opts?.force && ref.version !== null) {
+        const current = await ref.handle.getFile();
+        if (String(current.lastModified) !== ref.version)
+          throw new ConflictError('changed', `${ref.name} was changed by another app since it was opened.`);
+      }
       const w = await ref.handle.createWritable();
       await w.write(bytes as Uint8Array<ArrayBuffer>);
       await w.close();
-      return ref;
+      const written = await ref.handle.getFile();
+      return { ...ref, version: String(written.lastModified) };
     }
     // No handle (an uploaded or dropped file): the controller sends these through Save As.
     download(ref.name, bytes);
