@@ -9,7 +9,7 @@ import {
 } from './mapping/odsCellStyles.ts';
 import { OdsDataStyles } from './mapping/odsDataStyles.ts';
 import { CM_PER_INCH, cmToPx } from './odsContentShared.ts';
-import { NumberNs, Office, Style, Svg } from './odsXmlNames.ts';
+import { Fo, NumberNs, Office, Style, Svg } from './odsXmlNames.ts';
 
 /** How deep a `style:parent-style-name` chain may go before it is treated as a cycle. */
 const MAX_STYLE_DEPTH = 32;
@@ -27,6 +27,8 @@ export class OdsStyleIndex {
   private readonly fontFaces = new Map<string, string>();
   private readonly columnWidths = new Map<string, number>();
   private readonly rowHeights = new Map<string, number>();
+  /** Row and column style names that put a manual page break before their line. */
+  private readonly pageBreaks = new Set<string>();
   private readonly styleIds = new Map<string, number | null>();
   private readonly formats = new Map<string, NumberFormat>();
   private plainId: number | null = null;
@@ -74,14 +76,15 @@ export class OdsStyleIndex {
           this.automaticCellStyles.set(name, element);
           break;
         case 'table-column': {
-          const width = parseLength(
-            element.element(Style('table-column-properties'))?.attr(Style('column-width')) ?? null,
-          );
+          const properties = element.element(Style('table-column-properties'));
+          if (properties?.attr(Fo('break-before')) === 'page') this.pageBreaks.add(name);
+          const width = parseLength(properties?.attr(Style('column-width')) ?? null);
           if (width !== null) this.columnWidths.set(name, cmToPx(width));
           break;
         }
         case 'table-row': {
           const properties = element.element(Style('table-row-properties'));
+          if (properties?.attr(Fo('break-before')) === 'page') this.pageBreaks.add(name);
           // An optimal-height row's height is whatever its content needs; the number stored with
           // it is only the last measurement (LibreOffice's 0.178in on every row), not a choice.
           if (properties?.attr(Style('use-optimal-row-height')) === 'true') break;
@@ -127,6 +130,11 @@ export class OdsStyleIndex {
 
   rowHeight(name: string): number | null {
     return this.rowHeights.get(name) ?? null;
+  }
+
+  /** Whether a row or column style puts a manual page break before its line. */
+  pageBreak(name: string): boolean {
+    return this.pageBreaks.has(name);
   }
 
   /** The number format a data style name stands for (General when it is unknown). */

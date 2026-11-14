@@ -545,14 +545,16 @@ class TableGridReader {
     const styleName = element.attr(Table('style-name'));
     const hidden = isHidden(element);
     const width = styleName === null ? null : this.context.styles.columnWidth(styleName);
+    const pageBreak = styleName !== null && this.context.styles.pageBreak(styleName);
     // The column's default cell style: "this whole column is formatted like so".
     const defaultStyleId = defaultStyleIdOf(element, this.context.styles);
-    if (width === null && !hidden && defaultStyleId === null) return;
+    if (width === null && !hidden && !pageBreak && defaultStyleId === null) return;
     for (let c = column; c < column + repeat; c++) {
       const model = this.sheet.getOrCreateColumn(c);
       if (width !== null) model.width = width;
       if (defaultStyleId !== null) model.styleId = defaultStyleId;
       model.hidden = hidden;
+      model.pageBreak = pageBreak;
     }
   }
 
@@ -616,7 +618,13 @@ class TableGridReader {
     const styles = this.context.styles;
     const styleName = element.attr(Table('style-name'));
     const height = styleName === null ? null : styles.rowHeight(styleName);
-    if (!isHidden(element) && defaultStyleIdOf(element, styles) === null && (height === null || skipHeight))
+    const pageBreak = styleName !== null && styles.pageBreak(styleName);
+    if (
+      !isHidden(element) &&
+      !pageBreak &&
+      defaultStyleIdOf(element, styles) === null &&
+      (height === null || skipHeight)
+    )
       return;
     this.applyRowLayout(element, from, to);
   }
@@ -627,11 +635,13 @@ class TableGridReader {
     const hidden = isHidden(element);
     const filtered = isFiltered(element);
     const height = styleName === null ? null : styles.rowHeight(styleName);
+    const pageBreak = styleName !== null && styles.pageBreak(styleName);
     const defaultStyleId = defaultStyleIdOf(element, styles);
-    if (height === null && !hidden && defaultStyleId === null) return;
+    if (height === null && !hidden && !pageBreak && defaultStyleId === null) return;
     for (let r = from; r < to; r++) {
       const model = this.sheet.getOrCreateRow(r);
       if (height !== null) model.height = height;
+      model.pageBreak = pageBreak;
       if (defaultStyleId !== null) model.styleId = defaultStyleId;
       model.filtered = filtered;
       model.manuallyHidden = hidden && !filtered;

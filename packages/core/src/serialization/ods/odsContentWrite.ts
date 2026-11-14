@@ -260,7 +260,10 @@ function sameSignature(a: ColumnSignature, b: ColumnSignature): boolean {
 function columnSignature(sheet: Worksheet, column: number, registry: StyleRegistry): ColumnSignature {
   const model = sheet.findColumn(column);
   if (!model) return { style: null, hidden: false, defaultCellStyle: null };
-  const style = model.width !== Defaults.columnWidth ? registry.columnStyle(model.width) : null;
+  const style =
+    model.width !== Defaults.columnWidth || model.pageBreak
+      ? registry.columnStyle(model.width, model.pageBreak)
+      : null;
   const defaultCellStyle = model.styleId !== StylePool.defaultId ? registry.cellStyle(model.styleId) : null;
   return { style, hidden: model.hidden, defaultCellStyle };
 }
@@ -370,11 +373,14 @@ function rowLayout(
         readonly height: number;
         readonly manuallyHidden: boolean;
         readonly filtered: boolean;
+        readonly pageBreak: boolean;
         readonly styleId: number;
       }
     | undefined,
 ): string {
-  return model ? `${model.height}|${model.manuallyHidden}|${model.filtered}|${model.styleId}` : '';
+  return model
+    ? `${model.height}|${model.manuallyHidden}|${model.filtered}|${model.pageBreak}|${model.styleId}`
+    : '';
 }
 
 /**
@@ -415,8 +421,8 @@ function writeRow(w: SheetWriter, row: number, cellColumns: readonly number[]): 
   const { sheet, registry } = w;
   const element = new XmlElement(Table('table-row'));
   const rowModel = sheet.findRow(row);
-  if (rowModel && rowModel.height !== Defaults.rowHeight) {
-    element.setAttr(Table('style-name'), registry.rowStyle(rowModel.height));
+  if (rowModel && (rowModel.height !== Defaults.rowHeight || rowModel.pageBreak)) {
+    element.setAttr(Table('style-name'), registry.rowStyle(rowModel.height, rowModel.pageBreak));
   }
   // A filter's rows are `filter`, so LibreOffice shows them again when the filter is cleared; a row
   // both filtered and hidden by hand is written as filtered, as LibreOffice does.

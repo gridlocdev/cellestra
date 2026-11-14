@@ -25,6 +25,7 @@ export class Row {
   #height: number = Defaults.rowHeight;
   #manuallyHidden = false;
   #filtered = false;
+  #pageBreak = false;
   #styleId = 0;
 
   get height(): number {
@@ -54,6 +55,13 @@ export class Row {
     if (value !== this.#filtered) generation++;
     this.#filtered = value;
   }
+  /** A manual page break before this row (ODF `fo:break-before="page"` on its row style). */
+  get pageBreak(): boolean {
+    return this.#pageBreak;
+  }
+  set pageBreak(value: boolean) {
+    this.#pageBreak = value;
+  }
   get styleId(): number {
     return this.#styleId;
   }
@@ -63,7 +71,7 @@ export class Row {
   }
 
   get isDefault(): boolean {
-    return this.#height === Defaults.rowHeight && !this.hidden && this.#styleId === 0;
+    return this.#height === Defaults.rowHeight && !this.hidden && !this.#pageBreak && this.#styleId === 0;
   }
 
   clone(): Row {
@@ -71,6 +79,7 @@ export class Row {
     r.#height = this.#height;
     r.#manuallyHidden = this.#manuallyHidden;
     r.#filtered = this.#filtered;
+    r.#pageBreak = this.#pageBreak;
     r.#styleId = this.#styleId;
     return r;
   }
@@ -80,6 +89,7 @@ export class Row {
 export class Column {
   #width: number = Defaults.columnWidth;
   #hidden = false;
+  #pageBreak = false;
   #styleId = 0;
 
   get width(): number {
@@ -96,6 +106,13 @@ export class Column {
     if (value !== this.#hidden) generation++;
     this.#hidden = value;
   }
+  /** A manual page break before this column (ODF `fo:break-before="page"` on its column style). */
+  get pageBreak(): boolean {
+    return this.#pageBreak;
+  }
+  set pageBreak(value: boolean) {
+    this.#pageBreak = value;
+  }
   get styleId(): number {
     return this.#styleId;
   }
@@ -105,13 +122,14 @@ export class Column {
   }
 
   get isDefault(): boolean {
-    return this.#width === Defaults.columnWidth && !this.#hidden && this.#styleId === 0;
+    return this.#width === Defaults.columnWidth && !this.#hidden && !this.#pageBreak && this.#styleId === 0;
   }
 
   clone(): Column {
     const c = new Column();
     c.#width = this.#width;
     c.#hidden = this.#hidden;
+    c.#pageBreak = this.#pageBreak;
     c.#styleId = this.#styleId;
     return c;
   }

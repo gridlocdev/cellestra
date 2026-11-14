@@ -1,5 +1,6 @@
 import { NumberFormats, type CellStyleMap, type NumberFormat } from '../../styling/cellStyle.ts';
 import type { StylePool } from '../../styling/stylePool.ts';
+import { Defaults } from '../../defaults.ts';
 import { XmlElement } from '../../xml/index.ts';
 import {
   CONDITIONAL_STYLE_PREFIX,
@@ -9,7 +10,7 @@ import {
 } from './mapping/odsCellStyles.ts';
 import { OdsDataStyles } from './mapping/odsDataStyles.ts';
 import { formatUpTo3, pxToCm } from './odsContentShared.ts';
-import { Style } from './odsXmlNames.ts';
+import { Fo, Style } from './odsXmlNames.ts';
 
 export { CONDITIONAL_STYLE_PREFIX };
 
@@ -19,8 +20,8 @@ export class StyleRegistry {
   private readonly autoStyles: XmlElement;
   private readonly cellStyleNames = new Map<number, string>();
   private readonly dataStyleNames = new Map<string, string>();
-  private readonly columnStyleNames = new Map<number, string>();
-  private readonly rowStyleNames = new Map<number, string>();
+  private readonly columnStyleNames = new Map<string, string>();
+  private readonly rowStyleNames = new Map<string, string>();
   private next = 0;
   private readonly commonStyles: XmlElement[] | null;
   private readonly commonStyleNames = new Map<number, string>();
@@ -142,43 +143,51 @@ export class StyleRegistry {
     return name;
   }
 
-  columnStyle(width: number): string {
-    const existing = this.columnStyleNames.get(width);
+  /** A column style for a width, with `fo:break-before="page"` when a manual page break comes before the column. */
+  columnStyle(width: number, pageBreak = false): string {
+    const key = `${width}|${pageBreak}`;
+    const existing = this.columnStyleNames.get(key);
     if (existing !== undefined) return existing;
 
     const name = this.nextName('co');
+    const properties = new XmlElement(Style('table-column-properties'));
+    if (pageBreak) properties.setAttr(Fo('break-before'), 'page');
+    properties.setAttr(Style('column-width'), formatCm(pxToCm(width)));
     this.autoStyles.add(
       new XmlElement(Style('style'))
         .setAttr(Style('name'), name)
         .setAttr(Style('family'), 'table-column')
-        .add(
-          new XmlElement(Style('table-column-properties')).setAttr(
-            Style('column-width'),
-            formatCm(pxToCm(width)),
-          ),
-        ),
+        .add(properties),
     );
-    this.columnStyleNames.set(width, name);
+    this.columnStyleNames.set(key, name);
     return name;
   }
 
-  rowStyle(height: number): string {
-    const existing = this.rowStyleNames.get(height);
+  /**
+   * A row style for a height, with `fo:break-before="page"` when a manual page break comes before
+   * the row. A row with the default height and a break keeps its height optimal, as LibreOffice's
+   * own rows are.
+   */
+  rowStyle(height: number, pageBreak = false): string {
+    const key = `${height}|${pageBreak}`;
+    const existing = this.rowStyleNames.get(key);
     if (existing !== undefined) return existing;
 
     const name = this.nextName('ro');
+    const properties = new XmlElement(Style('table-row-properties')).setAttr(
+      Style('row-height'),
+      formatCm(pxToCm(height)),
+    );
+    if (pageBreak) properties.setAttr(Fo('break-before'), 'page');
+    // A height someone set is kept, not re-measured to fit the content when LibreOffice loads it.
+    properties.setAttr(Style('use-optimal-row-height'), height === Defaults.rowHeight ? 'true' : 'false');
     this.autoStyles.add(
       new XmlElement(Style('style'))
         .setAttr(Style('name'), name)
         .setAttr(Style('family'), 'table-row')
-        .add(
-          new XmlElement(Style('table-row-properties'))
-            .setAttr(Style('row-height'), formatCm(pxToCm(height)))
-            // A height someone set is kept, not re-measured to fit the content when LibreOffice loads it.
-            .setAttr(Style('use-optimal-row-height'), 'false'),
-        ),
+        .add(properties),
     );
-    this.rowStyleNames.set(height, name);
+    this.rowStyleNames.set(key, name);
     return name;
   }
 }
