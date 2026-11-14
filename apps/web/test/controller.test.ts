@@ -107,6 +107,24 @@ describe('saving', () => {
     expect(app.session.modified.peek()).toBe(false);
   });
 
+  it('still runs Save As or an export asked for while a save is in flight', async () => {
+    const app = await makeApp();
+    const fake = new FakeStore();
+    withFake(app, fake);
+    const picker = vi.fn(() => Promise.resolve(null));
+    (app as unknown as { browser: { saveAs: typeof picker } }).browser.saveAs = picker;
+    app.session.load(OdsWriter.write(Workbook.createNew(), null), ref('a.ods'));
+    app.session.touch();
+
+    const saving = app.save();
+    await flush();
+    const exporting = app.saveAs('csv');
+    fake.saves[0]!.finish();
+    await saving;
+    await exporting;
+    expect(picker).toHaveBeenCalledOnce();
+  });
+
   it('a save that finishes after a new document leaves the new document untitled', async () => {
     const app = await makeApp();
     const fake = new FakeStore();

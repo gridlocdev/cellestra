@@ -590,17 +590,20 @@ export class AppController {
   }
 
   saveAs(format: 'ods' | 'csv' = this.session.format.peek()): Promise<boolean> {
-    return this.#exclusive(() => this.#saveAs(format));
+    // Save As and exports always run: a background save that left the document clean doesn't
+    // answer the user's request for a new file.
+    return this.#exclusive(() => this.#saveAs(format), true);
   }
 
   /**
    * One save at a time. A save asked for while another runs waits for it, then runs only if there
-   * is still something to save (so a second ⌘S never races the first into a false conflict).
+   * is still something to save (so a second ⌘S never races the first into a false conflict), or
+   * when `always` (Save As, exports) asks for it regardless.
    */
-  async #exclusive(run: () => Promise<boolean>): Promise<boolean> {
+  async #exclusive(run: () => Promise<boolean>, always = false): Promise<boolean> {
     while (this.#saving) {
       const result = await this.#saving.catch(() => false);
-      if (!this.session.modified.peek()) return result;
+      if (!always && !this.session.modified.peek()) return result;
     }
     const p = run();
     this.#saving = p;
