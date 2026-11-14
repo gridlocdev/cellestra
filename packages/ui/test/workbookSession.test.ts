@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { CellRange, CellValue, EditCommands, EditRefusedError, type EditCommand } from '@cellestra/core';
+import {
+  CellRange,
+  CellValue,
+  EditCommands,
+  EditRefusedError,
+  OdsWriter,
+  Workbook,
+  type EditCommand,
+} from '@cellestra/core';
 import { WorkbookSession } from '../src/session/workbookSession.ts';
 
 const refusing: EditCommand = {
@@ -86,5 +94,32 @@ describe('WorkbookSession.deleteSheet', () => {
     session.addSheet(); // a new, empty "Sheet2"
     expect(session.sheetNames.value).toEqual(['Sheet1', 'Sheet2']);
     expect(wb.worksheets[0]!.getValue(0, 0).kind).toBe('error');
+  });
+});
+
+describe('WorkbookSession.load', () => {
+  function bytes(mode: 'automatic' | 'manual'): Uint8Array {
+    const wb = Workbook.createNew();
+    wb.settings.calculationMode = mode;
+    const sheet = wb.worksheets[0]!;
+    sheet.setValue(0, 0, CellValue.number(2));
+    sheet.setFormula(0, 1, 'A1*2', CellValue.number(99)); // a cached value the file disagrees with
+    return OdsWriter.write(wb, null);
+  }
+
+  it('recalculates on open in automatic mode', () => {
+    const session = new WorkbookSession();
+    session.load(bytes('automatic'), null, 'a.ods');
+    expect(session.activeSheet.value.getValue(0, 1)).toEqual(CellValue.number(4));
+  });
+
+  it('keeps the cached values in manual mode until a recalculation is asked for', () => {
+    const session = new WorkbookSession();
+    session.load(bytes('manual'), null, 'm.ods');
+    expect(session.activeSheet.value.getValue(0, 1)).toEqual(CellValue.number(99));
+    session.recalculateVolatile();
+    expect(session.activeSheet.value.getValue(0, 1)).toEqual(CellValue.number(99));
+    session.recalculateAll();
+    expect(session.activeSheet.value.getValue(0, 1)).toEqual(CellValue.number(4));
   });
 });

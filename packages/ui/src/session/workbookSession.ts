@@ -196,7 +196,9 @@ export class WorkbookSession {
     this.#generation++;
     this.#engine = new RecalculationEngine(wb);
     this.#engine.rebuildGraph();
-    const result = this.#engine.recalculateAll();
+    // PRD §8.6: manual calculation keeps the file's cached values until the user recalculates.
+    const manual = wb.settings.calculationMode === 'manual';
+    const circular = manual ? false : this.#engine.recalculateAll().hasCircularReference;
     this.#history = new EditHistory(wb);
     this.#package = pkg;
     this.#undoSelections.length = 0;
@@ -207,7 +209,7 @@ export class WorkbookSession {
       this.#document.value = ref;
       this.#format.value = format;
       this.#modified.value = false;
-      this.#circular.value = result.hasCircularReference;
+      this.#circular.value = circular;
       this.#structure.value++;
       this.#version.value++;
     });
@@ -256,8 +258,9 @@ export class WorkbookSession {
     this.#version.value++;
   }
 
-  /** Recalculate TODAY/NOW/RAND cells (on focus or a timer). */
+  /** Recalculate TODAY/NOW/RAND cells (on focus or a timer). Manual calculation waits for F9. */
   recalculateVolatile(): void {
+    if (this.#workbook.peek().settings.calculationMode === 'manual') return;
     if (this.#engine.volatileCells.length === 0) return;
     const recalc = this.#engine.recalculateVolatile();
     this.#version.value++;
