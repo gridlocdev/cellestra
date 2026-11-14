@@ -1,0 +1,53 @@
+== Data
+Inventory — März 2026 😀,,,,,,,,
+Item,Qty,Price,Received,Discount,In stock,Total,Notes,
+Widget,12,$3.50,2026-03-01,10.0%,TRUE,$37.80,Ships in pairs,hidden helper
+Gadget,3,$19.99,2026-03-04,0.0%,FALSE,$59.97,,
+Zoë's sprocket,40,$0.25,2026-03-09,5.0%,TRUE,$9.50,"Line one
+Line two",
+"Bolt, M6",250,$0.04,2026-02-27,0.0%,TRUE,$10.00,"Says ""hi""",
+Ünïcødé ☃,1,"$1,234.50",2026-01-15,25.0%,FALSE,$925.88,<b>not html</b> & co,
+=not a formula,7,$2.00,2026-03-31,12.5%,TRUE,$12.25,   leading spaces,
+Total,313,,,8.8%,4,"$1,055.40","italic, underlined",
+,,,,,,,,
+hidden row,,,,,,,,
+== Empty
+
+== Lookup
+What,Result
+VLOOKUP,19.99
+INDEX/MATCH,$37.80
+Named range,"$1,260.28"
+IF,few
+Concatenate,Widget × 12
+TEXT,01 Mar 2026
+Date math,8
+YEAR,2026
+Quoted sheet,"$3,560.75"
+Div by zero,#DIV/0!
+IFERROR,none
+Not found,#N/A
+ROUND,0.6667
+Power,1024
+Comparison,FALSE
+Text as number,13
+SUMPRODUCT,1370.47
+COUNTA,6
+MAX,"$1,234.50"
+LEN,14
+UPPER,WIDGET
+Absolute mix,24
+Percent of total,3.6%
+3D sum,"$3,673.83"
+3D count,49
+3D max,"$1,234.50"
+INDEX area,$59.97
+Intersection,$63.24
+No overlap,#NULL!
+== Q2 Sales
+Month,Sales
+April,"$1,200.00"
+May,$950.50
+June,"$1,410.25"
+,
+Share of Data total,113.7%

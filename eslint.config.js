@@ -17,8 +17,8 @@ export default tseslint.config(
     languageOptions: { globals: { console: 'readonly', process: 'readonly' } },
   },
   {
-    // The engine must stay portable: browser, worker, Node, Electron renderer.
-    files: ['packages/core/**/*.ts', 'packages/charts/**/*.ts'],
+    // The engine must stay portable: browser, worker, Node, Electron renderer. Its tests run in Node.
+    files: ['packages/core/src/**/*.ts', 'packages/charts/src/**/*.ts'],
     rules: {
       'no-restricted-globals': ['error', 'window', 'document', 'navigator', 'localStorage', 'process'],
       'no-restricted-imports': ['error', { patterns: ['node:*', 'preact', 'preact/*', '@preact/*'] }],
