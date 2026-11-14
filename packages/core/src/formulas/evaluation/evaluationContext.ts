@@ -10,6 +10,11 @@ import type { CivilDateTime } from './dateConversion.ts';
 export interface EvaluationContext {
   /** The sheet a formula lives on; unqualified references resolve here. */
   readonly currentSheet: string;
+  /**
+   * The row and column of the formula's own cell. A range used where one value is needed takes
+   * the cell in this row (or column), as in Calc; without it such a range is #VALUE!.
+   */
+  readonly formulaCell?: { readonly row: number; readonly column: number } | undefined;
   /** BCP-47 locale for VALUE/TEXT/DATE parsing and formatting. */
   readonly locale: string;
   /** Current local date/time for TODAY/NOW (injectable for tests). */

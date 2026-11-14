@@ -266,6 +266,7 @@ export class RecalculationEngine {
       entry.ref.sheet,
       this.#workbook.settings.effectiveLocale,
       this.#clock,
+      { row: entry.ref.row, column: entry.ref.column },
     );
     this.#writeResult(entry.ref, new Evaluator(context, this.#functions).evaluate(entry.ast));
   }

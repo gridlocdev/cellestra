@@ -14,14 +14,22 @@ import type { EvaluationContext } from './evaluationContext.ts';
 export class WorkbookEvaluationContext implements EvaluationContext {
   readonly currentSheet: string;
   readonly locale: string;
+  readonly formulaCell: { readonly row: number; readonly column: number } | undefined;
   readonly #workbook: Workbook;
   readonly #clock: () => CivilDateTime;
   /** Sheets by the name a reference used, so reading a large range looks each sheet up once. */
   readonly #sheets = new Map<string, Worksheet | undefined>();
 
-  constructor(workbook: Workbook, currentSheet: string, locale?: string, clock?: () => CivilDateTime) {
+  constructor(
+    workbook: Workbook,
+    currentSheet: string,
+    locale?: string,
+    clock?: () => CivilDateTime,
+    formulaCell?: { readonly row: number; readonly column: number },
+  ) {
     this.#workbook = workbook;
     this.currentSheet = currentSheet;
+    this.formulaCell = formulaCell;
     this.locale = locale ?? workbook.settings.effectiveLocale;
     this.#clock = clock ?? systemClock;
   }

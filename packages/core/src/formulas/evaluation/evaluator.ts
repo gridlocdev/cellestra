@@ -71,10 +71,7 @@ export class Evaluator implements FunctionEvaluator {
       case 'reference':
         return this.context.getCell(expr.address.sheet, expr.address.row, expr.address.column);
       case 'range':
-        return (
-          this.#missingSheet(expr) ??
-          CellValue.error(CellError.value('A range is not valid in this position.'))
-        );
+        return this.#missingSheet(expr) ?? this.intersect(expr.range);
       case 'name':
         return this.#name(expr);
       case 'refError':
@@ -91,8 +88,21 @@ export class Evaluator implements FunctionEvaluator {
   #name(node: NameExpr): CellValue {
     const range = this.context.resolveName(node.name);
     if (!range) return CellValue.error(CellError.name(`Unknown name '${node.name}'.`));
+    return this.intersect(range);
+  }
+
+  intersect(range: CellRange): CellValue {
     if (range.isSingleCell) return this.context.getCell(range.sheet, range.top, range.left);
-    return CellValue.error(CellError.value(`The name '${node.name}' is a range, not a single value.`));
+    const at = this.context.formulaCell;
+    if (at) {
+      if (range.left === range.right && at.row >= range.top && at.row <= range.bottom)
+        return this.context.getCell(range.sheet, at.row, range.left);
+      if (range.top === range.bottom && at.column >= range.left && at.column <= range.right)
+        return this.context.getCell(range.sheet, range.top, at.column);
+    }
+    return CellValue.error(
+      CellError.value('A range where one value is needed must share a row or column with the formula.'),
+    );
   }
 
   #unary(node: UnaryExpr): CellValue {

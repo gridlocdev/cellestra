@@ -20,6 +20,11 @@ export interface FunctionEvaluator {
   enumerateValues(expr: Expr): Iterable<CellValue>;
   /** Resolve an argument to a 2D range view; null when it is not a reference/range/named range. */
   tryEvaluateRange(expr: Expr): RangeValues | null;
+  /**
+   * A range used where one value is needed: its one cell, or the cell in the formula's row (of a
+   * one-column range) or column (of a one-row range); otherwise #VALUE!, as in Calc.
+   */
+  intersect(range: CellRange): CellValue;
 }
 
 /**

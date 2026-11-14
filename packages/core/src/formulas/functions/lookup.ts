@@ -247,12 +247,7 @@ export function lookupFunctions(): FormulaFunction[] {
       evaluateIndex,
       (args, ev) => {
         const target = evaluateIndex(args, ev);
-        if (!(target instanceof CellRange)) return target;
-        if (!target.isSingleCell)
-          return CellValue.error(
-            CellError.value('INDEX gave a whole row or column where one value is needed.'),
-          );
-        return ev.context.getCell(target.sheet, target.top, target.left);
+        return target instanceof CellRange ? ev.intersect(target) : target;
       },
     ),
   ];
