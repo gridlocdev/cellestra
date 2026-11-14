@@ -110,6 +110,19 @@ describe('basics', () => {
     expect(run('get', ods, 'Sheet1.A3', '--formula').out.trim()).toBe('=A1+A2');
   });
 
+  it('an edit saved to a .csv or .tsv target writes text, not .ods bytes', () => {
+    const csv = path2('grid.csv');
+    writeFileSync(csv, 'Item,Qty\nPen,3\n');
+    expect(run('set', csv, 'B2', '7', '--in-place').exit).toBe(0);
+    expect(readFileSync(csv, 'utf8')).toBe('Item,Qty\nPen,7\n');
+
+    const ods = path2('book.ods');
+    run('new', ods);
+    run('set', ods, 'Sheet1.A1', 'x', '--in-place');
+    expect(run('set', ods, 'Sheet1.B1', '2', '-o', path2('out.tsv')).exit).toBe(0);
+    expect(readFileSync(path2('out.tsv'), 'utf8')).toBe('x\t2\n');
+  });
+
   it('set refuses to write without --in-place or --output', () => {
     const ods = path2('book.ods');
     run('new', ods);

@@ -1,8 +1,16 @@
-import { CellRef, type EditCommand, type Workbook } from '@cellestra/core';
+import { CellRef, writeCsv, type EditCommand, type Workbook } from '@cellestra/core';
+import { extname } from 'node:path';
 import { CliError } from './errors.ts';
 import type { Console } from './io.ts';
 import { address, cellReportAt, errorReports, writeReport } from './report.ts';
-import { load, recalculate, saveOds, type LoadedWorkbook, type WorkbookFormat } from './workspace.ts';
+import {
+  load,
+  recalculate,
+  saveOds,
+  saveText,
+  type LoadedWorkbook,
+  type WorkbookFormat,
+} from './workspace.ts';
 
 const JSON_TO_STDOUT =
   "--json writes the report to stdout, so the workbook can't go there too — give -o <file> or --in-place.";
@@ -78,9 +86,23 @@ export class EditSession {
     return session.#finish(target, json, false);
   }
 
+  /** A .csv or .tsv target gets the active sheet as text; anything else (or stdout) gets .ods. */
+  #save(target: string): void {
+    const ext = target === '-' ? '' : extname(target).toLowerCase();
+    if (ext !== '.csv' && ext !== '.tsv') {
+      saveOds(this.con, this.workbook, this.loaded.package, target);
+      return;
+    }
+    const sheet = this.workbook.activeSheet;
+    const others = this.workbook.sheetCount - 1;
+    if (others > 0) this.note(`${ext.slice(1).toUpperCase()} keeps one sheet: wrote '${sheet.name}' only.`);
+    const delimiter = ext === '.tsv' ? '\t' : ',';
+    saveText(this.con, writeCsv(this.workbook, sheet, { delimiter, locale: this.locale }), target);
+  }
+
   #finish(target: string, json: boolean, dryRun: boolean): number {
     const result = recalculate(this.workbook);
-    if (!dryRun) saveOds(this.con, this.workbook, this.loaded.package, target);
+    if (!dryRun) this.#save(target);
     if (!json) {
       for (const note of this.#notes) this.con.errLine(note);
       if (dryRun) this.con.errLine('Dry run: nothing written.');
