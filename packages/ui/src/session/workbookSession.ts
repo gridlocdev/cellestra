@@ -318,8 +318,8 @@ export class WorkbookSession {
     if (this.#workbook.peek().settings.calculationMode === 'manual') return;
     if (this.#engine.volatileCells.length === 0) return;
     const recalc = this.#engine.recalculateVolatile();
-    this.#version.value++;
     this.#logCells([recalc.evaluatedCells]);
+    this.#version.value++;
   }
 
   /**
@@ -359,14 +359,8 @@ export class WorkbookSession {
       circular = recalc.hasCircularReference;
       evaluated = recalc.evaluatedCells;
     }
-    batch(() => {
-      this.#modified.value = true;
-      this.#edits++;
-      this.#circular.value = circular;
-      if (result.structural) this.#structure.value++;
-      this.#version.value++;
-    });
     // An edit that reports neither cells nor lines changed something unknown here: logged as such.
+    // Logged before the version moves, because a view redraws as soon as it does.
     const lines = result.changedRows.length + result.changedColumns.length > 0;
     this.#logCells(
       result.structural || (result.changedCells.length === 0 && !lines)
@@ -375,6 +369,13 @@ export class WorkbookSession {
           ? this.#cellsInLines(result, [result.changedCells, evaluated])
           : [result.changedCells, evaluated],
     );
+    batch(() => {
+      this.#modified.value = true;
+      this.#edits++;
+      this.#circular.value = circular;
+      if (result.structural) this.#structure.value++;
+      this.#version.value++;
+    });
   }
 
   #isAutomatic(): boolean {
@@ -415,8 +416,9 @@ export class WorkbookSession {
   /** Cells each recent version changed, per lower-cased sheet name; null when that isn't known. */
   readonly #cellLog = new Map<number, Map<string, CellPosition[]> | null>();
 
+  /** Log what the next version will change. Call it just before bumping the version. */
   #logCells(groups: (readonly (CellPosition & { readonly sheet: string })[])[] | null): void {
-    const version = this.#version.peek();
+    const version = this.#version.peek() + 1;
     if (this.#cellLog.size >= CELL_LOG_VERSIONS)
       for (const v of this.#cellLog.keys()) if (v <= version - CELL_LOG_VERSIONS) this.#cellLog.delete(v);
     let total = 0;

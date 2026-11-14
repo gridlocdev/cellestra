@@ -9,6 +9,8 @@ import {
   Workbook,
   type EditCommand,
 } from '@cellestra/core';
+import { effect } from '@preact/signals';
+import { ContentHeights, textHeight, type RowMeasure } from '../src/grid/rowHeights.ts';
 import { WorkbookSession } from '../src/session/workbookSession.ts';
 
 const refusing: EditCommand = {
@@ -85,6 +87,43 @@ describe('WorkbookSession.cellsChangedSince', () => {
     // An edit that reports nothing can't be followed: the grid measures everything again.
     session.execute(EditCommands.setFrozenPanes(sheet.name, 1, 0));
     expect(session.cellsChangedSince(sheet.name, start)).toBeNull();
+  });
+});
+
+describe('WorkbookSession edits seen by a view', () => {
+  it('logs the changed cells before a view hears of the new version, so one edit re-measures one row', () => {
+    const session = new WorkbookSession();
+    const wb = session.workbook.peek();
+    const sheet = session.activeSheet.peek();
+    const wrapped = wb.styles.mutate(0, (s) => ({ ...s, alignment: { ...s.alignment, wrapText: true } }));
+    for (let row = 0; row < 200; row++) {
+      sheet.setValue(row, 0, CellValue.text('x'.repeat(30)));
+      (sheet.getOrCreate(row, 0) as { styleId: number }).styleId = wrapped;
+    }
+    let measured: number[] = [];
+    const m: RowMeasure = {
+      display: (v) => (v.kind === 'text' ? v.value : ''),
+      wrappedLines: (text) => {
+        measured.push(text.length);
+        return Math.ceil((text.length * 6) / 54);
+      },
+      columnWidth: () => 64,
+    };
+    // What the grid does when the version moves: follow the logged cells, or measure everything.
+    let heights = new ContentHeights(sheet, wb.styles, m);
+    let since = session.version.peek();
+    const stop = effect(() => {
+      const version = session.version.value;
+      const changed = session.cellsChangedSince(sheet.name, since);
+      since = version;
+      if (changed) heights.update(changed);
+      else heights = new ContentHeights(sheet, wb.styles, m);
+    });
+    measured = [];
+    session.execute(EditCommands.setInput(sheet.name, 7, 0, 'x'.repeat(60), 'en-US'));
+    stop();
+    expect(measured).toEqual([60]);
+    expect(heights.rows.get(7)).toBe(textHeight(10, 7));
   });
 });
 
