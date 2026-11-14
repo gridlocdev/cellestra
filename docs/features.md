@@ -16,6 +16,8 @@ See [Getting started](getting-started.md) for each one.
 
 Cellestra reads and writes `.ods` and keeps anything it doesn't understand intact, so LibreOffice files survive a round trip. **Import CSV…** and **Export Sheet as CSV…** bring in and write out CSV and TSV, and **Export Sheet as PDF…** and **Print…** print a sheet with the settings in **Page Setup…**. **Open Recent…** lists the files you used last. **Close** (`⌘W`) asks about unsaved changes, then closes the window in the desktop app or starts a blank workbook in the browser.
 
+When LibreOffice has a file open, it keeps a `.~lock.<name>#` file beside it. Opening that file in the desktop app or from the NAS reads the lock and warns who opened it and when, for example “Opened by Ada on 14.11.2026 10:22 in LibreOffice – your changes may conflict.” The file still opens, and Cellestra never writes or removes lock files. A plain browser can't see the folder around a file, so it can't warn.
+
 ## Formulas
 
 Formulas have 47 functions, automatic recalculation and circular-reference detection. The formula syntax matches LibreOffice Calc. **Insert Function…** picks a function, autocomplete suggests names and arguments as you type, and **Recalculate** (F9) recalculates everything. **Manual Calculation** (or a click on the Auto/Manual badge in the status bar) stops formulas recalculating after each edit until you press F9, which helps in a slow workbook; the mode is saved with the file, and switching back to automatic recalculates at once. **Show Formulas** shows the formulas in place of their results, and **Named Ranges…** names a cell or range.

@@ -63,6 +63,7 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
   - `If-Match` gives optimistic concurrency (412 if the file changed). `If-None-Match: *` stops a new file from overwriting an existing one.
   - The server sends strong ETags (a hash of the bytes). `If-Match` and `If-None-Match` accept a list of tags and ignore a `W/` prefix, so a tag a proxy weakened still matches.
   - A LibreOffice `.~lock` file next to the target blocks the save (423).
+  - Reading a file also sends the text of a LibreOffice `.~lock.<name>#` beside it, percent-encoded in an `X-Cellestra-Lock` header, so the client can say who has it open. The server never writes or removes a lock file.
   - Only `.ods`, `.csv` and `.tsv` files can be read or written, and no path segment may start with a dot.
   - Writes to one file are serialized, so the If-Match check and the rename cannot interleave. If-Match on a missing file is 412.
   - The replacement keeps the file's mode and, where permitted, its owner.
@@ -80,6 +81,7 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
 - **Bridge checks.** Every IPC call must come from an `app://cellestra/` frame. The renderer may only read, save and watch `.ods`/`.csv`/`.tsv` paths the user handed over (a dialog, `open-file`, argv, or an earlier open, kept in `granted-files.json` under userData); any other path asks the user first.
 - **Menus.** The menu bar is the renderer's catalog plus the platform's standard menus: the app menu (macOS, with Quit), a Window menu (Minimize, Zoom, and Bring All to Front on macOS) and, on Windows and Linux, Quit at the end of File. File › Close (`⌘W`) runs the same unsaved-changes prompt as closing the window.
 - **Closing.** The preload acknowledges a close request at once. If no ack arrives within 3 s, or the renderer is unresponsive, the user may force the close; a crashed renderer closes without asking. Cmd+Q quits after the unsaved-changes prompt, and a cancelled prompt cancels the quit.
+- **LibreOffice locks.** Opening a file also reads a `.~lock.<name>#` beside it, if there is one, and hands its text to the renderer, which warns who has the file open. Lock files are only read, never written or removed.
 - **Watcher.** It watches the file's folder (filtered by name, debounced), so it survives atomic replaces, and ignores mtimes it wrote itself.
 - **App icon.** The source is `assets/icon.svg` (a 1024 canvas on Apple's icon grid). `just icons` renders it with Inkscape into `apps/desktop/build/icon.icns`, `icon.ico` and `icon.png`. Those files are committed, so packaging doesn't need Inkscape.
 

@@ -84,6 +84,29 @@ export function spreadsheetArgs(argv: readonly string[], cwd: string): string[] 
   return argv.filter((a) => !a.startsWith('-') && SPREADSHEET.test(a)).map((a) => path.resolve(cwd, a));
 }
 
+/** LibreOffice's lock files are a few hundred bytes; more than this is not one. */
+const LOCK_FILE_MAX_BYTES = 4096;
+
+/**
+ * The text of LibreOffice's lock file beside `p` (`.~lock.<name>#`), or null when there is none.
+ * Only read, never written or removed: the renderer warns that the file is open in LibreOffice.
+ */
+export async function readLockFile(p: string): Promise<string | null> {
+  const lock = path.join(path.dirname(p), `.~lock.${path.basename(p)}#`);
+  try {
+    const h = await open(lock, 'r');
+    try {
+      const buffer = Buffer.alloc(LOCK_FILE_MAX_BYTES);
+      const { bytesRead } = await h.read(buffer, 0, buffer.length, 0);
+      return buffer.subarray(0, bytesRead).toString('utf8');
+    } finally {
+      await h.close();
+    }
+  } catch {
+    return null; // none, or unreadable: nothing to warn about
+  }
+}
+
 /**
  * Atomic save: a temp file beside the target, fsync, rename, fsync the folder. A symlink is followed, so the link
  * stays and its target is replaced. The replacement keeps the target's mode (and owner, where

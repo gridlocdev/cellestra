@@ -25,6 +25,7 @@ import {
   watchFile,
   withFileLock,
   pdfExportTarget,
+  readLockFile,
   writeAtomic,
 } from './files.ts';
 import { withStandardMenus } from './menu.ts';
@@ -194,7 +195,7 @@ function forbidden(): never {
 }
 
 async function readNative(p: string): Promise<NativeFile> {
-  const [bytes, s] = await Promise.all([readFile(p), stat(p)]);
+  const [bytes, s, lock] = await Promise.all([readFile(p), stat(p), readLockFile(p)]);
   grants.grant(p);
   knownMtime.set(p, s.mtimeMs);
   app.addRecentDocument(p);
@@ -204,6 +205,7 @@ async function readNative(p: string): Promise<NativeFile> {
     bytes: new Uint8Array(bytes),
     modified: s.mtimeMs,
     version: contentVersion(bytes),
+    lock,
   };
 }
 

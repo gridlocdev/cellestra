@@ -4,3 +4,4 @@ export * from './nasStore.ts';
 export * from './native.ts';
 export * from './nativeStore.ts';
 export * from './localDb.ts';
+export * from './lockFile.ts';

@@ -21,6 +21,7 @@ import {
   isAppUrl,
   PathGrants,
   pdfExportTarget,
+  readLockFile,
   saveAsMismatch,
   spreadsheetArgs,
   syncDir,
@@ -258,5 +259,22 @@ describe('changedSince', () => {
   it('still understands an mtime-only version from an older session', () => {
     expect(changedSince('5000', { bytes: bytes('x'), mtimeMs: 5000.4 })).toBe(false);
     expect(changedSince('5000', { bytes: bytes('x'), mtimeMs: 7000 })).toBe(true);
+  });
+});
+
+describe('LibreOffice lock files', () => {
+  it('reads the lock beside a file and leaves it where it is', async () => {
+    const file = path.join(dir, 'locked.ods');
+    const lock = path.join(dir, '.~lock.locked.ods#');
+    await writeFile(file, 'ods');
+    await writeFile(lock, 'Ada,ada,host,14.11.2026 10:22,;');
+    expect(await readLockFile(file)).toBe('Ada,ada,host,14.11.2026 10:22,;');
+    expect(await readFile(lock, 'utf8')).toBe('Ada,ada,host,14.11.2026 10:22,;');
+  });
+
+  it('is null when there is no lock', async () => {
+    const file = path.join(dir, 'free.ods');
+    await writeFile(file, 'ods');
+    expect(await readLockFile(file)).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import { CONFLICT, type CellestraNative, type NativeFile, type SavedFile } from './native.ts';
+import { parseLockFile } from './lockFile.ts';
 import { ConflictError, type DocumentRef, type FileStore, type OpenedDocument } from './fileStore.ts';
 
 /** Files on disk through Electron's main process. Version = a hash of the contents, checked again before each save. */
@@ -43,7 +44,8 @@ export class NativeStore implements FileStore {
 }
 
 function opened(f: NativeFile): OpenedDocument {
-  return { ref: toRef(f), bytes: f.bytes };
+  const doc = { ref: toRef(f), bytes: f.bytes };
+  return f.lock ? { ...doc, lock: parseLockFile(f.lock) } : doc;
 }
 
 function toRef(f: SavedFile | NativeFile): DocumentRef {

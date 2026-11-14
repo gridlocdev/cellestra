@@ -163,14 +163,14 @@ export class FileApi {
   async read(
     rootId: string | null,
     rel: string | null,
-  ): Promise<{ bytes: Buffer; etag: string; modified: number }> {
+  ): Promise<{ bytes: Buffer; etag: string; modified: number; lock: string | null }> {
     const root = this.root(rootId);
     checkSpreadsheetPath(rel, 'opened');
     const full = await this.resolveReal(root, rel);
     try {
-      const [bytes, s] = await Promise.all([readFile(full), stat(full)]);
+      const [bytes, s, lock] = await Promise.all([readFile(full), stat(full), readLockFile(full)]);
       if (!s.isFile()) throw new ApiError(400, 'Not a file');
-      return { bytes, etag: etagOf(bytes), modified: s.mtimeMs };
+      return { bytes, etag: etagOf(bytes), modified: s.mtimeMs, lock };
     } catch (e) {
       throw fsError(e);
     }
@@ -315,6 +315,29 @@ async function writeInPlace(full: string, bytes: Uint8Array): Promise<void> {
     await handle.sync();
   } finally {
     await handle.close();
+  }
+}
+
+/** LibreOffice's lock files are a few hundred bytes; more than this is not one. */
+const LOCK_FILE_MAX_BYTES = 4096;
+
+/**
+ * The text of LibreOffice's `.~lock.<name>#` beside `full`, or null when there is none. Read so
+ * the client can say who has the file open; the server never writes or removes one.
+ */
+export async function readLockFile(full: string): Promise<string | null> {
+  const lock = path.join(path.dirname(full), `.~lock.${path.basename(full)}#`);
+  try {
+    const h = await open(lock, 'r');
+    try {
+      const buffer = Buffer.alloc(LOCK_FILE_MAX_BYTES);
+      const { bytesRead } = await h.read(buffer, 0, buffer.length, 0);
+      return buffer.subarray(0, bytesRead).toString('utf8');
+    } finally {
+      await h.close();
+    }
+  } catch {
+    return null; // none, or unreadable: nothing to report
   }
 }
 

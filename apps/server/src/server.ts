@@ -91,6 +91,9 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
+/** Carries LibreOffice's lock file beside an opened file (percent-encoded), when there is one. */
+export const LOCK_HEADER = 'X-Cellestra-Lock';
+
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
@@ -147,7 +150,7 @@ async function api(
     case 'GET /api/list':
       return send(res, 200, await opts.api.list(q.get('root'), q.get('path')));
     case 'GET /api/file': {
-      const { bytes, etag, modified } = await opts.api.read(q.get('root'), q.get('path'));
+      const { bytes, etag, modified, lock } = await opts.api.read(q.get('root'), q.get('path'));
       const ifNoneMatch = header(req, 'if-none-match');
       if (ifNoneMatch !== null && etagListMatches(ifNoneMatch, etag)) {
         res.writeHead(304, { ETag: etag, ...SECURITY_HEADERS });
@@ -159,6 +162,8 @@ async function api(
         'Cache-Control': 'no-store',
         'Last-Modified': new Date(modified).toUTCString(),
         ETag: etag,
+        // LibreOffice's lock file, percent-encoded to fit a header, so the client can warn.
+        ...(lock === null ? {} : { [LOCK_HEADER]: encodeURIComponent(lock) }),
         ...SECURITY_HEADERS,
       });
       return void res.end(bytes);

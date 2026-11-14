@@ -157,6 +157,19 @@ describe('read and write rules', () => {
     expect(statuses).toEqual([200, 412, 412, 412, 412]);
   });
 
+  it('sends the LibreOffice lock beside a file with it, and leaves the lock alone', async () => {
+    const get = (p: string) => fetch(`${base}/api/file?root=docs&path=${p}`, { headers: auth });
+    await writeFile(path.join(dir, 'shared.ods'), 'S');
+    expect((await get('shared.ods')).headers.get('x-cellestra-lock')).toBeNull();
+    const lockText = 'Zoë Ng\\, ops,zoe,nas,14.11.2026 10:22,file:///x;';
+    await writeFile(path.join(dir, '.~lock.shared.ods#'), lockText);
+    const res = await get('shared.ods');
+    expect(res.status).toBe(200);
+    expect(decodeURIComponent(res.headers.get('x-cellestra-lock')!)).toBe(lockText);
+    expect(await readFile(path.join(dir, '.~lock.shared.ods#'), 'utf8')).toBe(lockText);
+    await rm(path.join(dir, '.~lock.shared.ods#'));
+  });
+
   it('refuses to list dot folders', async () => {
     const list = (p: string) => fetch(`${base}/api/list?root=docs&path=${p}`, { headers: auth });
     expect((await list('.git')).status).toBe(403);

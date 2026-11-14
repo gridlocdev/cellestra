@@ -1,3 +1,5 @@
+import type { LockOwner } from './lockFile.ts';
+
 /**
  * Where a document lives. The UI only ever talks to a FileStore; it never knows whether bytes came
  * from the browser, the NAS server, or Electron's native file system.
@@ -24,6 +26,8 @@ export interface DocumentRef {
 export interface OpenedDocument {
   readonly ref: DocumentRef;
   readonly bytes: Uint8Array;
+  /** LibreOffice had the file open when it was read (a lock file beside it), where the store can tell. */
+  readonly lock?: LockOwner;
 }
 
 export interface StoreCapabilities {

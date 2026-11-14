@@ -56,6 +56,7 @@ import {
   darkPalette,
   forgetRecent,
   lightPalette,
+  lockWarning,
   nativeBridge,
   printHtml,
   canvasRowMeasure,
@@ -571,6 +572,8 @@ export class AppController {
     void clearRecovery();
     void this.remember(opened.ref);
     this.native?.watch(opened.ref.store === 'native' ? opened.ref.id : null);
+    // Only a warning: the lock is LibreOffice's, and saving still asks before overwriting.
+    if (opened.lock) this.#showToast(lockWarning(opened.lock), 'error');
     this.grid.current?.focus();
   }
 

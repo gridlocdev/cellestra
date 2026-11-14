@@ -873,3 +873,24 @@ describe('closing the document', () => {
     expect(app.session.document.peek()?.name).toBe('a.ods');
   });
 });
+
+describe('LibreOffice locks', () => {
+  it('warns on open when LibreOffice has the file, and opens it anyway', async () => {
+    const app = await makeApp();
+    app.adopt({
+      ref: ref('shared.ods'),
+      bytes: OdsWriter.write(Workbook.createNew(), null),
+      lock: { name: 'Ada', date: '14.11.2026 10:22' },
+    });
+    expect(app.session.document.peek()?.name).toBe('shared.ods');
+    expect(app.toast.peek()?.text).toBe(
+      'Opened by Ada on 14.11.2026 10:22 in LibreOffice – your changes may conflict.',
+    );
+  });
+
+  it('says nothing when there is no lock', async () => {
+    const app = await makeApp();
+    app.adopt({ ref: ref('free.ods'), bytes: OdsWriter.write(Workbook.createNew(), null) });
+    expect(app.toast.peek()).toBeNull();
+  });
+});

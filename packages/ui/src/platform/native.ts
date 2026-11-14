@@ -6,6 +6,8 @@ export interface NativeFile {
   readonly modified: number;
   /** A hash of the contents, passed back on save to detect outside edits. */
   readonly version: string;
+  /** LibreOffice's lock file beside the file, as text. Optional: older desktop builds omit it. */
+  readonly lock?: string | null;
 }
 export interface SavedFile {
   readonly path: string;

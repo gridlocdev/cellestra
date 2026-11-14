@@ -1,3 +1,4 @@
+import { parseLockFile } from './lockFile.ts';
 import { ConflictError, type DocumentRef, type FileStore, type OpenedDocument } from './fileStore.ts';
 
 export interface NasRoot {
@@ -20,6 +21,8 @@ export interface NasInfo {
 export class AuthError extends Error {}
 
 const TOKEN_KEY = 'cellestra.nasToken';
+/** The server sends LibreOffice's lock file beside an opened file in this header, percent-encoded. */
+const LOCK_HEADER = 'X-Cellestra-Lock';
 
 /**
  * Files in the NAS folders the Cellestra server exposes (`/api`). Conflict detection uses the
@@ -81,10 +84,12 @@ export class NasStore implements FileStore {
   async open(root: string, path: string): Promise<OpenedDocument> {
     const res = await this.request(`/file?${new URLSearchParams({ root, path })}`);
     const name = path.split('/').pop() ?? path;
-    return {
-      ref: { store: 'nas', name, id: `${root}:${path}`, version: res.headers.get('etag') },
+    const doc = {
+      ref: { store: 'nas' as const, name, id: `${root}:${path}`, version: res.headers.get('etag') },
       bytes: new Uint8Array(await res.arrayBuffer()),
     };
+    const lock = lockHeader(res.headers.get(LOCK_HEADER));
+    return lock === null ? doc : { ...doc, lock: parseLockFile(lock) };
   }
 
   reload(ref: DocumentRef): Promise<OpenedDocument> {
@@ -178,6 +183,16 @@ export function latestOnly(): <T>(
       },
     );
   };
+}
+
+/** The lock file text a header carries: null when there is none, '' when it is garbled. */
+function lockHeader(value: string | null): string | null {
+  if (value === null) return null;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return '';
+  }
 }
 
 function splitId(id: string): { root: string; path: string } {

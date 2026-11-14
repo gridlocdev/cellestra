@@ -12,6 +12,8 @@ export interface NativeFile {
   readonly modified: number;
   /** A hash of the contents; passed back on save to detect outside edits. */
   readonly version: string;
+  /** The text of LibreOffice's `.~lock.<name>#` beside the file when it was read, else null. */
+  readonly lock: string | null;
 }
 
 export interface SavedFile {
