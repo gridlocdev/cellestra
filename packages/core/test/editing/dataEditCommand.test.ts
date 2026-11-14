@@ -124,6 +124,25 @@ describe('DataEditCommands', () => {
     expect(sheet.isRowHidden(1)).toBe(false);
   });
 
+  it('filter reports the rows it hid or showed, on apply and on undo', () => {
+    const { workbook, sheet } = setup();
+    sheet.setValue(0, 0, CellValue.text('Score'));
+    for (const [row, n] of [
+      [1, 10],
+      [2, 90],
+      [3, 20],
+      [4, 95],
+    ] as const)
+      sheet.setValue(row, 0, CellValue.number(n));
+    const spec = filterSpec(new Map([[0, { condition: '>40' }]]));
+    const filter = DataEditCommands.applyFilter(sheet.name, R('A1:A5'), spec, 'en-US');
+    const rows = [{ sheet: sheet.name, first: 1, last: 3 }];
+    expect(filter.apply(workbook).changedRows).toEqual(rows);
+    expect(filter.undo(workbook).changedRows).toEqual(rows);
+    const nothing = DataEditCommands.applyFilter(sheet.name, R('A1:A5'), filterSpec(new Map()), 'en-US');
+    expect(nothing.apply(workbook).changedRows).toEqual([]);
+  });
+
   it('resetSheetLayout clears row/column fills, hidden and filter, and undo restores', () => {
     const { workbook, history, sheet } = setup();
     const fillId = workbook.styles.intern({

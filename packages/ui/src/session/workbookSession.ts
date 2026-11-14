@@ -353,6 +353,11 @@ export class WorkbookSession {
       const recalc = this.#engine.recordEdits(result.changedCells);
       if (this.#isAutomatic()) circular = recalc.hasCircularReference;
       evaluated = recalc.evaluatedCells;
+    } else if (result.changedRows.length > 0 && this.#isAutomatic()) {
+      // Hiding, showing or filtering rows changes what SUBTOTAL reads without changing any cell.
+      const recalc = this.#engine.recalculateVolatile();
+      circular = recalc.hasCircularReference;
+      evaluated = recalc.evaluatedCells;
     }
     batch(() => {
       this.#modified.value = true;

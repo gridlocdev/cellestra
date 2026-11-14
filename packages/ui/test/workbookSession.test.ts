@@ -273,3 +273,20 @@ describe('WorkbookSession manual calculation and structural edits', () => {
     expect(sheet.getValue(0, 1)).toEqual(CellValue.number(7));
   });
 });
+
+describe('WorkbookSession and hidden rows', () => {
+  it('recalculates SUBTOTAL when rows are hidden or shown, and logs the cell it changed', () => {
+    const session = new WorkbookSession();
+    const sheet = session.activeSheet.peek();
+    [10, 20, 30].forEach((n, row) => sheet.setValue(row, 0, CellValue.number(n)));
+    sheet.setFormula(4, 0, 'SUBTOTAL(109, A1:A3)');
+    session.recalculateAll();
+    expect(sheet.getValue(4, 0)).toEqual(CellValue.number(60));
+    const before = session.version.peek();
+    session.execute(EditCommands.setRowsHidden(sheet.name, 1, 1, true));
+    expect(sheet.getValue(4, 0)).toEqual(CellValue.number(40));
+    expect(session.cellsChangedSince(sheet.name, before)).toContainEqual({ row: 4, column: 0 });
+    session.undo();
+    expect(sheet.getValue(4, 0)).toEqual(CellValue.number(60));
+  });
+});

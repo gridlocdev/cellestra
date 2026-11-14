@@ -601,14 +601,29 @@ function rowVisibilityCommand(
       changed = [];
       for (const row of hiddenBefore) if (!hiddenAfter.has(row)) changed.push([row, true]);
       for (const row of hiddenAfter) if (!hiddenBefore.has(row)) changed.push([row, false]);
-      return EditResult.none;
+      return changedRowsResult(sheet, changed);
     },
     (wb) => {
       const ws = requireSheet(wb, sheet);
       for (const [row, hidden] of changed) ws.getOrCreateRow(row).hidden = hidden;
-      return EditResult.none;
+      return changedRowsResult(sheet, changed);
     },
   );
+}
+
+/** The span of rows whose hidden flag changed, so the session re-measures them and recalculates SUBTOTAL. */
+function changedRowsResult(
+  sheet: string,
+  changed: readonly (readonly [row: number, hidden: boolean])[],
+): EditResult {
+  if (changed.length === 0) return EditResult.none;
+  let first = changed[0]![0];
+  let last = first;
+  for (const [row] of changed) {
+    if (row < first) first = row;
+    if (row > last) last = row;
+  }
+  return EditResult.rows(sheet, first, last);
 }
 
 function hiddenRowsIn(ws: Worksheet, range: CellRange): Set<number> {
