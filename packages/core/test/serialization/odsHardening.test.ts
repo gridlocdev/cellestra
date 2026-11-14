@@ -16,6 +16,7 @@ import {
 } from '../../src/serialization/index.ts';
 import { CellStyles, NumberFormats } from '../../src/styling/cellStyle.ts';
 import { CellValue } from '../../src/values/cellValue.ts';
+import { OdsContentTooLargeError } from '../../src/serialization/ods/odsContentRead.ts';
 import { entryNames, readEntry, roundTrip } from './helpers.ts';
 
 const NS = [
@@ -150,6 +151,43 @@ describe('ODS grid structure', () => {
       expect(merge.range.right).toBeLessThan(16384);
       expect(merge.range.bottom).toBeLessThan(1048576);
     }
+  });
+
+  describe('repeats are budgeted across the workbook', () => {
+    // 1,024 rows of 2,049 value cells: two million cells from a few hundred bytes. Two of them
+    // pass the workbook's budget of 4,194,304.
+    const bigRow = `<table:table-row table:number-rows-repeated="1024"><table:table-cell table:number-columns-repeated="2049" office:value-type="float" office:value="1"><text:p>1</text:p></table:table-cell></table:table-row>`;
+
+    it('refuses a sheet whose repeated rows add up past the budget', () => {
+      const bytes = ods(`<table:table table:name="Sheet1">${bigRow}${bigRow}</table:table>`);
+      expect(() => readOds(bytes)).toThrow(OdsContentTooLargeError);
+    });
+
+    it('refuses repeats spread over several sheets', () => {
+      const sheet = (name: string): string => `<table:table table:name="${name}">${bigRow}</table:table>`;
+      const bytes = ods(sheet('One') + sheet('Two'));
+      expect(() => readOds(bytes)).toThrow(OdsContentTooLargeError);
+    });
+
+    it('refuses a spanned cell repeated into millions of merges', () => {
+      const bytes = ods(
+        `<table:table table:name="Sheet1"><table:table-row table:number-rows-repeated="1048576"><table:table-cell table:number-columns-spanned="2" table:number-columns-repeated="16384"/></table:table-row></table:table>`,
+      );
+      expect(() => readOds(bytes)).toThrow(OdsContentTooLargeError);
+    });
+
+    it('reads a repeated spanned cell as the merges that do not overlap', () => {
+      // Each copy spans two rows, so the copies in odd rows would overlap the ones above them.
+      const bytes = ods(
+        `<table:table table:name="Sheet1"><table:table-row table:number-rows-repeated="6"><table:table-cell table:number-rows-spanned="2" table:number-columns-repeated="3"/></table:table-row></table:table>`,
+      );
+      const merges = readOds(bytes)
+        .activeSheet.merges.map((m) => m.range.toString())
+        .sort();
+      expect(merges).toEqual(
+        ['A1:A2', 'B1:B2', 'C1:C2', 'A3:A4', 'B3:B4', 'C3:C4', 'A5:A6', 'B5:B6', 'C5:C6'].sort(),
+      );
+    });
   });
 
   it('a styled run across a whole row becomes a style, not 16384 cells', () => {

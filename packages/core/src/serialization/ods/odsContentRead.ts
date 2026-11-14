@@ -54,6 +54,25 @@ const MAX_ROWS = SheetDimensions.maxRows;
 const STYLED_RUN_CELL_LIMIT = 1 << 16;
 /** The most cells one repeated run may create; past it the file is refused, not half-read. */
 const CONTENT_RUN_CELL_LIMIT = 1 << 22;
+/**
+ * The most cells repeated runs may create in one workbook, all sheets together: as many as one run
+ * may cover, since a few rows of runs at that cap would fill memory from a file of a few hundred
+ * bytes. LibreOffice repeats only identical neighbours (and Cellestra reads big blank styled runs
+ * as row or column formats), so a real file stays far below it.
+ */
+const REPEATED_CELL_BUDGET = CONTENT_RUN_CELL_LIMIT;
+/**
+ * The most merges repeated spanned cells may create in one workbook. LibreOffice never repeats a
+ * cell that starts a merge, and neither does Cellestra, so only a corrupt or hostile file gets near.
+ */
+const REPEATED_MERGE_BUDGET = 1 << 15;
+
+/** The cells and merges repeats have created so far, shared by every sheet of a workbook. */
+interface RepeatBudget {
+  cells: number;
+  merges: number;
+}
+
 /** The width of a LibreOffice sheet before 7.4: a run that reaches it reaches the end of the row. */
 const LEGACY_COLUMNS = 1024;
 
@@ -86,6 +105,8 @@ interface ReadContext {
   readonly checkboxIds: ReadonlySet<string>;
   /** The table's merges, gathered in reading order and added once the grid is read. */
   readonly merges: MergedRegion[];
+  /** What repeats have created in the whole workbook. */
+  readonly repeats: RepeatBudget;
 }
 
 /**
@@ -158,6 +179,7 @@ class ContentReader implements XmlEventHandler {
   private readonly validationCells: ValidationCells = new Map();
   private readonly namedExpressions: XmlElement[] = [];
   private readonly checkboxes: ReadCheckboxes = { ids: new Set(), cells: [] };
+  private readonly repeats: RepeatBudget = { cells: 0, merges: 0 };
 
   constructor(
     workbook: Workbook,
@@ -301,6 +323,7 @@ class ContentReader implements XmlEventHandler {
       chartSheet: false,
       checkboxIds: this.checkboxes.ids,
       merges: [],
+      repeats: this.repeats,
     };
     return new TableReader(workbook, sheet, outline, context, this.pkg, this.checkboxes);
   }
@@ -726,6 +749,14 @@ function readCells(
             `Sheet '${sheet.name}' repeats one cell over ${area} positions; the most a run may cover is ${CONTENT_RUN_CELL_LIMIT}.`,
           );
         }
+        if (area > 1) {
+          context.repeats.cells += area;
+          if (context.repeats.cells > REPEATED_CELL_BUDGET) {
+            throw new OdsContentTooLargeError(
+              `Sheet '${sheet.name}' repeats cells past ${REPEATED_CELL_BUDGET} in the workbook, the most repeats may create.`,
+            );
+          }
+        }
         for (let r = row; r < row + rowCount; r++) {
           for (let c = column; c < column + repeat; c++) storeCell(sheet, r, c, parsed);
         }
@@ -737,11 +768,25 @@ function readCells(
         readPositive(element, Table('number-columns-spanned')),
         MAX_COLUMNS - column,
       );
-      if (columnsSpanned > 1 || readPositive(element, Table('number-rows-spanned')) > 1) {
-        for (let r = row; r < row + rowCount; r++) {
-          const rowsSpanned = Math.min(readPositive(element, Table('number-rows-spanned')), MAX_ROWS - r);
+      const declaredRowsSpanned = readPositive(element, Table('number-rows-spanned'));
+      if (columnsSpanned > 1 || declaredRowsSpanned > 1) {
+        // Each repeated copy starts a merge, but a copy inside the span of the one before it
+        // overlaps it and would be dropped by addMerges: step over the spans instead, so only the
+        // merges that can stand are made.
+        const rowStep = Math.min(declaredRowsSpanned, rowCount);
+        const columnStep = Math.min(columnsSpanned, repeat);
+        if (rowCount > 1 || repeat > 1) {
+          context.repeats.merges += Math.ceil(rowCount / rowStep) * Math.ceil(repeat / columnStep);
+          if (context.repeats.merges > REPEATED_MERGE_BUDGET) {
+            throw new OdsContentTooLargeError(
+              `Sheet '${sheet.name}' repeats merged cells past ${REPEATED_MERGE_BUDGET} in the workbook, the most repeats may create.`,
+            );
+          }
+        }
+        for (let r = row; r < row + rowCount; r += rowStep) {
+          const rowsSpanned = Math.min(declaredRowsSpanned, MAX_ROWS - r);
           if (columnsSpanned <= 1 && rowsSpanned <= 1) continue;
-          for (let c = column; c < column + repeat; c++) {
+          for (let c = column; c < column + repeat; c += columnStep) {
             const right = Math.min(c + columnsSpanned - 1, MAX_COLUMNS - 1);
             const range = new CellRange(new CellAddress(c, r), new CellAddress(right, r + rowsSpanned - 1));
             context.merges.push(new MergedRegion(range));
