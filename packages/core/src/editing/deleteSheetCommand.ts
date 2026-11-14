@@ -67,7 +67,7 @@ export class DeleteSheetCommand implements EditCommand {
 
   undo(workbook: Workbook): EditResult {
     if (!this.removed || !this.otherFormulasBefore || !this.referencesBefore) return EditResult.none;
-    workbook.insertSheet(this.index, this.removed);
+    workbook.restoreSheet(this.index, this.removed);
     restoreFormulas(workbook, this.otherFormulasBefore);
     restoreReferences(workbook, this.referencesBefore);
     return EditResult.structuralChange;

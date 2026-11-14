@@ -101,6 +101,14 @@ export class Workbook {
 
   insertSheet(index: number, sheet: Worksheet): void {
     SheetName.validate(sheet.name);
+    this.restoreSheet(index, sheet);
+  }
+
+  /**
+   * Put a sheet back where it was (undoing its delete) without checking its name against the
+   * rules for a new name: it was valid before, even if it came from a file those rules reject.
+   */
+  restoreSheet(index: number, sheet: Worksheet): void {
     if (this.findSheet(sheet.name)) throw new Error(`A worksheet named '${sheet.name}' already exists.`);
     this.sheets.splice(Math.min(Math.max(index, 0), this.sheets.length), 0, sheet);
   }

@@ -125,6 +125,18 @@ describe('editing', () => {
     expect(sheet.find(0, 0)!.formula).toBe('Data.A1+1');
   });
 
+  it('undoing the delete of a sheet whose long name came from a file brings it back', () => {
+    // A file may name a sheet past the 31 characters a new name may have.
+    const { workbook, history } = setup();
+    const longName = 'Quarterly results for the northern region';
+    workbook.addSheetForLoad(longName).setValue(0, 0, CellValue.number(42));
+    history.execute(new DeleteSheetCommand(longName));
+    expect(workbook.findSheet(longName)).toBeUndefined();
+    history.undo();
+    expect(num(workbook.findSheet(longName)!.getValue(0, 0))).toBe(42);
+    expect(workbook.worksheets.at(-1)!.name).toBe(longName);
+  });
+
   it('apply style toggles bold and undoes', () => {
     const { workbook, history, sheet } = setup();
     sheet.setValue(0, 0, CellValue.text('x'));
