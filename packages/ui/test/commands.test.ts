@@ -28,6 +28,31 @@ describe('shortcuts', () => {
     ).toBe(true);
   });
 
+  it('matches literal ctrl shortcuts to Ctrl on every platform', () => {
+    const insertFunction = parseShortcut('ctrl+alt+f');
+    const ctrlAltF = key({ key: 'f', code: 'KeyF', ctrlKey: true, altKey: true });
+    // Windows and Linux: Ctrl is both the mod key and the literal ctrl key.
+    expect(matches(insertFunction, ctrlAltF, false)).toBe(true);
+    expect(matches(insertFunction, key({ key: 'f', code: 'KeyF', altKey: true }), false)).toBe(false);
+    expect(matches(parseShortcut('ctrl+pagedown'), key({ key: 'PageDown', ctrlKey: true }), false)).toBe(
+      true,
+    );
+    expect(matches(parseShortcut('ctrl+pageup'), key({ key: 'PageUp', ctrlKey: true }), false)).toBe(true);
+    expect(matches(parseShortcut('ctrl+pageup'), key({ key: 'PageUp' }), false)).toBe(false);
+    // macOS: ctrl is ⌃, separate from ⌘.
+    expect(matches(insertFunction, ctrlAltF, true)).toBe(true);
+    expect(matches(insertFunction, key({ key: 'f', code: 'KeyF', metaKey: true, altKey: true }), true)).toBe(
+      false,
+    );
+    expect(matches(parseShortcut('mod+k'), key({ key: 'k', code: 'KeyK', ctrlKey: true }), true)).toBe(false);
+  });
+
+  it('labels literal ctrl shortcuts as Ctrl outside macOS', () => {
+    expect(formatShortcut(parseShortcut('ctrl+alt+f'), false)).toBe('Ctrl+Alt+F');
+    expect(formatShortcut(parseShortcut('ctrl+pagedown'), false)).toBe('Ctrl+Pagedown');
+    expect(formatShortcut(parseShortcut('ctrl+alt+f'), true)).toBe('⌃⌥F');
+  });
+
   it('lets shifted punctuation match', () => {
     expect(
       matches(parseShortcut('mod++'), key({ key: '+', code: 'Equal', metaKey: true, shiftKey: true }), true),

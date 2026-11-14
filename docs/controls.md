@@ -6,7 +6,7 @@
 | ------------------------------ | --------------------- | ------------------------------------------------ |
 | Command menu                   | `⌘K`                  | `Ctrl+K`                                         |
 | Go to sheet                    | `⇧⌘P`                 | `Ctrl+Shift+P`                                   |
-| Next / previous sheet          | `⌃⇟` / `⌃⇞`           | `Ctrl+Alt+→` / `Ctrl+Alt+←`                      |
+| Next / previous sheet          | `⌃⇟` / `⌃⇞`           | `Ctrl+Page Down` / `Ctrl+Page Up`                |
 | Keyboard shortcuts             | `⌘/`                  | `Ctrl+/`                                         |
 | New / open / save              | `⌘N` / `⌘O` / `⌘S`    | `Ctrl+N` / `Ctrl+O` / `Ctrl+S`                   |
 | Save as                        | `⇧⌘S`                 | `Ctrl+Shift+S`                                   |
@@ -22,7 +22,7 @@
 | Insert rows above              | `⇧⌘=`                 | `Ctrl+Shift+=`                                   |
 | Delete rows                    | `⌥⌘-`                 | `Ctrl+Alt+-`                                     |
 | Insert sheet                   | `⇧F11`                | `Shift+F11`                                      |
-| Insert function                | `⌃⌥F`                 |                                                  |
+| Insert function                | `⌃⌥F`                 | `Ctrl+Alt+F`                                     |
 | Hyperlink                      | `⌥⌘K`                 | `Ctrl+Alt+K`                                     |
 | Today's date / current time    | `⌘;` / `⇧⌘;`          | `Ctrl+;` / `Ctrl+Shift+;`                        |
 | Bold / italic / underline      | `⌘B` / `⌘I` / `⌘U`    | `Ctrl+B` / `Ctrl+I` / `Ctrl+U`                   |
@@ -39,7 +39,7 @@
 | Zoom in / out / actual size    | `⌘=` / `⌘-` / `⌘0`    | `Ctrl+=` / `Ctrl+-` / `Ctrl+0`                   |
 | Show formulas                  | `` ⌘` ``              | `` Ctrl+` ``                                     |
 
-On macOS, `⌥⌘→` and `⌥⌘←` also move to the next and previous sheet. Insert Function has no shortcut on Windows and Linux; run it from the command menu.
+`⌥⌘→` / `⌥⌘←` (`Ctrl+Alt+→` / `Ctrl+Alt+←` on Windows and Linux) also move to the next and previous sheet.
 
 ## In the grid
 

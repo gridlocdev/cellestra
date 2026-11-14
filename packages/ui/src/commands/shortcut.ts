@@ -8,7 +8,7 @@ export interface Shortcut {
   readonly mod: boolean;
   readonly shift: boolean;
   readonly alt: boolean;
-  /** Literal Ctrl on macOS (rare; e.g. ⌃Tab). */
+  /** Literal Ctrl: ⌃ on macOS, and the same Ctrl key as `mod` elsewhere. */
   readonly ctrl: boolean;
 }
 
@@ -67,9 +67,9 @@ function eventKey(e: KeyboardEvent): string {
 }
 
 export function matches(s: Shortcut, e: KeyboardEvent, mac = isMac): boolean {
-  const mod = mac ? e.metaKey : e.ctrlKey;
-  const ctrl = mac ? e.ctrlKey : false;
-  if (mod !== s.mod || e.altKey !== s.alt || ctrl !== s.ctrl) return false;
+  // On macOS `mod` is ⌘ and `ctrl` is ⌃. Elsewhere both mean the one Ctrl key.
+  const modifiers = mac ? e.metaKey === s.mod && e.ctrlKey === s.ctrl : e.ctrlKey === (s.mod || s.ctrl);
+  if (!modifiers || e.altKey !== s.alt) return false;
   const key = eventKey(e);
   // Punctuation produced with shift (e.g. "+" on ⇧=) matches without requiring shift in the spec.
   if (key === s.key && e.shiftKey === s.shift) return true;
@@ -97,7 +97,7 @@ export function formatShortcut(s: Shortcut, mac = isMac): string {
   const key =
     s.key.length === 1 ? s.key.toUpperCase() : ((mac ? MAC_SYMBOLS[s.key] : undefined) ?? cap(s.key));
   if (mac) return `${s.ctrl ? '⌃' : ''}${s.alt ? '⌥' : ''}${s.shift ? '⇧' : ''}${s.mod ? '⌘' : ''}${key}`;
-  return [s.mod && 'Ctrl', s.alt && 'Alt', s.shift && 'Shift', key].filter(Boolean).join('+');
+  return [(s.mod || s.ctrl) && 'Ctrl', s.alt && 'Alt', s.shift && 'Shift', key].filter(Boolean).join('+');
 }
 
 /** Electron accelerator string (CmdOrCtrl+Shift+K). */
