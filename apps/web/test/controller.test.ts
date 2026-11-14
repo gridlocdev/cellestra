@@ -594,19 +594,46 @@ describe('slow opens', () => {
 });
 
 describe('deleting a sheet', () => {
-  it('asks first, and keeps the sheet when the answer is no', async () => {
-    const app = await makeApp();
-    app.session.addSheet();
-    const confirm = vi.fn(() => false);
+  const withConfirm = (answer: boolean) => {
+    const confirm = vi.fn((_: string) => answer);
     const g = globalThis as { window?: unknown };
     const before = g.window;
     g.window = { confirm };
+    return { confirm, restore: () => (g.window = before) };
+  };
+
+  it('deletes an empty, unused sheet without asking', async () => {
+    const app = await makeApp();
+    app.session.addSheet();
+    const { confirm, restore } = withConfirm(false);
+    app.deleteSheet(1);
+    restore();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(app.session.sheetNames.peek()).toEqual(['Sheet1']);
+  });
+
+  it('asks for a sheet with data, without mentioning #REF! when nothing refers to it', async () => {
+    const app = await makeApp();
+    app.session.addSheet();
+    app.session.workbook.peek().worksheets[1]!.setValue(0, 0, CellValue.number(1));
+    const { confirm, restore } = withConfirm(false);
     app.deleteSheet(1);
     expect(confirm).toHaveBeenCalledOnce();
+    expect(confirm.mock.calls[0]![0]).not.toMatch(/#REF!/);
     expect(app.session.sheetNames.peek()).toEqual(['Sheet1', 'Sheet2']);
     confirm.mockReturnValue(true);
     app.deleteSheet(1);
+    restore();
     expect(app.session.sheetNames.peek()).toEqual(['Sheet1']);
-    g.window = before;
+  });
+
+  it('mentions #REF! only when formulas elsewhere read the sheet', async () => {
+    const app = await makeApp();
+    app.session.addSheet();
+    app.session.workbook.peek().worksheets[0]!.setFormula(0, 0, 'Sheet2.A1');
+    const { confirm, restore } = withConfirm(false);
+    app.deleteSheet(1);
+    restore();
+    expect(confirm.mock.calls[0]![0]).toMatch(/1 formula on another sheet .*#REF!/);
   });
 });

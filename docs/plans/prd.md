@@ -371,7 +371,7 @@ Undo/redo is **session-only** (never written into the `.ods` file) and covers al
 On open, cached values from the file are shown immediately. If calculation mode is **Automatic** (the default), a background recalculation runs once to confirm values; if **Manual**, cached values are kept until the user recalculates (F9).
 
 ### 8.7 Destructive-action confirmations
-- **Always confirm:** deleting a worksheet; overwriting an existing file via Save As; closing/quitting with unsaved changes (Save / Don't Save / Cancel).
+- **Always confirm:** deleting a worksheet that holds data or that formulas, charts or validation lists on other sheets read (the question names how many formulas will show `#REF!`; an empty, unused sheet is deleted without asking, and undo brings it back); overwriting an existing file via Save As; closing/quitting with unsaved changes (Save / Don't Save / Cancel).
 - **Confirm only above a threshold:** clearing or deleting a range is silent (undo covers it) **unless** it would remove data from **more than 100 non-empty cells**, in which case Cellestra asks first.
 - Everything else relies on undo rather than nagging.
 

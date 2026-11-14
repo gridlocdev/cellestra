@@ -23,6 +23,8 @@ import {
   FormatBlock,
   HiddenLines,
   PasteBlockCommand,
+  sheetDeletionImpact,
+  type SheetDeletionImpact,
   SheetDimensions,
   StructuralEditCommand,
   parseCsv,
@@ -2089,10 +2091,14 @@ export class AppController {
     if (names.length <= 1) return this.info('A workbook needs at least one sheet.');
     const name = names[index];
     if (name === undefined) return;
-    // PRD §8.7: deleting a worksheet always asks, even though it can be undone.
-    const ok = window.confirm(`Delete the sheet “${name}”? Formulas that refer to it will show #REF!.`);
-    this.grid.current?.focus();
-    if (!ok) return;
+    // PRD §8.7: ask only when something would be lost or broken; an empty, unused sheet just goes
+    // (undo still brings it back).
+    const message = deleteSheetMessage(name, sheetDeletionImpact(this.session.workbook.peek(), name));
+    if (message !== null) {
+      const ok = window.confirm(message);
+      this.grid.current?.focus();
+      if (!ok) return;
+    }
     this.session.deleteSheet(index);
   }
 }
@@ -2104,6 +2110,26 @@ interface OpenTicket {
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────
+
+/** The question to ask before deleting sheet `name`, or null when nothing would be lost or broken. */
+export function deleteSheetMessage(name: string, impact: SheetDeletionImpact): string | null {
+  const { empty, formulas, otherReferences } = impact;
+  if (empty && formulas === 0 && otherReferences === 0) return null;
+  const parts = [`Delete the sheet “${name}”?`];
+  if (formulas > 0)
+    parts.push(
+      formulas === 1
+        ? '1 formula on another sheet refers to it and will show #REF!.'
+        : `${formulas} formulas on other sheets refer to it and will show #REF!.`,
+    );
+  if (otherReferences > 0)
+    parts.push(
+      otherReferences === 1
+        ? '1 chart or validation list uses its cells and will lose them.'
+        : `${otherReferences} charts or validation lists use its cells and will lose them.`,
+    );
+  return parts.join(' ');
+}
 
 export function toCellRange(r: GridRange): CellRange {
   return CellRange.fromBounds(r.top, r.left, r.bottom, r.right);

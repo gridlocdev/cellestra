@@ -1,4 +1,8 @@
+import type { CellRef } from '../dependencies/cellRef.ts';
+import { ReferenceCollector } from '../dependencies/referenceCollector.ts';
 import type { Expr } from '../formulas/ast/expr.ts';
+import { Parser } from '../formulas/parsing/parser.ts';
+import { CellRange } from '../model/cellRange.ts';
 import { ReferenceAdjuster } from '../formulas/references/referenceAdjuster.ts';
 import type { NamedRange } from '../model/namedRange.ts';
 import type { Workbook } from '../model/workbook.ts';
@@ -66,6 +70,70 @@ export class DeleteSheetCommand implements EditCommand {
     restoreReferences(workbook, this.referencesBefore);
     return EditResult.structuralChange;
   }
+}
+
+/** What deleting a sheet would break elsewhere in the workbook. */
+export interface SheetDeletionImpact {
+  /** The sheet holds no values, formulas, comments, shapes or chart. */
+  readonly empty: boolean;
+  /** Formulas on other sheets that read it, directly or through a named range. */
+  readonly formulas: number;
+  /** Charts on other sheets that plot it, and validation lists on other sheets sourced from it. */
+  readonly otherReferences: number;
+}
+
+/** What deleting `sheetName` would lose and break, without changing anything. */
+export function sheetDeletionImpact(workbook: Workbook, sheetName: string): SheetDeletionImpact {
+  const target = requireSheet(workbook, sheetName);
+  const isDeleted = (sheet: string | null | undefined): boolean =>
+    sheet !== null && sheet !== undefined && sheet.toLowerCase() === target.name.toLowerCase();
+
+  let empty = !target.isChartSheet && target.chart === null;
+  if (empty)
+    for (const [, , cell] of target.enumerateCells()) {
+      if (cell.formula !== null || cell.value.kind !== 'empty' || cell.unmodeled !== null) {
+        empty = false;
+        break;
+      }
+    }
+
+  let formulas = 0;
+  let otherReferences = 0;
+  const chartHome = defaultChartHome(workbook);
+  const rangeOnDeleted = (reference: string | null, home: string | undefined): boolean => {
+    if (reference === null) return false;
+    const range = CellRange.tryParse(reference.trim());
+    return range !== null && isDeleted(range.sheet ?? home);
+  };
+  for (const sheet of workbook.worksheets) {
+    if (sheet === target) continue;
+    const resolve = (name: string): CellRange | null =>
+      workbook.findNamedRange(name, sheet.name)?.target ?? null;
+    for (const [, , cell] of sheet.enumerateCells()) {
+      if (cell.formula === null) continue;
+      const parsed = Parser.tryParse(cell.formula);
+      if (!parsed.ok) continue;
+      const read = new Map<string, CellRef>();
+      ReferenceCollector.collect(parsed.expr, sheet.name, resolve, read);
+      if ([...read.values()].some((ref) => isDeleted(ref.sheet))) formulas++;
+    }
+    const chart = sheet.chart;
+    if (chart) {
+      const home = chartHome ?? sheet.name;
+      const refs = [
+        chart.categoriesReference,
+        ...chart.series.flatMap((x) => [
+          x.valuesReference,
+          x.nameReference,
+          x.xValuesReference,
+          x.bubbleSizeReference,
+        ]),
+      ];
+      if (refs.some((r) => rangeOnDeleted(r, home))) otherReferences++;
+    }
+    for (const v of sheet.validations) if (v.listSource && isDeleted(v.listSource.sheet)) otherReferences++;
+  }
+  return { empty, formulas, otherReferences };
 }
 
 /** Every formula's text on every sheet except `except`, for structural undo. */
