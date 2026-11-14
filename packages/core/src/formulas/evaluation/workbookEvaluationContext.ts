@@ -69,6 +69,20 @@ export class WorkbookEvaluationContext implements EvaluationContext {
     return this.#workbook.sheetsBetween(first, last)?.map((s) => s.name) ?? null;
   }
 
+  rowHiddenBy(sheet: string | null, row: number): 'filtered' | 'hidden' | null {
+    const worksheet = this.#sheet(sheet ?? this.currentSheet);
+    if (!worksheet?.isRowHidden(row)) return null;
+    // A hidden row inside a filtered range counts as filtered: the model doesn't record which hid it.
+    const inFilter = (range: CellRange | null) => range !== null && row >= range.top && row <= range.bottom;
+    return inFilter(worksheet.activeFilter) || worksheet.tables.some((t) => t.filter && inFilter(t.range))
+      ? 'filtered'
+      : 'hidden';
+  }
+
+  cellFormula(sheet: string | null, row: number, column: number): string | null {
+    return this.#sheet(sheet ?? this.currentSheet)?.find(row, column)?.formula ?? null;
+  }
+
   resolveName(name: string): CellRange | null {
     return this.#workbook.findNamedRange(name, this.currentSheet)?.target ?? null;
   }

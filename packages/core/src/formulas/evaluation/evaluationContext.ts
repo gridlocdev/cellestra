@@ -32,6 +32,13 @@ export interface EvaluationContext {
    * every such range #REF!.
    */
   sheetsBetween?(first: string, last: string): readonly string[] | null;
+  /**
+   * Why a row is hidden: `filtered` when a filter hid it, `hidden` when it was hidden by hand, null
+   * when it shows. SUBTOTAL reads it; leaving it out means every row shows.
+   */
+  rowHiddenBy?(sheet: string | null, row: number): 'filtered' | 'hidden' | null;
+  /** A cell's formula text, or null when it holds none. Leaving it out means no cell does. */
+  cellFormula?(sheet: string | null, row: number, column: number): string | null;
   /** Resolve a defined name to its range; null for an unknown name. */
   resolveName(name: string): CellRange | null;
   /**
