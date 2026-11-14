@@ -1929,22 +1929,20 @@ export class AppController {
     return true;
   }
 
-  /** Named ranges change the workbook directly (not undoable), then everything recalculates. */
+  /** Named ranges change the workbook directly (not undoable), then formulas are re-planned. */
   addNamedRange(nr: NamedRange): string | null {
     const wb = this.session.workbook.peek();
     if (!/^[A-Za-z_\\][A-Za-z0-9_.]*$/.test(nr.name) || CellAddress.tryParse(nr.name))
       return 'Names start with a letter or underscore and can’t look like a cell reference.';
     if (wb.findNamedRange(nr.name, nr.scope ?? null)) return `“${nr.name}” already exists.`;
     wb.addNamedRange(nr);
-    this.session.recalculateAll();
-    this.session.touch();
+    this.session.namesChanged();
     return null;
   }
 
   removeNamedRange(nr: NamedRange): void {
     this.session.workbook.peek().removeNamedRange(nr.name, nr.scope ?? null);
-    this.session.recalculateAll();
-    this.session.touch();
+    this.session.namesChanged();
   }
 
   /**

@@ -372,7 +372,7 @@ Undo/redo is **session-only** (never written into the `.ods` file) and covers al
 ### 8.6 Calculation on open
 On open, cached values from the file are shown immediately. If calculation mode is **Automatic** (the default), a background recalculation runs once to confirm values; if **Manual**, cached values are kept until the user recalculates (F9).
 
-The mode is a document setting, saved in the file's `settings.xml`. **Data → Manual Calculation** (a checked toggle) or a click on the status bar's Auto/Manual badge switches it, which marks the document modified. Switching back to Automatic recalculates immediately.
+The mode is a document setting, saved in the file's `settings.xml`. **Data → Manual Calculation** (a checked toggle) or a click on the status bar's Auto/Manual badge switches it, which marks the document modified. In Manual mode no edit recalculates — typed values, pastes, fills, sorts, and structural edits alike (inserting or deleting rows, columns or sheets, renaming a sheet, changing named ranges); formula *text* is still adjusted at once, so references stay correct, and the dependency graph stays current so F9 gives the right answer. Volatile functions wait for F9 too. Switching back to Automatic recalculates immediately.
 
 ### 8.7 Destructive-action confirmations
 - **Always confirm:** deleting a worksheet that holds data or that formulas, charts or validation lists on other sheets read (the question names how many formulas will show `#REF!`; an empty, unused sheet is deleted without asking, and undo brings it back); overwriting an existing file via Save As; closing/quitting with unsaved changes (Save / Don't Save / Cancel).

@@ -316,6 +316,16 @@ export class WorkbookSession {
     this.#logCells([recalc.evaluatedCells]);
   }
 
+  /**
+   * Named ranges changed outside the history: re-plan every formula from the new names and mark the
+   * document modified. Manual calculation leaves the results for F9.
+   */
+  namesChanged(): void {
+    const recalc = this.#engine.recordStructuralChange();
+    if (this.#isAutomatic()) this.#circular.value = recalc.hasCircularReference;
+    this.touch();
+  }
+
   /** A change made outside the history (resizing columns isn't worth an undo step in some flows). */
   touch(structural = false): void {
     batch(() => {
@@ -330,11 +340,12 @@ export class WorkbookSession {
     let circular = this.#circular.peek();
     let evaluated: readonly CellRef[] = [];
     if (result.structural) {
-      this.#engine.rebuildGraph();
-      circular = this.#engine.recalculateAll().hasCircularReference;
+      const recalc = this.#engine.recordStructuralChange();
+      // Manual calculation evaluates nothing, so it can't say whether a cycle is still there.
+      if (this.#isAutomatic()) circular = recalc.hasCircularReference;
     } else if (result.changedCells.length > 0) {
       const recalc = this.#engine.recordEdits(result.changedCells);
-      circular = recalc.hasCircularReference;
+      if (this.#isAutomatic()) circular = recalc.hasCircularReference;
       evaluated = recalc.evaluatedCells;
     }
     batch(() => {
@@ -348,6 +359,10 @@ export class WorkbookSession {
     this.#logCells(
       result.structural || result.changedCells.length === 0 ? null : [result.changedCells, evaluated],
     );
+  }
+
+  #isAutomatic(): boolean {
+    return this.#workbook.peek().settings.calculationMode === 'automatic';
   }
 
   /** Cells each recent version changed, per lower-cased sheet name; null when that isn't known. */
@@ -478,10 +493,10 @@ export class WorkbookSession {
     this.#history.clear();
     this.#undoSelections.length = 0;
     this.#redoSelections.length = 0;
-    this.#engine.rebuildGraph();
-    const result = this.#engine.recalculateAll();
+    const recalc = this.#engine.recordStructuralChange();
+    const circular = this.#isAutomatic() ? recalc.hasCircularReference : this.#circular.peek();
     batch(() => {
-      this.#circular.value = result.hasCircularReference;
+      this.#circular.value = circular;
       this.#modified.value = true;
       this.#edits++;
       this.#structure.value++;

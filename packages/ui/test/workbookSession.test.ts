@@ -5,6 +5,7 @@ import {
   EditCommands,
   EditRefusedError,
   OdsWriter,
+  StructuralEditCommand,
   Workbook,
   type EditCommand,
 } from '@cellestra/core';
@@ -184,5 +185,76 @@ describe('WorkbookSession.setCalculationMode', () => {
     session.setCalculationMode('automatic');
     expect(sheet.getValue(0, 1)).toEqual(CellValue.number(14));
     expect(session.calculationMode.value).toBe('automatic');
+  });
+});
+
+describe('WorkbookSession manual calculation and structural edits', () => {
+  /** A1 = 1, A2 = 2, B1 = SUM(A1:A2), C1 = A2*10; then manual calculation. */
+  function manualSession() {
+    const session = new WorkbookSession();
+    const sheet = session.activeSheet.peek();
+    const set = (row: number, column: number, text: string) =>
+      session.execute(EditCommands.setInput(sheet.name, row, column, text, 'en-US'));
+    set(0, 0, '1');
+    set(1, 0, '2');
+    set(0, 1, '=SUM(A1:A2)');
+    set(0, 2, '=A2*10');
+    session.setCalculationMode('manual');
+    return { session, sheet, set };
+  }
+
+  it('inserting and deleting rows adjusts references but waits for F9 to recalculate', () => {
+    const { session, sheet, set } = manualSession();
+    set(1, 0, '5');
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(3)); // stale until F9
+
+    session.execute(new StructuralEditCommand(sheet.name, 'row', 'insert', 1, 1));
+    expect(sheet.find(0, 1)?.formula).toBe('SUM(A1:A3)');
+    expect(sheet.find(0, 2)?.formula).toBe('A3*10');
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(3));
+    expect(sheet.getValue(0, 2)).toEqual(CellValue.number(20));
+
+    set(1, 0, '100');
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(3));
+    session.recalculateAll();
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(106));
+    expect(sheet.getValue(0, 2)).toEqual(CellValue.number(50));
+
+    session.execute(new StructuralEditCommand(sheet.name, 'row', 'delete', 2, 1));
+    expect(sheet.find(0, 2)?.formula).toContain('#REF!');
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(106));
+    expect(sheet.getValue(0, 2)).toEqual(CellValue.number(50));
+    session.undo();
+    expect(sheet.find(0, 2)?.formula).toBe('A3*10');
+    session.recalculateAll();
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(106));
+    expect(sheet.getValue(0, 2)).toEqual(CellValue.number(50));
+  });
+
+  it('inserting columns and sheets, renaming, and named ranges wait too', () => {
+    const { session, sheet, set } = manualSession();
+    set(1, 0, '7');
+    session.execute(new StructuralEditCommand(sheet.name, 'column', 'insert', 0, 1));
+    expect(sheet.find(0, 2)?.formula).toBe('SUM(B1:B2)');
+    expect(sheet.getValue(0, 2)).toEqual(CellValue.number(3));
+
+    session.addSheet();
+    session.setActiveSheet(0);
+    expect(session.renameSheet(0, 'Data')).toBeNull();
+    session.namesChanged();
+    expect(sheet.getValue(0, 2)).toEqual(CellValue.number(3));
+    expect(sheet.getValue(0, 3)).toEqual(CellValue.number(20));
+
+    session.recalculateAll();
+    expect(sheet.getValue(0, 2)).toEqual(CellValue.number(8));
+    expect(sheet.getValue(0, 3)).toEqual(CellValue.number(70));
+  });
+
+  it('recalculates structural edits as before in automatic mode', () => {
+    const { session, sheet, set } = manualSession();
+    session.setCalculationMode('automatic');
+    session.execute(new StructuralEditCommand(sheet.name, 'row', 'insert', 1, 1));
+    set(1, 0, '4');
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(7));
   });
 });

@@ -93,6 +93,18 @@ export class RecalculationEngine {
   }
 
   /**
+   * After an edit that moved cells or rewrote formulas wholesale (inserting or deleting rows,
+   * columns or sheets, renaming a sheet, changing a named range): rebuild the graph from the
+   * adjusted formula text, then recompute everything. In manual mode only the graph is rebuilt, as
+   * `recordEdits` does for a value edit, so results wait for a full recalc.
+   */
+  recordStructuralChange(): RecalculationResult {
+    this.rebuildGraph();
+    if (this.#workbook.settings.calculationMode === 'manual') return result(0, []);
+    return this.recalculateAll();
+  }
+
+  /**
    * Update the graph for cells whose content just changed, then recompute them and everything
    * downstream (plus volatile cells). In manual mode nothing is evaluated, but the graph stays
    * current so a later full recalc is correct.

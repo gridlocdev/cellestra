@@ -32,7 +32,7 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
   - Rows and columns that differ from the defaults are kept in their own sparse maps.
   - Styles are interned: a cell stores a style id.
 - **Formulas.** The pipeline is lexer → parser (AST) → evaluator. `FunctionRegistry` holds every function together with its metadata, which also drives autocomplete and help. `OpenFormulaTranslator` converts between the internal syntax (`SUM(A1:A3)`) and ODF's (`of:=SUM([.A1:.A3])`).
-- **Dependencies.** `RecalculationEngine` covers full recalc, recalc after an edit, volatile functions, manual mode, and cycle detection, which shows `#REF!`.
+- **Dependencies.** `RecalculationEngine` covers full recalc, recalc after an edit, re-planning after a structural edit (`recordStructuralChange`), volatile functions, manual mode (where neither kind of edit evaluates anything until a full recalc), and cycle detection, which shows `#REF!`.
 - **Editing.** Every model change is an edit command with apply and revert. `EditHistory` keeps up to 1,000 of them. Structural edits rewrite formula references through `ReferenceAdjuster`.
 - **Serialization.**
   - `.ods` is read and written through a small namespace-aware XML tree, so elements Cellestra doesn't model survive a round trip verbatim.

@@ -127,6 +127,30 @@ describe('RecalculationEngine', () => {
     expect(numberAt(sheet, 0, 1)).toBe(99); // still the cached value
   });
 
+  it('manual mode defers recalculation after a structural change, but re-plans the graph', () => {
+    const { workbook, sheet } = newBook();
+    workbook.settings.calculationMode = 'manual';
+    sheet.setValue(0, 0, CellValue.number(1));
+    sheet.setFormula(0, 1, 'A1+1', CellValue.number(99));
+    const engine = engineFor(workbook);
+    // As if a structural edit had rewritten the formula: it now reads A2.
+    sheet.setFormula(0, 1, 'A2+1', CellValue.number(99));
+    sheet.setValue(1, 0, CellValue.number(5));
+
+    const result = engine.recordStructuralChange();
+    expect(result.evaluated).toBe(0);
+    expect(numberAt(sheet, 0, 1)).toBe(99);
+    // The graph follows the new text, so an edit to A2 is tracked and a full recalc uses it.
+    expect(engine.formulasReferencing([CellRef.of(sheet.name, 1, 0)])).toHaveLength(1);
+    engine.recalculateAll();
+    expect(numberAt(sheet, 0, 1)).toBe(6);
+
+    workbook.settings.calculationMode = 'automatic';
+    sheet.setValue(1, 0, CellValue.number(10));
+    expect(engine.recordStructuralChange().evaluated).toBe(1);
+    expect(numberAt(sheet, 0, 1)).toBe(11);
+  });
+
   it('a cross-sheet reference recalculates', () => {
     const workbook = Workbook.createNew();
     const sheet1 = workbook.activeSheet;
