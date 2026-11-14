@@ -171,17 +171,17 @@ Everything reachable in the command bar is also reachable in the menu bar, the C
 |---|---|
 | **Cellestra** | About Cellestra · Settings… (⌘,) · Services · Hide (⌘H) · Hide Others (⌥⌘H) · Quit (⌘Q) |
 | **File** | New (⌘N) · Open… (⌘O) · Open Recent → · Close (⌘W) · Save (⌘S) · Save As… (⇧⌘S) · Import → CSV… · Export → CSV… |
-| **Edit** | Undo (⌘Z) · Redo (⇧⌘Z) · Cut (⌘X) · Copy (⌘C) · Paste (⌘V) · Paste Special… (⌥⌘V) · Delete · Select All (⌘A) · Find → Find… (⌘F), Find & Replace… (⌥⌘F) · Fill → Down (⌘D), Right (⌘R) |
+| **Edit** | Undo (⌘Z) · Redo (⇧⌘Z) · Cut (⌘X) · Copy (⌘C) · Paste (⌘V) · Paste Values (⇧⌘V) · Delete · Select All (⌘A) · Select Row (⇧Space) · Select Column (⌃Space) · Go To… (⌃G) · Find → Find… (⌘F), Find & Replace… (⌘H), Find Next (⌘G) · Fill → Down (⌘D), Right (⌘R) |
 | **Insert** | Rows Above · Rows Below · Columns Left · Columns Right · Sheet · Table (⌘T) · Function… (⌃⌥F) · Named Range… · Hyperlink… |
-| **Format** | Cells… (⌘1) · Number → … · Bold (⌘B), Italic (⌘I), Underline (⌘U), Strikethrough (⌘⇧X) · Alignment → Align Left/Center/Right (Horizontal), Align Top/Middle/Bottom (Vertical) · Borders → … · Merge Cells · Rows → Row Height…, Hide Rows (⌃9), Unhide Rows (⌃⇧9) · Columns → Column Width…, Hide Columns (⌃0), Unhide Columns (⌃⇧0) |
+| **Format** | Cells… (⌘1) · Number → … · Bold (⌘B), Italic (⌘I), Underline (⌘U), Strikethrough (⌘⇧X) · Alignment → Align Left/Center/Right (Horizontal), Align Top/Middle/Bottom (Vertical) · Borders → … · Merge Cells · Rows → Row Height…, Hide Rows (⌘9), Unhide Rows (⇧⌘9) · Columns → Column Width…, Hide Columns, Unhide Columns |
 | **Data** | Sort… · Sort & Filter… (⇧⌘F) · Filter · Clear Filter · Remove Duplicates… · Text to Columns… · Data Validation… · Recalculate (F9) · Manual Calculation (toggle) · Named Ranges… · Import CSV… · Export CSV… |
-| **View** | Command Menu… (⌘K) · Go to Sheet… (⌘⇧P) · Zoom In (⌘=) · Zoom Out (⌘−) · Actual Size (⌥⌘0) · Gridlines · Headers · Formula Bar · Status Bar · Freeze Panes |
+| **View** | Command Menu… (⌘K) · Go to Sheet… (⌘⇧P) · Zoom In (⌘=) · Zoom Out (⌘-) · Actual Size (⌘0) · Gridlines · Headers · Formula Bar · Status Bar · Freeze Panes |
 | **Window** | Minimize (⌘M) · Zoom · (standard macOS window items) |
 | **Help** | Cellestra Help · Function Reference… |
 
 (Menus deliberately *absent*: "Page Layout"/print and "Review"/comments — those features are v1 non-goals, §9.)
 
-**Find / Find & Replace** (⌘F / ⌥⌘F) is a modeless tool window: besides Find Next / Replace / Replace All, it lists **every cell whose displayed value contains the query** (address + value, updated as you type); clicking a row jumps the selection there and scrolls it into view.
+**Find / Find & Replace** (⌘F / ⌘H) is a modeless tool window: besides Find Next / Replace / Replace All, it lists **every cell whose displayed value contains the query** (address + value, updated as you type); clicking a row jumps the selection there and scrolls it into view.
 
 ### 6.3 The adaptive command bar
 
@@ -209,55 +209,65 @@ Tooltips on every tool carry its name, shortcut, and one-line description; drawe
 
 ### 6.4 Keyboard shortcuts (full reference)
 
-Shortcuts use macOS modifiers (⌘ Command, ⇧ Shift, ⌥ Option, ⌃ Control). The single source of truth is the `AppCommands` catalog (see `architecture.md`); the table below lists the defaults, and **all are remappable in Settings**.
+Shortcuts use macOS modifiers (⌘ Command, ⇧ Shift, ⌥ Option, ⌃ Control). The single source of truth is the command catalog (`apps/web/src/app/commands.ts`, see `architecture.md`): the menu bar, the Command Menu, the Keyboard Shortcuts sheet (⌘/) and key handling all read it, and the tables below mirror it. Where they disagree, the catalog is right and this table needs fixing. On Windows and Linux, ⌘ and ⌃ both mean Ctrl, with one exception: Find Next is **F3** on Windows and Linux, because Ctrl+G is Go To there. Keys marked *grid* are handled by the grid itself rather than the catalog.
 
 **Files & app**
 | Action | Shortcut |
 |---|---|
 | New / Open / Save | ⌘N / ⌘O / ⌘S |
-| Save As / Close | ⇧⌘S / ⌘W |
-| Settings / Quit | ⌘, / ⌘Q |
+| Save As | ⇧⌘S |
+| Print | ⌘P |
+| Settings | ⌘, |
+| Quit (desktop app) | ⌘Q (the macOS app menu) |
 
 **Editing**
 | Action | Shortcut |
 |---|---|
-| Undo / Redo | ⌘Z / ⇧⌘Z |
+| Undo / Redo | ⌘Z / ⇧⌘Z (also ⌘Y) |
 | Cut / Copy / Paste | ⌘X / ⌘C / ⌘V |
-| Paste Special | ⌥⌘V |
-| Select All | ⌘A |
-| Edit active cell | Return or F2 |
-| Confirm & move down / up | Return / ⇧Return |
-| Confirm & move right / left | Tab / ⇧Tab |
-| New line inside a cell | ⌃⌥Return |
-| Cancel edit | Esc |
+| Paste Values | ⇧⌘V |
+| Edit active cell (*grid*) | F2, or start typing to replace it |
+| Confirm & move down / up (*grid*) | Return / ⇧Return |
+| Confirm & move right / left (*grid*) | Tab / ⇧Tab |
+| Next row, back in the column a run of Tabs began (*grid*) | Return after Tab |
+| New line inside a cell (*grid*) | ⌥Return or ⇧Return |
+| Cancel edit (*grid*) | Esc |
 | Fill Down / Right | ⌘D / ⌘R |
-| Delete contents | Delete |
-| Hide rows / columns | ⌃9 / ⌃0 |
-| Unhide rows / columns | ⌃⇧9 / ⌃⇧0 |
-| Insert hyperlink | ⌘K |
+| AutoSum | ⌥= |
+| Delete contents (*grid*) | Delete or ⌫ |
+| Delete Rows | ⌥⌘- |
+| Insert Rows Above | ⇧⌘= |
+| Hide / Unhide rows | ⌘9 / ⇧⌘9 |
+| Insert Today's Date / Current Time | ⌘; / ⇧⌘; |
+| Insert Hyperlink | ⌥⌘K |
+| Tick a checkbox cell (*grid*) | Space |
 
 **Navigation & selection**
 | Action | Shortcut |
 |---|---|
-| Move one cell | Arrow keys |
-| Jump to edge of data | ⌘ + Arrow |
-| To start of row / to A1 | Fn ← / Fn ⌘ ← |
-| Page up / down | Fn ↑ / Fn ↓ |
-| Extend selection | ⇧ + Arrow |
-| Extend to edge | ⇧⌘ + Arrow |
-| Select column / row | ⌃Space / ⇧Space |
-| Previous / next sheet | ⌥⌘← / ⌥⌘→ |
-| Go to Sheet (quick switcher) | ⌘⇧P |
+| Move one cell (*grid*) | Arrow keys |
+| Jump to edge of data (*grid*) | ⌘ + Arrow |
+| To start of row / to A1 (*grid*) | Home (Fn ←) / ⌘Home (Fn ⌘←) |
+| Page up / down (*grid*) | Page Up / Page Down (Fn ↑ / Fn ↓) |
+| Extend selection (*grid*) | ⇧ + Arrow |
+| Extend to edge (*grid*) | ⇧⌘ + Arrow |
+| Select All (table, then sheet) | ⌘A |
+| Select row / column | ⇧Space / ⌃Space |
+| Collapse the selection to the active cell (*grid*) | Esc (after clearing a copy marquee) |
+| Previous / next sheet | ⌃⇞ / ⌃⇟ (also ⌥⌘← / ⌥⌘→) |
+| Go to Sheet (quick switcher) | ⇧⌘P |
 | Go To (focus Name Box) | ⌃G |
 
 **Formatting**
 | Action | Shortcut |
 |---|---|
 | Bold / Italic / Underline | ⌘B / ⌘I / ⌘U |
-| Strikethrough | ⌘⇧X |
+| Strikethrough | ⇧⌘X |
+| Align Left / Center / Right | ⇧⌘L / ⇧⌘E / ⇧⌘R |
 | Format Cells dialog | ⌘1 |
-| Currency / Percent / Comma | ⌃⇧$ / ⌃⇧% / ⌃⇧! |
-| Date / General format | ⌃⇧# / ⌃⇧~ |
+| General / Number format | ⇧⌘6 / ⇧⌘1 |
+| Currency / Percent format | ⇧⌘4 / ⇧⌘5 |
+| Date / Time format | ⇧⌘3 / ⇧⌘2 |
 
 **Data & tables**
 | Action | Shortcut |
@@ -271,13 +281,13 @@ Shortcuts use macOS modifiers (⌘ Command, ⇧ Shift, ⌥ Option, ⌃ Control).
 | Action | Shortcut |
 |---|---|
 | Command Menu | ⌘K |
-| Go to Sheet | ⌘⇧P |
+| Insert Sheet | ⇧F11 |
 | Insert Function | ⌃⌥F |
-| AutoSum | ⌥⌘= |
 | Recalculate all | F9 |
-| Find / Find & Replace | ⌘F / ⌥⌘F |
-| Zoom in / out / reset | ⌘= / ⌘− / ⌥⌘0 |
-| Keyboard Shortcuts reference | ⌘? |
+| Find / Find & Replace / Find Next | ⌘F / ⌘H / ⌘G (F3 on Windows and Linux) |
+| Zoom in / out / actual size | ⌘= (also ⌘+) / ⌘- / ⌘0 |
+| Show Formulas | ⌘` |
+| Keyboard Shortcuts reference | ⌘/ |
 
 ### 6.5 Status bar
 
