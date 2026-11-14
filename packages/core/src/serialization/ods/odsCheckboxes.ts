@@ -56,73 +56,77 @@ function modelable(e: XmlElement, sheetName: string): CellAddress | null {
 }
 
 /**
- * Collect a table's modelable checkboxes into `into`. Run before the table's cells are read.
+ * Collects a table's modelable checkboxes into `into` as the table is read: `forms` with its
+ * `office:forms`, then `row` with each row element of its grid, then `finish`. Its ids are
+ * complete once `pending` is false, and the table's cells must not be read before that.
  *
  * Only a checkbox whose linked cell is in this table and holds TRUE or FALSE is taken over: that
  * is the only cell the model draws (and saves) a checkbox for. Any other — linked to a blank, a
  * number, a covered cell or another sheet — stays in the file exactly as it was.
  */
-export function collectCheckboxes(table: XmlElement, sheetName: string, into: ReadCheckboxes): void {
-  const forms = table.element(Office('forms'));
-  if (!forms) return;
-  const candidates: Array<{ control: XmlElement; address: CellAddress }> = [];
-  for (const form of forms.elements(Form('form'))) {
-    for (const control of form.elements(Form('checkbox'))) {
-      const address = modelable(control, sheetName);
-      if (!address || (address.sheet ?? sheetName).toLowerCase() !== sheetName.toLowerCase()) continue;
-      candidates.push({ control, address });
+export class CheckboxCollector {
+  private readonly sheetName: string;
+  private readonly into: ReadCheckboxes;
+  private candidates: Array<{ control: XmlElement; address: CellAddress }> = [];
+  /** The candidates' cells by `cellKey`, found so far. */
+  private readonly found = new Map<number, XmlElement>();
+  private maxRow = -1;
+  private nextRow = 0;
+
+  constructor(sheetName: string, into: ReadCheckboxes) {
+    this.sheetName = sheetName;
+    this.into = into;
+  }
+
+  /** Whether some checkbox still waits for its linked cell. */
+  get pending(): boolean {
+    return this.candidates.length > 0;
+  }
+
+  /** The table's first `office:forms`, before any of its rows. */
+  forms(forms: XmlElement): void {
+    const sheetName = this.sheetName;
+    for (const form of forms.elements(Form('form'))) {
+      for (const control of form.elements(Form('checkbox'))) {
+        const address = modelable(control, sheetName);
+        if (!address || (address.sheet ?? sheetName).toLowerCase() !== sheetName.toLowerCase()) continue;
+        this.candidates.push({ control, address });
+        this.maxRow = Math.max(this.maxRow, address.row);
+      }
     }
   }
-  if (candidates.length === 0) return;
 
-  const linked = cellsAt(
-    table,
-    new Set(candidates.map(({ address }) => cellKey(address.row, address.column))),
-  );
-  for (const { control, address } of candidates) {
-    const cell = linked.get(cellKey(address.row, address.column));
-    if (!cell?.is(Table('table-cell')) || cell.attr(Office('value-type')) !== 'boolean') continue;
-    into.ids.add(controlId(control)!);
-    into.cells.push({ sheet: sheetName, row: address.row, column: address.column });
-  }
-}
-
-const ROW_CONTAINERS = ['table-header-rows', 'table-row-group', 'table-rows'];
-
-/** The cell elements at the `wanted` positions (by `cellKey`), walking the grid's repeats. */
-function cellsAt(table: XmlElement, wanted: ReadonlySet<number>): Map<number, XmlElement> {
-  const maxRow = Math.max(...[...wanted].map((k) => Math.floor(k / SheetDimensions.maxColumns)));
-  const found = new Map<number, XmlElement>();
-  let row = 0;
-  const stack: Array<{ e: XmlElement; i: number }> = [{ e: table, i: 0 }];
-  while (stack.length > 0 && row <= maxRow) {
-    const top = stack[stack.length - 1]!;
-    if (top.i >= top.e.nodes.length) {
-      stack.pop();
-      continue;
-    }
-    const e = top.e.nodes[top.i++]!;
-    if (!(e instanceof XmlElement) || e.uri !== Table.uri) continue;
-    if (ROW_CONTAINERS.includes(e.local)) {
-      stack.push({ e, i: 0 });
-      continue;
-    }
-    if (e.local !== 'table-row') continue;
+  /** The next `table:table-row` of the grid, in document order. */
+  row(e: XmlElement): void {
+    if (!this.pending) return;
     const rows = repeatOf(e, 'number-rows-repeated');
     let column = 0;
     for (const cell of e.elements()) {
       if (!cell.is(Table('table-cell')) && !cell.is(Table('covered-table-cell'))) continue;
       const columns = repeatOf(cell, 'number-columns-repeated');
-      for (const key of wanted) {
-        const r = Math.floor(key / SheetDimensions.maxColumns);
-        const c = key % SheetDimensions.maxColumns;
-        if (r >= row && r < row + rows && c >= column && c < column + columns) found.set(key, cell);
+      for (const { address } of this.candidates) {
+        const { row: r, column: c } = address;
+        if (r >= this.nextRow && r < this.nextRow + rows && c >= column && c < column + columns) {
+          this.found.set(cellKey(r, c), cell);
+        }
       }
       column += columns;
     }
-    row += rows;
+    this.nextRow += rows;
+    if (this.nextRow > this.maxRow) this.finish();
   }
-  return found;
+
+  /** The table is complete (or every linked cell has been seen): take over the boolean ones. */
+  finish(): void {
+    for (const { control, address } of this.candidates) {
+      const cell = this.found.get(cellKey(address.row, address.column));
+      if (!cell?.is(Table('table-cell')) || cell.attr(Office('value-type')) !== 'boolean') continue;
+      this.into.ids.add(controlId(control)!);
+      this.into.cells.push({ sheet: this.sheetName, row: address.row, column: address.column });
+    }
+    this.candidates = [];
+    this.found.clear();
+  }
 }
 
 function repeatOf(e: XmlElement, attribute: string): number {

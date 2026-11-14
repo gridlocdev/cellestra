@@ -1,7 +1,7 @@
 import { ChartDocument } from '@cellestra/charts';
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
-import { isNamespaceDeclaration, tryParseXml, XmlElement, type XmlName } from '../../xml/index.ts';
+import { isNamespaceDeclaration, tryParseXml, XmlElement } from '../../xml/index.ts';
 import { formatUpTo3 } from './odsContentShared.ts';
 import type { OdsPackage } from './odsPackage.ts';
 import { CellestraNs, Draw, Office, Svg, Table, Xlink } from './odsXmlNames.ts';
@@ -99,19 +99,18 @@ export const OdsCharts = {
   },
 
   /**
-   * If `table` is a chart sheet — exactly what `injectFrame` writes: one marked `draw:frame`
-   * holding one chart `draw:object`, anchored in A1, and nothing else (no data, no other shapes, no
-   * `table:shapes`) — parse the chart from `pkg`, attach it to `sheet`, and return the object's
+   * If the table `probe` watched is a chart sheet (see `ChartSheetProbe`) and its frame is one
+   * Cellestra wrote, parse the chart from `pkg`, attach it to `sheet`, and return the object's
    * href. Returns null otherwise: a chart in a sheet with anything else on it is an embedded chart,
    * preserved with the rest of the sheet, and must not turn the sheet into a chart sheet (which
    * would drop its cells and shapes on the next save).
    */
-  readChartSheet(table: XmlElement, pkg: OdsPackage | null, sheet: Worksheet): string | null {
+  readChartSheet(probe: ChartSheetProbe, pkg: OdsPackage | null, sheet: Worksheet): string | null {
     if (!pkg) return null;
-    const frame = chartSheetFrame(table);
+    const frame = probe.frame;
     if (!frame || !(frame.attr(CHART_SHEET_MARK) === 'true' || isUnmarkedCellestraFrame(frame, sheet.name)))
       return null;
-    const reference = frame?.element(Draw('object'))?.attr(Xlink('href')) ?? null;
+    const reference = frame.element(Draw('object'))?.attr(Xlink('href')) ?? null;
     if (reference === null) return null;
 
     const dir = objectDirectory(reference);
@@ -129,47 +128,62 @@ export const OdsCharts = {
   },
 } as const;
 
-const GRID: readonly XmlName[] = [
-  Table('table-column'),
-  Table('table-columns'),
-  Table('table-column-group'),
-  Table('table-header-columns'),
-  Table('table-row'),
-  Table('table-rows'),
-  Table('table-row-group'),
-  Table('table-header-rows'),
-];
-
 /**
- * The chart frame of a table shaped like a Cellestra chart sheet, or null. The table's children
- * are its grid only; no cell holds a value, a formula or any element, except A1 (the first cell of
- * the first row), which holds just the frame. The frame holds one `draw:object` and at most the
- * replacement image LibreOffice adds beside it.
+ * Watches a table as it is read, row element by row element, for the shape of a Cellestra chart
+ * sheet: the table's children are its grid only, and no cell holds a value, a formula or any
+ * element, except A1 (the first cell of the first row), which holds just a frame. The frame holds
+ * one `draw:object` and at most the replacement image LibreOffice adds beside it.
+ *
+ * The answer is known early for almost every table: a value anywhere, or no frame in A1, settles
+ * it. Only a table that still looks like a chart sheet has to be read to its end.
  */
-function chartSheetFrame(table: XmlElement): XmlElement | null {
-  let frame: XmlElement | null = null;
-  let firstRow = true;
-  for (const child of table.elements()) {
-    if (!GRID.some((g) => child.is(g))) return null;
-    for (const row of child.is(Table('table-row')) ? [child] : child.descendants(Table('table-row'))) {
-      let firstCell = firstRow;
-      firstRow = false;
-      for (const cell of row.elements()) {
-        const isFirst = firstCell;
-        firstCell = false;
-        if (cell.attr(Office('value-type')) !== null || cell.attr(Table('formula')) !== null) return null;
-        const content = cell.elements();
-        if (content.length === 0) continue;
-        if (!isFirst || content.length !== 1 || !content[0]!.is(Draw('frame'))) return null;
-        frame = content[0]!;
+export class ChartSheetProbe {
+  private ruledOut = false;
+  private sawRow = false;
+  private candidate: XmlElement | null = null;
+
+  /** The chart frame, while the table can still be a chart sheet. */
+  get frame(): XmlElement | null {
+    return this.ruledOut ? null : this.candidate;
+  }
+
+  /** Whether the table is known to be a chart sheet or not before its end. */
+  get settled(): boolean {
+    return this.ruledOut || (this.sawRow && this.candidate === null);
+  }
+
+  /** The table has a child outside its grid (shapes, forms, named expressions…). */
+  nonGridChild(): void {
+    this.ruledOut = true;
+  }
+
+  /** The next `table:table-row` of the grid, in document order. */
+  row(row: XmlElement): void {
+    if (this.settled) return;
+    let firstCell = !this.sawRow;
+    this.sawRow = true;
+    for (const cell of row.elements()) {
+      const isFirst = firstCell;
+      firstCell = false;
+      if (cell.attr(Office('value-type')) !== null || cell.attr(Table('formula')) !== null) {
+        this.ruledOut = true;
+        return;
       }
+      const content = cell.elements();
+      if (content.length === 0) continue;
+      if (!isFirst || content.length !== 1 || !content[0]!.is(Draw('frame')) || !isChartFrame(content[0]!)) {
+        this.ruledOut = true;
+        return;
+      }
+      this.candidate = content[0]!;
     }
   }
-  if (!frame) return null;
+}
+
+function isChartFrame(frame: XmlElement): boolean {
   const parts = frame.elements();
   const objects = parts.filter((e) => e.is(Draw('object')));
-  if (objects.length !== 1 || parts.some((e) => !e.is(Draw('object')) && !e.is(Draw('image')))) return null;
-  return frame;
+  return objects.length === 1 && parts.every((e) => e.is(Draw('object')) || e.is(Draw('image')));
 }
 
 /**

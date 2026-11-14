@@ -1,6 +1,6 @@
 import { Defaults } from '../../defaults.ts';
 import { Workbook } from '../../model/workbook.ts';
-import { parseXml, tryParseXml } from '../../xml/index.ts';
+import { tryParseXml } from '../../xml/index.ts';
 import { readContentXml } from './odsContentRead.ts';
 import { checkSpreadsheetPackage } from './odsFileKind.ts';
 import { OdsPackage } from './odsPackage.ts';
@@ -35,13 +35,12 @@ export const OdsReader = {
 
     const contentXml = pkg.getText(N.contentPart);
     if (contentXml !== null) {
-      const document = parseXml(contentXml, { preserveWhitespace: true });
       // styles.xml holds the common cell styles and, in LibreOffice files, many data styles.
       const stylesXml = pkg.getText(N.stylesPart);
       // Whitespace is kept: a data style's `<number:text> </number:text>` is the space in "d mmmm".
       const styles = stylesXml === null ? null : tryParseXml(stylesXml, { preserveWhitespace: true });
-      readContentXml(document, workbook, pkg.foreignSpreadsheetChildren, pkg, styles);
-      OdsPageSetup.read(workbook, document.root, styles?.root ?? null);
+      const content = readContentXml([contentXml], workbook, pkg.foreignSpreadsheetChildren, pkg, styles);
+      OdsPageSetup.read(workbook, content, styles?.root ?? null);
       workbook.settings.locale = OdsSupportXml.documentLocale(styles?.root ?? null);
     }
 

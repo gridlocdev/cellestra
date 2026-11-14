@@ -100,6 +100,23 @@ describe('checkboxes in .ods', () => {
     expect(saved.match(/<office:forms /g)).toHaveLength(1);
   });
 
+  it('takes over a control anchored in a row above its linked cell', () => {
+    const { workbook } = withCheckboxes('B2');
+    workbook.activeSheet.setValue(0, 0, CellValue.number(1));
+    const bytes = writeOds(workbook);
+    const original = readEntry(bytes, 'content.xml');
+    const control = /<draw:control [^>]*\/>/.exec(original)![0];
+    const moved = original
+      .replace(control, '')
+      .replace('</table:table-cell>', control + '</table:table-cell>');
+    const secondRow = moved.indexOf('<table:table-row', moved.indexOf('<table:table-row') + 1);
+    expect(moved.indexOf(control)).toBeLessThan(secondRow);
+    const reread = readOds(replaceEntry(bytes, 'content.xml', moved));
+    expect(isCheckbox(reread, 1, 1)).toBe(true);
+    expect(reread.activeSheet.find(0, 0)?.unmodeled ?? null).toBeNull();
+    expect(readEntry(writeOds(reread), 'content.xml').match(/<draw:control /g)).toHaveLength(1);
+  });
+
   it('writes nothing for a sheet without checkboxes', () => {
     const workbook = Workbook.createNew();
     workbook.activeSheet.setValue(0, 0, CellValue.boolean(true));

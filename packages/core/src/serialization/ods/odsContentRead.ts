@@ -11,12 +11,25 @@ import type { Worksheet } from '../../model/worksheet.ts';
 import { StylePool } from '../../styling/stylePool.ts';
 import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
-import { serializeXmlElement, XmlElement, type XmlDocument, type XmlName } from '../../xml/index.ts';
+import {
+  appendXmlText,
+  openXmlElement,
+  sameName,
+  serializeXmlElement,
+  XmlComment,
+  XmlElement,
+  XmlEventReader,
+  XmlProcessingInstruction,
+  type XmlAttribute,
+  type XmlDocument,
+  type XmlEventHandler,
+  type XmlName,
+} from '../../xml/index.ts';
 import { parseInvariantFloat } from './mapping/odsCellStyles.ts';
-import { OdsCharts } from './odsCharts.ts';
+import { ChartSheetProbe, OdsCharts } from './odsCharts.ts';
 import {
   applyCheckboxes,
-  collectCheckboxes,
+  CheckboxCollector,
   isTakenControl,
   withoutCheckboxes,
   type ReadCheckboxes,
@@ -62,8 +75,11 @@ const COLUMN_GROUPS: readonly XmlName[] = [
 interface ReadContext {
   readonly styles: OdsStyleIndex;
   readonly validationCells: ValidationCells;
-  /** The sheet is a chart sheet, so its chart frame is modeled (not preserved) content. */
-  readonly chartSheet: boolean;
+  /**
+   * The sheet is a chart sheet, so its chart frame is modeled (not preserved) content. Settled
+   * before the first cell that could hold the frame is read.
+   */
+  chartSheet: boolean;
   /** Checkbox controls the model takes over; their cell-anchored `draw:control`s are dropped. */
   readonly checkboxIds: ReadonlySet<string>;
   /** The table's merges, gathered in reading order and added once the grid is read. */
@@ -71,136 +87,363 @@ interface ReadContext {
 }
 
 /**
- * Parse `content.xml` into `workbook`. Unmodeled `office:spreadsheet` children are appended to
- * `foreign` as verbatim XML (with whether they came before the first table) so the writer can
- * re-emit them in place; unmodeled table, cell and named-expression content is kept through
- * `OdsPreserved`. `stylesDocument` is styles.xml, whose common and data styles cells may name.
+ * Read `content.xml`, given as text in one or more chunks, into `workbook`, and return the
+ * document's outline for the page setup: the root with its automatic styles, and each table
+ * element with its attributes but none of its content (null when there is no root element).
+ *
+ * The document is read as a stream: each row element is built, read into the sheet and dropped,
+ * so a large file never has its whole tree in memory. Unmodeled `office:spreadsheet` children are
+ * appended to `foreign` as verbatim XML (with whether they came before the first table) so the
+ * writer can re-emit them in place; unmodeled table, cell and named-expression content is kept
+ * through `OdsPreserved`. `stylesDocument` is styles.xml, whose common and data styles cells may
+ * name. Throws `XmlParseError` when the text is not well-formed.
  */
 export function readContentXml(
-  document: XmlDocument,
+  chunks: Iterable<string>,
   workbook: Workbook,
   foreign: ForeignXml[],
   pkg: OdsPackage | null = null,
   stylesDocument: XmlDocument | null = null,
-): void {
-  const root = document.root;
-  const styles = new OdsStyleIndex(root, stylesDocument?.root ?? null, workbook.styles);
+): XmlElement {
+  const content = new ContentReader(workbook, foreign, pkg, stylesDocument?.root ?? null);
+  const reader = new XmlEventReader(content);
+  for (const chunk of chunks) reader.write(chunk);
+  reader.close();
+  return content.finish();
+}
 
-  const spreadsheet = root.element(Office('body'))?.element(Office('spreadsheet')) ?? null;
-  if (!spreadsheet) return;
+/** The row and column groups' leaves and groups, which make up a table's grid. */
+const isRowGroup = (name: XmlName): boolean => ROW_GROUPS.some((g) => sameName(g, name));
+const isColumnGroup = (name: XmlName): boolean => COLUMN_GROUPS.some((g) => sameName(g, name));
+const TABLE_ROW = Table('table-row');
+const TABLE_COLUMN = Table('table-column');
 
-  // Rule definitions first; cells reference them by name and each rule's target is rebuilt from
-  // the cells that point at it.
-  const validationRules = readContentValidationRules(spreadsheet);
-  const validationCells: ValidationCells = new Map();
-  const namedExpressions: XmlElement[] = [];
-  const checkboxes: ReadCheckboxes = { ids: new Set(), cells: [] };
+/**
+ * Where the reader is in the document. `element` frames build a tree: the outline (`root`,
+ * `body`, `spreadsheet`) or a `subtree` that is handed to `done` when it closes. The other
+ * frames build nothing: a table, a row or column group in it, or content that is not read.
+ */
+type Frame =
+  | {
+      readonly kind: 'element';
+      readonly element: XmlElement;
+      readonly role: 'root' | 'body' | 'spreadsheet' | 'subtree';
+      readonly done: ((e: XmlElement) => void) | null;
+    }
+  | { readonly kind: 'table' | 'rows' | 'columns'; readonly table: TableReader }
+  | { readonly kind: 'skip' };
 
-  let seenTable = false;
-  for (const child of spreadsheet.elements()) {
-    if (child.is(Table('table'))) {
-      seenTable = true;
-      readTable(child, workbook, styles, validationCells, pkg, checkboxes);
-    } else if (child.is(Table('named-expressions'))) {
-      namedExpressions.push(...readNamedExpressions(child, workbook, null));
-    } else if (child.is(Table(N.databaseRanges))) {
-      readDatabaseRanges(child, workbook);
-    } else if (child.is(Table(N.contentValidations))) {
-      // Modeled; the rules were parsed above. Not preserved as foreign.
+const SKIP: Frame = { kind: 'skip' };
+
+/**
+ * Turns the events of `content.xml` into the workbook. The outline before `office:body`
+ * (automatic styles, font faces) is built as a tree; in the first `office:spreadsheet`, each
+ * child other than a table is built and read when it closes, and each table is read by a
+ * `TableReader` one row element at a time.
+ */
+class ContentReader implements XmlEventHandler {
+  private readonly workbook: Workbook;
+  private readonly foreign: ForeignXml[];
+  private readonly pkg: OdsPackage | null;
+  private readonly stylesRoot: XmlElement | null;
+  private readonly frames: Frame[] = [];
+  private root: XmlElement | null = null;
+  private sawBody = false;
+  private spreadsheet: XmlElement | null = null;
+  private styleIndex: OdsStyleIndex | null = null;
+  private seenTable = false;
+  private validations: XmlElement | null = null;
+  private readonly validationCells: ValidationCells = new Map();
+  private readonly namedExpressions: XmlElement[] = [];
+  private readonly checkboxes: ReadCheckboxes = { ids: new Set(), cells: [] };
+
+  constructor(
+    workbook: Workbook,
+    foreign: ForeignXml[],
+    pkg: OdsPackage | null,
+    stylesRoot: XmlElement | null,
+  ) {
+    this.workbook = workbook;
+    this.foreign = foreign;
+    this.pkg = pkg;
+    this.stylesRoot = stylesRoot;
+  }
+
+  /** The styles cells name: content.xml's automatic styles come before its body, so are complete. */
+  private get styles(): OdsStyleIndex {
+    this.styleIndex ??= new OdsStyleIndex(this.root!, this.stylesRoot, this.workbook.styles);
+    return this.styleIndex;
+  }
+
+  declaration(): void {}
+
+  openElement(name: XmlName, attributes: XmlAttribute[]): void {
+    const top = this.frames.at(-1);
+    if (!top) {
+      this.root = openXmlElement(null, name, attributes);
+      this.frames.push({ kind: 'element', element: this.root, role: 'root', done: null });
+      return;
+    }
+    switch (top.kind) {
+      case 'skip':
+        this.frames.push(SKIP);
+        return;
+      case 'rows':
+        if (sameName(name, TABLE_ROW)) this.subtree(name, attributes, (e) => top.table.row(e));
+        else this.frames.push(isRowGroup(name) ? top : SKIP);
+        return;
+      case 'columns':
+        if (sameName(name, TABLE_COLUMN)) this.subtree(name, attributes, (e) => top.table.column(e));
+        else this.frames.push(isColumnGroup(name) ? top : SKIP);
+        return;
+      case 'table':
+        this.openInTable(top.table, name, attributes);
+        return;
+      case 'element':
+        this.openInOutline(top, name, attributes);
+    }
+  }
+
+  private openInOutline(top: Frame & { kind: 'element' }, name: XmlName, attributes: XmlAttribute[]): void {
+    switch (top.role) {
+      case 'root': {
+        const element = openXmlElement(top.element, name, attributes);
+        const body = !this.sawBody && sameName(name, Office('body'));
+        if (body) this.sawBody = true;
+        this.frames.push({ kind: 'element', element, role: body ? 'body' : 'subtree', done: null });
+        return;
+      }
+      case 'body':
+        // Only the first office:spreadsheet of the body is read.
+        if (this.spreadsheet || !sameName(name, Office('spreadsheet'))) {
+          this.frames.push(SKIP);
+          return;
+        }
+        this.spreadsheet = openXmlElement(top.element, name, attributes);
+        this.frames.push({ kind: 'element', element: this.spreadsheet, role: 'spreadsheet', done: null });
+        return;
+      case 'spreadsheet':
+        if (sameName(name, Table('table'))) {
+          this.seenTable = true;
+          // The outline keeps the table's attributes, which the page setup reads.
+          const outline = openXmlElement(top.element, name, attributes);
+          this.frames.push({ kind: 'table', table: this.startTable(outline) });
+        } else {
+          this.subtree(name, attributes, (e) => this.spreadsheetChild(e));
+        }
+        return;
+      case 'subtree': {
+        const element = openXmlElement(top.element, name, attributes);
+        this.frames.push({ kind: 'element', element, role: 'subtree', done: null });
+      }
+    }
+  }
+
+  private openInTable(table: TableReader, name: XmlName, attributes: XmlAttribute[]): void {
+    if (sameName(name, TABLE_ROW)) {
+      table.gridStarted();
+      this.subtree(name, attributes, (e) => table.row(e));
+    } else if (sameName(name, TABLE_COLUMN)) {
+      table.gridStarted();
+      this.subtree(name, attributes, (e) => table.column(e));
+    } else if (isRowGroup(name)) {
+      table.gridStarted();
+      this.frames.push({ kind: 'rows', table });
+    } else if (isColumnGroup(name)) {
+      table.gridStarted();
+      this.frames.push({ kind: 'columns', table });
     } else {
-      foreign.push({ beforeTables: !seenTable, xml: serializeXmlElement(child) });
+      const afterGrid = table.hasGrid;
+      this.subtree(name, attributes, (e) => table.child(e, afterGrid));
     }
   }
 
-  assembleValidations(workbook, validationRules, validationCells);
-  applyCheckboxes(workbook, checkboxes);
-  OdsPreserved.setWorkbook(workbook, {
-    namedExpressions,
-    automaticStyles: styles.preservedAutomaticStyles,
-    fontFaces: root.element(Office('font-face-decls'))?.clone() ?? null,
-  });
-}
-
-/** The `leaf` elements of a grid in document order, through any nesting of `groups`. Iterative. */
-function gridElements(table: XmlElement, leaf: XmlName, groups: readonly XmlName[]): XmlElement[] {
-  const out: XmlElement[] = [];
-  const stack: Array<{ e: XmlElement; i: number }> = [{ e: table, i: 0 }];
-  while (stack.length > 0) {
-    const top = stack[stack.length - 1]!;
-    if (top.i >= top.e.nodes.length) {
-      stack.pop();
-      continue;
-    }
-    const n = top.e.nodes[top.i++]!;
-    if (!(n instanceof XmlElement)) continue;
-    if (n.is(leaf)) out.push(n);
-    else if (groups.some((g) => n.is(g))) stack.push({ e: n, i: 0 });
+  /** Build a detached element and everything in it, and hand it to `done` when it closes. */
+  private subtree(name: XmlName, attributes: XmlAttribute[], done: (e: XmlElement) => void): void {
+    const element = openXmlElement(null, name, attributes);
+    this.frames.push({ kind: 'element', element, role: 'subtree', done });
   }
-  return out;
-}
 
-const GRID_ELEMENTS: readonly XmlName[] = [
-  Table('table-column'),
-  Table('table-row'),
-  ...ROW_GROUPS,
-  ...COLUMN_GROUPS,
-];
-
-function readTable(
-  table: XmlElement,
-  workbook: Workbook,
-  styles: OdsStyleIndex,
-  validationCells: ValidationCells,
-  pkg: OdsPackage | null,
-  checkboxes: ReadCheckboxes,
-): void {
-  const name = table.attr(Table('name')) ?? workbook.addSheet().name;
-  const sheet = workbook.findSheet(name) ?? workbook.addSheetForLoad(name);
-
-  // A Cellestra chart sheet is a table holding nothing but the chart's frame in A1; the chart is
-  // modeled and its frame regenerated. A chart anywhere else is preserved like any shape.
-  const chartHref = OdsCharts.readChartSheet(table, pkg, sheet);
-  collectCheckboxes(table, sheet.name, checkboxes);
-  const context: ReadContext = {
-    styles,
-    validationCells,
-    chartSheet: chartHref !== null,
-    checkboxIds: checkboxes.ids,
-    merges: [],
-  };
-
-  const grid = new TableGridReader(sheet, context);
-  for (const element of gridElements(table, Table('table-column'), COLUMN_GROUPS)) grid.column(element);
-  for (const element of gridElements(table, Table('table-row'), ROW_GROUPS)) grid.row(element);
-  grid.finish();
-
-  // Everything else the table carries is kept as it was: its attributes (protection, print
-  // ranges, its table style) and its unmodeled children (shapes, forms, conditional formats).
-  const before: XmlElement[] = [];
-  const after: XmlElement[] = [];
-  const namedExpressions: XmlElement[] = [];
-  let seenGrid = false;
-  for (const child of table.elements()) {
-    if (GRID_ELEMENTS.some((g) => child.is(g))) {
-      seenGrid = true;
-      continue;
+  closeElement(): void {
+    const frame = this.frames.pop();
+    if (frame?.kind === 'element') {
+      frame.element.trimToSize();
+      frame.done?.(frame.element);
+    } else if (frame?.kind === 'table') {
+      frame.table.finish();
     }
+  }
+
+  text(value: string, cdata: boolean): void {
+    const top = this.frames.at(-1);
+    if (top?.kind === 'element') appendXmlText(top.element, value, cdata, true);
+  }
+
+  comment(value: string): void {
+    const top = this.frames.at(-1);
+    if (top?.kind === 'element') top.element.nodes.push(new XmlComment(value));
+  }
+
+  processingInstruction(target: string, body: string): void {
+    const top = this.frames.at(-1);
+    if (top?.kind === 'element') top.element.nodes.push(new XmlProcessingInstruction(target, body));
+  }
+
+  private startTable(outline: XmlElement): TableReader {
+    const workbook = this.workbook;
+    const name = outline.attr(Table('name')) ?? workbook.addSheet().name;
+    const sheet = workbook.findSheet(name) ?? workbook.addSheetForLoad(name);
+    const context: ReadContext = {
+      styles: this.styles,
+      validationCells: this.validationCells,
+      chartSheet: false,
+      checkboxIds: this.checkboxes.ids,
+      merges: [],
+    };
+    return new TableReader(workbook, sheet, outline, context, this.pkg, this.checkboxes);
+  }
+
+  private spreadsheetChild(child: XmlElement): void {
     if (child.is(Table('named-expressions'))) {
-      namedExpressions.push(...readNamedExpressions(child, workbook, sheet.name));
-      continue;
+      this.namedExpressions.push(...readNamedExpressions(child, this.workbook, null));
+    } else if (child.is(Table(N.databaseRanges))) {
+      readDatabaseRanges(child, this.workbook);
+    } else if (child.is(Table(N.contentValidations))) {
+      // Modeled: the rules are read at the end, once every cell has named the ones it uses.
+      this.validations ??= child;
+    } else {
+      this.foreign.push({ beforeTables: !this.seenTable, xml: serializeXmlElement(child) });
     }
-    // The checkboxes the model took over are regenerated on save; the rest of the forms stay.
-    const kept = withoutCheckboxes(child, checkboxes.ids);
-    if (kept) (seenGrid ? after : before).push(kept === child ? child.clone() : kept);
   }
-  const attributes = table.attributes.filter((a) => !(a.name.uri === Table.uri && a.name.local === 'name'));
-  if (attributes.length > 0 || before.length > 0 || after.length > 0 || namedExpressions.length > 0) {
-    OdsPreserved.setTable(sheet, {
-      attributes: attributes.map((a) => ({ name: a.name, value: a.value })),
-      before,
-      after,
-      namedExpressions,
+
+  /** The document is complete: settle what needed every table, and return the outline. */
+  finish(): XmlElement {
+    const root = this.root!;
+    if (!this.spreadsheet) return root;
+    // Rule definitions are read last; each rule's target is rebuilt from the cells that named it.
+    const container = new XmlElement(Office('spreadsheet'), this.validations);
+    assembleValidations(this.workbook, readContentValidationRules(container), this.validationCells);
+    applyCheckboxes(this.workbook, this.checkboxes);
+    OdsPreserved.setWorkbook(this.workbook, {
+      namedExpressions: this.namedExpressions,
+      automaticStyles: this.styles.preservedAutomaticStyles,
+      fontFaces: root.element(Office('font-face-decls'))?.clone() ?? null,
     });
+    return root;
+  }
+}
+
+/**
+ * Reads one `table:table` as its children arrive. Grid rows go to a `TableGridReader`, except
+ * while the table may still be a chart sheet or a checkbox still waits for its linked cell: those
+ * change how a cell is read, so rows are held until they are settled (a chart sheet has no data,
+ * and a checkbox's control sits in its own cell, so little is ever held). Every other child of the
+ * table is kept, and read when the table ends.
+ */
+class TableReader {
+  private readonly workbook: Workbook;
+  private readonly sheet: Worksheet;
+  private readonly outline: XmlElement;
+  private readonly context: ReadContext;
+  private readonly pkg: OdsPackage | null;
+  private readonly grid: TableGridReader;
+  private readonly chart = new ChartSheetProbe();
+  private readonly checkboxes: CheckboxCollector;
+  private readonly held: XmlElement[] = [];
+  private readonly children: Array<{ readonly element: XmlElement; readonly afterGrid: boolean }> = [];
+  private sawForms = false;
+  private sawRow = false;
+  hasGrid = false;
+
+  constructor(
+    workbook: Workbook,
+    sheet: Worksheet,
+    outline: XmlElement,
+    context: ReadContext,
+    pkg: OdsPackage | null,
+    checkboxes: ReadCheckboxes,
+  ) {
+    this.workbook = workbook;
+    this.sheet = sheet;
+    this.outline = outline;
+    this.context = context;
+    this.pkg = pkg;
+    this.grid = new TableGridReader(sheet, context);
+    this.checkboxes = new CheckboxCollector(sheet.name, checkboxes);
+  }
+
+  gridStarted(): void {
+    this.hasGrid = true;
+  }
+
+  column(element: XmlElement): void {
+    this.grid.column(element);
+  }
+
+  row(element: XmlElement): void {
+    this.sawRow = true;
+    this.chart.row(element);
+    this.checkboxes.row(element);
+    // A chart sheet needs a probe to its end (pkg is how a chart is found, so none means none).
+    const waiting = (this.pkg !== null && !this.chart.settled) || this.checkboxes.pending;
+    if (waiting) {
+      this.held.push(element);
+      return;
+    }
+    this.readHeld();
+    this.grid.row(element);
+  }
+
+  /** A child of the table outside its grid, once complete. */
+  child(element: XmlElement, afterGrid: boolean): void {
+    this.chart.nonGridChild();
+    // The table's first office:forms names its checkboxes; it comes before the grid.
+    if (!this.sawForms && element.is(Office('forms'))) {
+      this.sawForms = true;
+      if (!this.sawRow) this.checkboxes.forms(element);
+    }
+    this.children.push({ element, afterGrid });
+  }
+
+  private readHeld(): void {
+    for (const element of this.held) this.grid.row(element);
+    this.held.length = 0;
+  }
+
+  finish(): void {
+    // A Cellestra chart sheet is a table holding nothing but the chart's frame in A1; the chart is
+    // modeled and its frame regenerated. A chart anywhere else is preserved like any shape.
+    this.context.chartSheet = OdsCharts.readChartSheet(this.chart, this.pkg, this.sheet) !== null;
+    this.checkboxes.finish();
+    this.readHeld();
+    this.grid.finish();
+
+    // Everything else the table carries is kept as it was: its attributes (protection, print
+    // ranges, its table style) and its unmodeled children (shapes, forms, conditional formats).
+    const before: XmlElement[] = [];
+    const after: XmlElement[] = [];
+    const namedExpressions: XmlElement[] = [];
+    const ids = this.context.checkboxIds;
+    for (const { element, afterGrid } of this.children) {
+      if (element.is(Table('named-expressions'))) {
+        namedExpressions.push(...readNamedExpressions(element, this.workbook, this.sheet.name));
+        continue;
+      }
+      // The checkboxes the model took over are regenerated on save; the rest of the forms stay.
+      const kept = withoutCheckboxes(element, ids);
+      if (kept) (afterGrid ? after : before).push(kept);
+    }
+    const attributes = this.outline.attributes.filter(
+      (a) => !(a.name.uri === Table.uri && a.name.local === 'name'),
+    );
+    if (attributes.length > 0 || before.length > 0 || after.length > 0 || namedExpressions.length > 0) {
+      OdsPreserved.setTable(this.sheet, {
+        attributes: attributes.map((a) => ({ name: a.name, value: a.value })),
+        before,
+        after,
+        namedExpressions,
+      });
+    }
   }
 }
 
