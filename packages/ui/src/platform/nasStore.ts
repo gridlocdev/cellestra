@@ -115,14 +115,19 @@ export class NasStore implements FileStore {
     return this.open(root, path);
   }
 
-  async save(ref: DocumentRef, bytes: Uint8Array, opts: { force?: boolean } = {}): Promise<DocumentRef> {
+  async save(
+    ref: DocumentRef,
+    bytes: Uint8Array,
+    opts: { force?: boolean; ignoreLock?: boolean } = {},
+  ): Promise<DocumentRef> {
     const { root, path } = splitId(ref.id);
-    return this.put(root, path, bytes, ref.version ? { 'If-Match': ref.version } : {}, opts.force ?? false);
+    const headers: Record<string, string> = ref.version ? { 'If-Match': ref.version } : {};
+    return this.put(root, path, bytes, headers, opts.force ?? false, opts.ignoreLock ?? false);
   }
 
   /** Save a new file into a NAS folder; refuses to overwrite unless `overwrite`. */
   saveNew(root: string, path: string, bytes: Uint8Array, overwrite = false): Promise<DocumentRef> {
-    return this.put(root, path, bytes, overwrite ? {} : { 'If-None-Match': '*' }, false);
+    return this.put(root, path, bytes, overwrite ? {} : { 'If-None-Match': '*' }, false, false);
   }
 
   /** The UI drives Save As through its own folder browser, then calls `saveNew`. */
@@ -136,8 +141,14 @@ export class NasStore implements FileStore {
     bytes: Uint8Array,
     extra: Record<string, string>,
     force: boolean,
+    ignoreLock: boolean,
   ): Promise<DocumentRef> {
-    const q = new URLSearchParams({ root, path, ...(force ? { force: '1' } : {}) });
+    const q = new URLSearchParams({
+      root,
+      path,
+      ...(force ? { force: '1' } : {}),
+      ...(ignoreLock ? { ignoreLock: '1' } : {}),
+    });
     const res = await this.request(`/file?${q}`, {
       method: 'PUT',
       body: bytes as Uint8Array<ArrayBuffer>,

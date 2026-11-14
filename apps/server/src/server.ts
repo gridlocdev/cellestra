@@ -187,6 +187,7 @@ async function api(
         ifMatch: header(req, 'if-match'),
         ifNoneMatch: header(req, 'if-none-match'),
         force: q.get('force') === '1',
+        ignoreLock: q.get('ignoreLock') === '1',
       });
       res.setHeader('ETag', etag);
       return send(res, 200, { etag });

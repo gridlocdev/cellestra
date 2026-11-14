@@ -273,6 +273,36 @@ describe('saving', () => {
   });
 });
 
+describe('overwriting after a conflict', () => {
+  it('still meets the LibreOffice lock, and overrides it only when that dialog says so', async () => {
+    const app = await makeApp();
+    const fake = new FakeStore();
+    withFake(app, fake);
+    app.session.load(OdsWriter.write(Workbook.createNew(), null), ref('a.ods'));
+    app.session.touch();
+    const save = vi
+      .spyOn(fake, 'save')
+      .mockRejectedValueOnce(new ConflictError('changed', 'The file changed on the server'))
+      .mockRejectedValueOnce(new ConflictError('locked', 'The file is open in LibreOffice'))
+      .mockResolvedValueOnce({ ...ref('a.ods'), version: 'v9' });
+    const answer = async (reason: string) => {
+      await flush();
+      const d = app.dialog.peek() as Extract<DialogShown, { kind: 'conflict' }>;
+      expect(d.reason).toBe(reason);
+      d.resolve('overwrite');
+    };
+    const saving = app.save();
+    await answer('changed');
+    await answer('locked');
+    expect(await saving).toBe(true);
+    expect(save.mock.calls.map((c) => (c as unknown[])[2])).toEqual([
+      { force: false, ignoreLock: false },
+      { force: true, ignoreLock: false },
+      { force: true, ignoreLock: true },
+    ]);
+  });
+});
+
 describe('recovery and reloads', () => {
   it('restores a CSV document so Save still writes CSV, not a ZIP', async () => {
     const app = await makeApp();

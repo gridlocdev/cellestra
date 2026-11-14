@@ -586,7 +586,7 @@ export class AppController {
 
   /** Save in place when the store can; otherwise (new document, browser without a handle) Save As. */
   save(force = false): Promise<boolean> {
-    return this.#exclusive(() => this.#save(force));
+    return this.#exclusive(() => this.#save(force, false));
   }
 
   /** (Re)start auto-save's countdown, when it is on and there is something to save. */
@@ -675,7 +675,8 @@ export class AppController {
     }
   }
 
-  async #save(force: boolean): Promise<boolean> {
+  /** `force` skips the changed-since-opened check; `ignoreLock` the LibreOffice lock. Each is its own answer. */
+  async #save(force: boolean, ignoreLock: boolean): Promise<boolean> {
     const ref = this.session.document.peek();
     if (!ref) return this.#saveAs(this.session.format.peek());
     const store = this.storeFor(ref);
@@ -691,7 +692,7 @@ export class AppController {
     const generation = this.session.generation;
     const bytes = this.session.serialize();
     try {
-      const saved = await store.save(ref, bytes, { force });
+      const saved = await store.save(ref, bytes, { force, ignoreLock });
       if (saved.downloaded) this.info(`Downloaded ${saved.name}`);
       else this.saved(saved, edits, generation);
       return true;
@@ -701,7 +702,8 @@ export class AppController {
         return false;
       }
       const choice = await this.askConflict(e);
-      if (choice === 'overwrite') return this.#save(true);
+      if (choice === 'overwrite')
+        return e.reason === 'locked' ? this.#save(force, true) : this.#save(true, ignoreLock);
       if (choice === 'saveAs') return this.#saveAs(this.session.format.peek());
       if (choice === 'reload') await this.reloadFromStore(true);
       return false;

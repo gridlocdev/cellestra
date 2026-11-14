@@ -213,6 +213,8 @@ export class FileApi {
    * Atomic save: write a temp file beside the target, fsync, rename over it, fsync the folder. `ifMatch` is the etag
    * the client opened (conflict → 412); `'*'`-less create with `ifNoneMatch` refuses to overwrite.
    * A LibreOffice `.~lock.<name>#` file means someone has it open there (PRD §10.2) → 423.
+   * `force` skips only the If-Match check (overwrite a newer save); `ignoreLock` skips only the
+   * lock check, for a user who saw that LibreOffice has the file open and chose to overwrite it.
    * Writes to one path run one at a time, so two saves from the same etag cannot both win. The
    * replacement keeps the target's mode (and owner, where permitted); a hard-linked target is
    * written in place so the link survives. A file we may not write (mode 0444, say) is refused with
@@ -222,7 +224,7 @@ export class FileApi {
     rootId: string | null,
     rel: string | null,
     bytes: Buffer,
-    opts: { ifMatch?: string | null; ifNoneMatch?: string | null; force?: boolean },
+    opts: { ifMatch?: string | null; ifNoneMatch?: string | null; force?: boolean; ignoreLock?: boolean },
   ): Promise<{ etag: string }> {
     const root = this.root(rootId);
     checkSpreadsheetPath(rel, 'saved');
@@ -246,7 +248,7 @@ export class FileApi {
   private async writeLocked(
     full: string,
     bytes: Buffer,
-    opts: { ifMatch?: string | null; ifNoneMatch?: string | null; force?: boolean },
+    opts: { ifMatch?: string | null; ifNoneMatch?: string | null; force?: boolean; ignoreLock?: boolean },
   ): Promise<{ etag: string }> {
     const dir = path.dirname(full);
     const base = path.basename(full);
@@ -264,7 +266,7 @@ export class FileApi {
       if (!etagListMatches(opts.ifMatch, etagOf(current)))
         throw new ApiError(412, 'The file changed on the server since you opened it');
     }
-    if (!opts.force) {
+    if (!opts.ignoreLock) {
       const lock = await stat(path.join(dir, `.~lock.${base}#`)).catch(() => null);
       if (lock) throw new ApiError(423, 'The file is open in LibreOffice');
     }

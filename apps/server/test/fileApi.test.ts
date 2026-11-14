@@ -124,6 +124,26 @@ describe('file API over HTTP', () => {
     expect((await create('locked.ods')).status).toBe(423);
   });
 
+  it('keeps the LibreOffice lock when an overwrite skips the version check', async () => {
+    await writeFile(path.join(dir, 'held.ods'), 'OLD');
+    await writeFile(path.join(dir, '.~lock.held.ods#'), '');
+    const put = (query: string) =>
+      fetch(`${base}/api/file?root=docs&path=held.ods${query}`, {
+        method: 'PUT',
+        headers: { ...auth, 'If-Match': '"stale"' },
+        body: 'NEW',
+      });
+    expect((await put('&force=1')).status).toBe(423);
+    expect(await readFile(path.join(dir, 'held.ods'), 'utf8')).toBe('OLD');
+    // Ignoring the lock is its own choice, and still not a pass on the version check.
+    expect((await put('&ignoreLock=1')).status).toBe(412);
+    expect((await put('&force=1&ignoreLock=1')).status).toBe(200);
+    expect(await readFile(path.join(dir, 'held.ods'), 'utf8')).toBe('NEW');
+    expect(await readFile(path.join(dir, '.~lock.held.ods#'), 'utf8')).toBe('');
+    await rm(path.join(dir, '.~lock.held.ods#'));
+    await rm(path.join(dir, 'held.ods'));
+  });
+
   it('rejects oversize uploads and non-spreadsheet names', async () => {
     const big = await fetch(`${base}/api/file?root=docs&path=big.ods`, {
       method: 'PUT',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { latestOnly } from '../src/platform/nasStore.ts';
+import { NasStore, latestOnly } from '../src/platform/nasStore.ts';
 
 /** A promise and the functions that settle it, so a test picks the order replies arrive in. */
 function deferred<T>() {
@@ -58,5 +58,22 @@ describe('latestOnly', () => {
     second.reject(new Error('new'));
     await flush();
     expect(errors.map((e) => (e as Error).message)).toEqual(['new']);
+  });
+});
+
+describe('NasStore.save', () => {
+  it('asks the server to skip the lock only when told to, separately from the version check', async () => {
+    const urls: string[] = [];
+    const store = new NasStore('/api', (url) => {
+      urls.push(String(url));
+      return Promise.resolve(new Response(JSON.stringify({ etag: '"e2"' })));
+    });
+    const ref = { store: 'nas', name: 'a.ods', id: 'docs:a.ods', version: '"e1"' } as const;
+    await store.save(ref, new Uint8Array([1]), { force: true });
+    await store.save(ref, new Uint8Array([1]), { force: true, ignoreLock: true });
+    const query = urls.map((u) => new URL(u, 'http://nas').searchParams);
+    expect(query[0]!.get('force')).toBe('1');
+    expect(query[0]!.has('ignoreLock')).toBe(false);
+    expect(query[1]!.get('ignoreLock')).toBe('1');
   });
 });

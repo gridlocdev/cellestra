@@ -49,13 +49,15 @@ export interface FileStore {
   reload(ref: DocumentRef): Promise<OpenedDocument>;
   /** Write back over `ref`. Throws ConflictError when it changed since `ref.version`, unless forced. */
   /**
-   * `force` overwrites a file changed since it was opened. `background` (auto-save) never asks the
-   * user anything, such as a browser permission prompt; it fails with NotAllowedError instead.
+   * `force` overwrites a file changed since it was opened. `ignoreLock` overwrites a file another
+   * app (LibreOffice) has open, once the user chose to; `force` alone never does. `background`
+   * (auto-save) never asks the user anything, such as a browser permission prompt; it fails with
+   * NotAllowedError instead.
    */
   save(
     ref: DocumentRef,
     bytes: Uint8Array,
-    opts?: { force?: boolean; background?: boolean },
+    opts?: { force?: boolean; ignoreLock?: boolean; background?: boolean },
   ): Promise<DocumentRef>;
   /** Ask where to save a new copy. Null when cancelled. */
   saveAs(suggestedName: string, bytes: Uint8Array): Promise<DocumentRef | null>;
