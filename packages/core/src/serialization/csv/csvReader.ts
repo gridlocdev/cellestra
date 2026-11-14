@@ -5,6 +5,11 @@ import { CellStyles, NumberFormats } from '../../styling/cellStyle.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import { CsvOptions } from './csvOptions.ts';
 
+// A double holds 15 significant digits exactly; a longer digit string is an ID, not a number.
+const MAX_SIGNIFICANT_DIGITS = 15;
+// LibreOffice Calc's two-digit-year window (PRD §8.3): 00–29 are 2000–2029, 30–99 are 1930–1999.
+const TWO_DIGIT_YEAR_PIVOT = 29;
+
 /**
  * Parse CSV text into rows of raw string fields per PRD §8.4: a leading BOM is stripped, CR, LF, and
  * CRLF all end a record, and RFC 4180 quoting applies (doubled quotes inside quoted fields).
@@ -125,6 +130,8 @@ function escapeRegex(s: string): string {
 /**
  * `double.TryParse(raw, NumberStyles.Any, culture)`: surrounding whitespace, a leading or trailing
  * sign, parentheses for a negative, the locale's group and decimal separators, and an exponent.
+ * Identifiers that merely look numeric are refused so they stay text: a leading zero ("00123") and
+ * more than 15 significant digits (a 19-digit order ID would lose its last digits as a double).
  */
 class LocaleNumberParser {
   private readonly pattern: RegExp;
@@ -184,10 +191,16 @@ class LocaleNumberParser {
     const integer = (m[1] ?? '').split(this.group).join('');
     const fraction = m[2] ?? '';
     if (integer.length === 0 && fraction.length === 0) return null;
+    if (/^0\d/.test(integer)) return null;
+    if (significantDigits(integer + fraction) > MAX_SIGNIFICANT_DIGITS) return null;
     const exponent = m[3] === undefined ? '' : 'e' + m[3];
     const n = Number(`${integer || '0'}.${fraction || '0'}${exponent}`);
     return negative ? -n : n;
   }
+}
+
+function significantDigits(digits: string): number {
+  return digits.replace(/^0+/, '').replace(/0+$/, '').length;
 }
 
 type DateField = 'day' | 'month' | 'year';
@@ -195,23 +208,34 @@ type DateField = 'day' | 'month' | 'year';
 /**
  * `DateTime.TryParse(raw, culture)` for the shapes CSV exports actually carry: ISO
  * `yyyy-mm-dd[Thh:mm[:ss]]`, or the locale's numeric short date (its day/month/year order, any of
- * `/ - .` as separators) with an optional `h:mm[:ss] [AM|PM]` time. Returns a day serial or null.
+ * `/ - .` as one separator) with an optional `h:mm[:ss] [AM|PM]` time. Returns a day serial or null.
+ * Dots only make a date in a locale that writes dates with dots, and even then need a two- or
+ * four-digit year, so version numbers like "1.2.3" stay text.
  */
 class LocaleDateParser {
   private readonly order: readonly DateField[];
+  private readonly separator: string;
 
   constructor(locale: string) {
     let order: DateField[] = ['month', 'day', 'year'];
+    let separator = '/';
     try {
-      const parts = new Intl.DateTimeFormat(locale, { year: 'numeric', month: '2-digit', day: '2-digit' })
-        .formatToParts(new Date(Date.UTC(2006, 0, 2, 12)))
+      const parts = new Intl.DateTimeFormat(locale, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(new Date(Date.UTC(2006, 0, 2, 12)));
+      const fields = parts
         .map((p) => p.type)
         .filter((t): t is DateField => t === 'day' || t === 'month' || t === 'year');
-      if (parts.length === 3) order = parts;
+      if (fields.length === 3) order = fields;
+      const literal = parts.find((p) => p.type === 'literal')?.value.trim();
+      if (literal) separator = literal;
     } catch {
       // An unknown locale falls back to month/day/year (the invariant culture's order).
     }
     this.order = order;
+    this.separator = separator;
   }
 
   parse(raw: string): number | null {
@@ -219,16 +243,18 @@ class LocaleDateParser {
     const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](.+))?$/.exec(t);
     if (iso) return build(Number(iso[1]), Number(iso[2]), Number(iso[3]), iso[4]);
 
-    const local = /^(\d{1,4})[/.-](\d{1,2})[/.-](\d{1,4})\.?(?:\s+(.+))?$/.exec(t);
+    const local = /^(\d{1,4})([/.-])(\d{1,2})\2(\d{1,4})\.?(?:\s+(.+))?$/.exec(t);
     if (!local) return null;
+    const dotted = local[2] === '.';
+    if (dotted && this.separator !== '.') return null;
     const values: Record<DateField, number> = { day: 0, month: 0, year: 0 };
-    const yearDigits = [local[1]!, local[2]!, local[3]!];
-    this.order.forEach((field, i) => (values[field] = Number(yearDigits[i])));
+    const fieldTexts = [local[1]!, local[3]!, local[4]!];
+    this.order.forEach((field, i) => (values[field] = Number(fieldTexts[i])));
     let year = values.year;
-    const yearText = yearDigits[this.order.indexOf('year')]!;
-    if (yearText.length <= 2) year += year <= 49 ? 2000 : 1900;
-    else if (yearText.length === 3) return null;
-    return build(year, values.month, values.day, local[4]);
+    const yearText = fieldTexts[this.order.indexOf('year')]!;
+    if (yearText.length === 3 || (dotted && yearText.length === 1)) return null;
+    if (yearText.length <= 2) year += year <= TWO_DIGIT_YEAR_PIVOT ? 2000 : 1900;
+    return build(year, values.month, values.day, local[5]);
   }
 }
 

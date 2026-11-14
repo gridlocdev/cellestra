@@ -84,6 +84,40 @@ describe('Csv', () => {
     expect(sheet.getValue(0, 0)).toEqual(CellValue.number(45323)); // 1 Feb 2024
   });
 
+  it('keeps leading-zero codes as text', () => {
+    const sheet = readCsv('00123,0,0.5,-007\n', INVARIANT).activeSheet;
+    expect(sheet.getValue(0, 0)).toEqual(CellValue.text('00123'));
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(0));
+    expect(sheet.getValue(0, 2)).toEqual(CellValue.number(0.5));
+    expect(sheet.getValue(0, 3)).toEqual(CellValue.text('-007'));
+  });
+
+  it('keeps numbers with more than 15 significant digits as text', () => {
+    const sheet = readCsv(
+      '1234567890123456789,123456789012345,1000000000000000000000\n',
+      INVARIANT,
+    ).activeSheet;
+    expect(sheet.getValue(0, 0)).toEqual(CellValue.text('1234567890123456789'));
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(123456789012345));
+    expect(sheet.getValue(0, 2)).toEqual(CellValue.number(1e21));
+  });
+
+  it('does not read dotted version numbers as dates', () => {
+    const us = readCsv('1.2.3,10.4.2024\n', INVARIANT).activeSheet;
+    expect(us.getValue(0, 0)).toEqual(CellValue.text('1.2.3'));
+    expect(us.getValue(0, 1)).toEqual(CellValue.text('10.4.2024'));
+    const de = readCsv('1.2.3;10.4.2024\n', { ...CsvOptions.semicolon, locale: 'de-DE' }).activeSheet;
+    expect(de.getValue(0, 0)).toEqual(CellValue.text('1.2.3'));
+    expect(de.getValue(0, 1)).toEqual(CellValue.number(45392)); // 10 April 2024
+  });
+
+  it('reads two-digit years on the 1930-2029 window', () => {
+    const sheet = readCsv('3/4/29,3/4/30,3/4/49\n', INVARIANT).activeSheet;
+    expect(sheet.getValue(0, 0)).toEqual(CellValue.number(47181)); // 4 March 2029
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(11021)); // 4 March 1930
+    expect(sheet.getValue(0, 2)).toEqual(CellValue.number(17961)); // 4 March 1949
+  });
+
   it('keeps a lone quote run and an unterminated final record', () => {
     expect(parseCsv('a,b')).toEqual([['a', 'b']]);
     expect(parseCsv('"x"')).toEqual([['x']]);

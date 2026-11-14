@@ -362,7 +362,7 @@ Number, date, and currency formatting follow the **document's locale** when the 
 - **Delimiter:** comma by default; the Import/Export dialog lets the user pick comma, semicolon, or tab.
 - **Quoting:** RFC 4180 — fields containing the delimiter, quotes, or newlines are wrapped in double quotes, with embedded quotes doubled.
 - **Line endings:** import accepts LF or CRLF; export writes LF.
-- **Values:** export writes the **displayed/computed** values (not formulas). Import infers numbers and dates from the active locale; everything else is text.
+- **Values:** export writes the **displayed/computed** values (not formulas). Import infers numbers and dates from the active locale; everything else is text. Identifiers that only look numeric stay text: a leading zero (`00123`), more than 15 significant digits (a 19-digit ID), and dotted version numbers (`1.2.3`; dots make a date only in a locale that writes dates with dots, and then need a two- or four-digit year). Two-digit years use the §8.3 window.
 
 ### 8.5 Undo/redo scope
 Undo/redo is **session-only** (never written into the `.ods` file) and covers all document edits. History holds up to **1,000 steps**, after which the oldest are dropped. History is cleared when the document is closed. (Undo does not cover view-only state like scroll position or zoom.)
