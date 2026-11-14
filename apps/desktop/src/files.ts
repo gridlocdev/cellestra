@@ -10,6 +10,24 @@ export function isSpreadsheetPath(p: unknown): p is string {
   return typeof p === 'string' && p.length > 0 && !p.includes('\0') && SPREADSHEET.test(p);
 }
 
+/** The lower-case extension of a spreadsheet path ('ods', 'csv' or 'tsv'), or null. */
+export function spreadsheetFormat(p: string): 'ods' | 'csv' | 'tsv' | null {
+  const m = SPREADSHEET.exec(p);
+  return m ? (m[1]!.toLowerCase() as 'ods' | 'csv' | 'tsv') : null;
+}
+
+/**
+ * Save As gets bytes the renderer already serialized for `suggested`'s format, so a chosen path with
+ * another extension would hold the wrong bytes (zip data in a .csv). Returns why to refuse, or null.
+ */
+export function saveAsMismatch(suggested: string, chosen: string): string | null {
+  const want = spreadsheetFormat(suggested);
+  const got = spreadsheetFormat(chosen);
+  if (!got) return 'Save as .ods, .csv, or .tsv';
+  if (want && got !== want) return `This copy was prepared as .${want}; save it with the .${want} extension.`;
+  return null;
+}
+
 /** Only the app's own pages may use the bridge (not a navigated-away or injected frame). */
 export function isAppUrl(url: string | undefined | null): boolean {
   return typeof url === 'string' && url.startsWith('app://cellestra/');

@@ -16,6 +16,8 @@ import {
 import {
   isAppUrl,
   isSpreadsheetPath,
+  saveAsMismatch,
+  spreadsheetFormat,
   PathGrants,
   spreadsheetArgs,
   watchFile,
@@ -346,10 +348,14 @@ function registerIpc(): void {
   ipcMain.handle(Channels.saveDialog, async (e, suggestedName: string, bytes: Uint8Array) => {
     if (!trusted(e)) forbidden();
     const win = fromEvent(e);
-    const opts = { defaultPath: String(suggestedName), filters: FILTERS };
+    const name = String(suggestedName);
+    const format = spreadsheetFormat(name);
+    const filters = format ? [{ name: format.toUpperCase(), extensions: [format] }] : FILTERS;
+    const opts = { defaultPath: name, filters };
     const result = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
     if (result.canceled || !result.filePath) return null;
-    if (!isSpreadsheetPath(result.filePath)) throw new Error('Save as .ods, .csv, or .tsv');
+    const refused = saveAsMismatch(name, result.filePath);
+    if (refused) throw new Error(refused);
     return writeNative(result.filePath, bytes, null, true);
   });
   ipcMain.on(Channels.setDocumentState, (e, s: DocumentState) => {

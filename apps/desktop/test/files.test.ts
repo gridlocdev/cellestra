@@ -15,7 +15,15 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { isAppUrl, PathGrants, spreadsheetArgs, watchFile, withFileLock, writeAtomic } from '../src/files.ts';
+import {
+  isAppUrl,
+  PathGrants,
+  saveAsMismatch,
+  spreadsheetArgs,
+  watchFile,
+  withFileLock,
+  writeAtomic,
+} from '../src/files.ts';
 
 let dir: string;
 beforeAll(async () => {
@@ -169,5 +177,21 @@ describe('main-process guards', () => {
     await g.flushed();
     expect(g.has('/x/new.ods')).toBe(true);
     expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(['/x/kept.ods']);
+  });
+});
+
+describe('saveAsMismatch', () => {
+  it('accepts the extension the bytes were prepared for, in any case', () => {
+    expect(saveAsMismatch('Budget.ods', '/tmp/Other.ODS')).toBeNull();
+    expect(saveAsMismatch('Budget.csv', '/tmp/x.csv')).toBeNull();
+  });
+
+  it('refuses a different spreadsheet extension, so .ods bytes never land in a .csv', () => {
+    expect(saveAsMismatch('Budget.ods', '/tmp/Budget.csv')).toMatch(/\.ods extension/);
+    expect(saveAsMismatch('Budget.csv', '/tmp/Budget.ods')).toMatch(/\.csv extension/);
+  });
+
+  it('refuses a path that is not a spreadsheet', () => {
+    expect(saveAsMismatch('Budget.ods', '/tmp/Budget.txt')).toMatch(/Save as/);
   });
 });
