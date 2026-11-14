@@ -3,9 +3,10 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
+import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FileApi, parseRoots } from '../src/fileApi.ts';
-import { bindAuthProblem, createServer, hostAllowed, parseHosts } from '../src/server.ts';
+import { bindAuthProblem, createServer, defaultStaticDir, hostAllowed, parseHosts } from '../src/server.ts';
 
 let dir: string;
 let outside: string;
@@ -267,6 +268,15 @@ describe('static files', () => {
     expect(index.headers.get('cache-control')).toBe('no-cache');
     const bundle = await fetch(`http://127.0.0.1:${port}/assets/app-123.js`);
     expect(bundle.headers.get('cache-control')).toContain('immutable');
+  });
+
+  it('finds the built client from a checkout whose path has spaces', () => {
+    const moduleUrl = pathToFileURL(
+      path.join(os.tmpdir(), 'My Projects', 'apps', 'server', 'src', 'main.ts'),
+    );
+    expect(defaultStaticDir(moduleUrl.href)).toBe(
+      path.join(os.tmpdir(), 'My Projects', 'apps', 'web', 'dist'),
+    );
   });
 
   it('answers a malformed percent-escape with 400', async () => {

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { FileApi, parseRoots } from './fileApi.ts';
-import { bindAuthProblem, createServer, parseHosts } from './server.ts';
+import { bindAuthProblem, createServer, defaultStaticDir, parseHosts } from './server.ts';
 
 /**
  * Cellestra NAS server. Configuration is environment-only so it drops straight into Docker:
@@ -15,7 +15,6 @@ import { bindAuthProblem, createServer, parseHosts } from './server.ts';
  *   CELLESTRA_MAX_MB  largest upload in MiB (default 64)
  */
 const env = process.env;
-const here = path.dirname(new URL(import.meta.url).pathname);
 const roots = parseRoots(env.CELLESTRA_ROOTS ?? '', process.cwd());
 if (roots.length === 0) {
   console.error('Set CELLESTRA_ROOTS, e.g. CELLESTRA_ROOTS="Documents=/data/documents"');
@@ -24,7 +23,9 @@ if (roots.length === 0) {
 const staticDir =
   env.CELLESTRA_STATIC === ''
     ? null
-    : path.resolve(env.CELLESTRA_STATIC ?? path.join(here, '../../web/dist'));
+    : env.CELLESTRA_STATIC !== undefined
+      ? path.resolve(env.CELLESTRA_STATIC)
+      : defaultStaticDir(import.meta.url);
 const port = Number(env.PORT ?? 8787);
 const host = env.CELLESTRA_HOST ?? '0.0.0.0';
 const token = env.CELLESTRA_TOKEN || null;

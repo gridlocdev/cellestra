@@ -3,6 +3,7 @@ import { readFile, stat } from 'node:fs/promises';
 import http from 'node:http';
 import { isIP } from 'node:net';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ApiError, etagListMatches, type FileApi } from './fileApi.ts';
 
 export interface ServerOptions {
@@ -67,6 +68,14 @@ export function bindAuthProblem(host: string, token: string | null, noAuth: bool
     'CELLESTRA_HOST=127.0.0.1, or set CELLESTRA_NO_AUTH=1 if a reverse proxy in front already ' +
     'requires a login.'
   );
+}
+
+/**
+ * The built web client beside this source tree (`apps/web/dist`), from the URL of a module in
+ * `apps/server/src`. `fileURLToPath` decodes the URL, so a checkout under `My Projects` works.
+ */
+export function defaultStaticDir(moduleUrl: string): string {
+  return path.resolve(path.dirname(fileURLToPath(moduleUrl)), '../../web/dist');
 }
 
 const MIME: Record<string, string> = {
