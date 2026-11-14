@@ -1,11 +1,11 @@
-import type { UnparsedFormulaSource } from '../model/cell.ts';
+import type { CellRichText, UnmodeledCellContent, UnparsedFormulaSource } from '../model/cell.ts';
 import { CellRange } from '../model/cellRange.ts';
 import type { Hyperlink } from '../model/hyperlink.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import type { CellValue } from '../values/cellValue.ts';
 import { clampToUsed, OVERSIZED_CELL_CAP } from './editCommands.ts';
 
-/** One copied cell: value, formula source (no `=`), hyperlink and style id. */
+/** One copied cell: value, formula source (no `=`), hyperlink, style id, comment and rich text. */
 export interface ClipboardCell {
   readonly value: CellValue;
   readonly formula: string | null;
@@ -13,6 +13,10 @@ export interface ClipboardCell {
   readonly formulaSource: UnparsedFormulaSource | null;
   readonly styleId: number;
   readonly hyperlink: Hyperlink | null;
+  /** What the file gave the cell that the model doesn't model, such as its comment. */
+  readonly unmodeled: UnmodeledCellContent | null;
+  /** The cell's text as the file marked it up. */
+  readonly richText: CellRichText | null;
 }
 
 /** A copied or cut rectangle; `cells[r][c]` is null where the source had no cell. */
@@ -64,6 +68,8 @@ export class ClipboardBlock {
                 formulaSource: cell.formulaSource,
                 styleId: cell.styleId,
                 hyperlink: cell.hyperlink,
+                unmodeled: cell.unmodeled,
+                richText: cell.richText,
               }
             : null,
         );

@@ -211,6 +211,12 @@ export class PasteBlockCommand implements EditCommand {
     cell.formulaSource = source.formulaSource;
     cell.hyperlink = source.hyperlink;
     cell.styleId = styleId;
+    if (this.mode === 'all') {
+      // The comment (and anything else the file anchored to the cell) and the text's markup go
+      // with a full paste or a move, as in Calc; a paste of values or formulas leaves them.
+      cell.unmodeled = source.unmodeled;
+      cell.richText = source.richText;
+    }
     dest.putCell(row, column, cell);
   }
 }

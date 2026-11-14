@@ -6,7 +6,9 @@ import { PasteBlockCommand } from '../../src/editing/pasteBlockCommand.ts';
 import { CellRange } from '../../src/model/cellRange.ts';
 import { SheetDimensions } from '../../src/model/sheetDimensions.ts';
 import { Workbook } from '../../src/model/workbook.ts';
+import { Office, Text } from '../../src/serialization/ods/odsXmlNames.ts';
 import { CellValue } from '../../src/values/cellValue.ts';
+import { XmlElement } from '../../src/xml/index.ts';
 
 const R = (a1: string): CellRange => CellRange.parse(a1);
 const num = (v: CellValue): number => CellValue.asNumber(v);
@@ -244,5 +246,50 @@ describe('PasteBlockCommand', () => {
     expect(() =>
       history.execute(new PasteBlockCommand(sheet.name, [SheetDimensions.maxRows - 1, 0], tall)),
     ).toThrow(/doesn't fit/);
+  });
+
+  describe('a comment and rich text travel with the cell', () => {
+    function commented() {
+      const { workbook, history, sheet } = setup();
+      sheet.setValue(0, 0, CellValue.text('Hello'));
+      const cell = sheet.find(0, 0)!;
+      const comment = new XmlElement(Office('annotation'), new XmlElement(Text('p'), 'Check this'));
+      cell.unmodeled = { before: [comment], after: [] };
+      cell.richText = { text: 'Hello', hyperlink: null, paragraphs: [new XmlElement(Text('p'), 'Hello')] };
+      return { workbook, history, sheet, unmodeled: cell.unmodeled, richText: cell.richText };
+    }
+
+    it('on a cut and paste', () => {
+      const { history, sheet, unmodeled, richText } = commented();
+      history.execute(
+        new PasteBlockCommand(sheet.name, [3, 3], ClipboardBlock.capture(sheet, R('A1'), true)),
+      );
+      expect(sheet.find(0, 0)).toBeFalsy();
+      expect(sheet.find(3, 3)!.unmodeled).toBe(unmodeled);
+      expect(sheet.find(3, 3)!.richText).toBe(richText);
+
+      history.undo();
+      expect(sheet.find(0, 0)!.unmodeled).toBe(unmodeled);
+      expect(sheet.find(3, 3)).toBeFalsy();
+    });
+
+    it('on a copy and paste', () => {
+      const { history, sheet, unmodeled, richText } = commented();
+      history.execute(
+        new PasteBlockCommand(sheet.name, [3, 3], ClipboardBlock.capture(sheet, R('A1'), false)),
+      );
+      expect(sheet.find(0, 0)!.unmodeled).toBe(unmodeled);
+      expect(sheet.find(3, 3)!.unmodeled).toBe(unmodeled);
+      expect(sheet.find(3, 3)!.richText).toBe(richText);
+    });
+
+    it('not on a paste of values only', () => {
+      const { history, sheet } = commented();
+      const block = ClipboardBlock.capture(sheet, R('A1'), false);
+      history.execute(new PasteBlockCommand(sheet.name, [3, 3], block, 'values'));
+      expect(sheet.find(3, 3)!.value).toEqual(CellValue.text('Hello'));
+      expect(sheet.find(3, 3)!.unmodeled).toBeNull();
+      expect(sheet.find(3, 3)!.richText).toBeNull();
+    });
   });
 });
