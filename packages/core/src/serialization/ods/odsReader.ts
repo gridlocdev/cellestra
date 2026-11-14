@@ -33,13 +33,14 @@ export const OdsReader = {
     checkSpreadsheetPackage(pkg);
     const workbook = new Workbook();
 
-    const contentXml = pkg.getText(N.contentPart);
+    // content.xml is inflated and read a piece at a time; it is by far the largest part.
+    const contentXml = pkg.textChunks(N.contentPart);
     if (contentXml !== null) {
       // styles.xml holds the common cell styles and, in LibreOffice files, many data styles.
       const stylesXml = pkg.getText(N.stylesPart);
       // Whitespace is kept: a data style's `<number:text> </number:text>` is the space in "d mmmm".
       const styles = stylesXml === null ? null : tryParseXml(stylesXml, { preserveWhitespace: true });
-      const content = readContentXml([contentXml], workbook, pkg.foreignSpreadsheetChildren, pkg, styles);
+      const content = readContentXml(contentXml, workbook, pkg.foreignSpreadsheetChildren, pkg, styles);
       OdsPageSetup.read(workbook, content, styles?.root ?? null);
       workbook.settings.locale = OdsSupportXml.documentLocale(styles?.root ?? null);
     }
