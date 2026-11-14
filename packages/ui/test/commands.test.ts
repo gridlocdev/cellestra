@@ -110,3 +110,34 @@ describe('CommandCatalog', () => {
     expect(catalog.forEvent(key({ key: 's', code: 'KeyS', ...mod }), true)?.id).toBe('file.save');
   });
 });
+
+describe('CommandCatalog.forEvent', () => {
+  it('lets an exact shifted shortcut beat a punctuation alternate listed earlier', () => {
+    const run = vi.fn();
+    const catalog = new CommandCatalog([
+      {
+        id: 'view.zoomIn',
+        title: 'Zoom In',
+        description: '',
+        group: 'View',
+        shortcut: 'mod+=',
+        alternates: ['mod++'],
+        run,
+      },
+      {
+        id: 'insert.rows',
+        title: 'Insert Rows',
+        description: '',
+        group: 'Insert',
+        shortcut: 'mod+shift+=',
+        run,
+      },
+    ]);
+    // ⇧⌘= on a US layout: the key is "=", the character "+".
+    const shiftEquals = key({ key: '+', code: 'Equal', shiftKey: true, ...mod });
+    expect(catalog.forEvent(shiftEquals, false)?.id).toBe('insert.rows');
+    // A layout with its own "+" key, unshifted, still zooms in.
+    const plus = key({ key: '+', code: 'NumpadAdd', ...mod });
+    expect(catalog.forEvent(plus, false)?.id).toBe('view.zoomIn');
+  });
+});

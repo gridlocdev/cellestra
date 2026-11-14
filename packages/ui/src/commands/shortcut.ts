@@ -67,13 +67,20 @@ function eventKey(e: KeyboardEvent): string {
 }
 
 export function matches(s: Shortcut, e: KeyboardEvent, mac = isMac): boolean {
+  return matchKind(s, e, mac) !== null;
+}
+
+/**
+ * How `e` matches `s`: 'exact' on the physical key with the same shift state, 'loose' when only
+ * the character matches — punctuation produced with shift (e.g. "+" on ⇧=) matches a spec without
+ * shift. A loose match must not beat an exact one: ⇧⌘= is Insert Rows, not ⌘+ (zoom in).
+ */
+export function matchKind(s: Shortcut, e: KeyboardEvent, mac = isMac): 'exact' | 'loose' | null {
   // On macOS `mod` is ⌘ and `ctrl` is ⌃. Elsewhere both mean the one Ctrl key.
   const modifiers = mac ? e.metaKey === s.mod && e.ctrlKey === s.ctrl : e.ctrlKey === (s.mod || s.ctrl);
-  if (!modifiers || e.altKey !== s.alt) return false;
-  const key = eventKey(e);
-  // Punctuation produced with shift (e.g. "+" on ⇧=) matches without requiring shift in the spec.
-  if (key === s.key && e.shiftKey === s.shift) return true;
-  return !/^[a-z0-9]$/.test(s.key) && e.key === s.key && !s.shift;
+  if (!modifiers || e.altKey !== s.alt) return null;
+  if (eventKey(e) === s.key && e.shiftKey === s.shift) return 'exact';
+  return !/^[a-z0-9]$/.test(s.key) && e.key === s.key && !s.shift ? 'loose' : null;
 }
 
 const MAC_SYMBOLS: Record<string, string> = {

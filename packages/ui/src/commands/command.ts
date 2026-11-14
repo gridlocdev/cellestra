@@ -1,4 +1,4 @@
-import { formatShortcut, matches, parseShortcut, type Shortcut } from './shortcut.ts';
+import { formatShortcut, matchKind, parseShortcut, type Shortcut } from './shortcut.ts';
 
 /** Menu groups — the native menu bar and the palette's section labels. */
 export type CommandGroup = 'File' | 'Edit' | 'View' | 'Insert' | 'Format' | 'Data' | 'Sheet' | 'Help';
@@ -84,10 +84,10 @@ export class CommandCatalog {
 
   /** The command a key event triggers, if any. `inText` = focus is in a text field. */
   forEvent(e: KeyboardEvent, inText: boolean): Command | undefined {
-    return this.all.find(
-      (c) =>
-        (!inText || c.global) && [c.shortcutKey, ...c.alternateKeys].some((k) => k !== null && matches(k, e)),
-    );
+    const keys = (c: Command) => (!inText || c.global ? [c.shortcutKey, ...c.alternateKeys] : []);
+    const find = (kind: 'exact' | 'loose') =>
+      this.all.find((c) => keys(c).some((k) => k !== null && matchKind(k, e) === kind));
+    return find('exact') ?? find('loose');
   }
 
   /**
