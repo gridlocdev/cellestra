@@ -56,9 +56,9 @@ export function readBoolean(ev: FunctionEvaluator, arg: Expr): ArgResult<boolean
 
 /**
  * Collect numeric values from arguments (flattening ranges). Values pulled from a reference/range
- * follow the LibreOffice rule — only numbers count — but a value typed directly as an argument is
- * coerced like arithmetic, so SUM(TRUE,FALSE,5)=6 and SUM(1,"x")=#VALUE!. Returns an error value
- * to propagate, else null.
+ * follow the LibreOffice rule — numbers count, a boolean cell counts as 1 or 0, text and blanks are
+ * skipped — but a value typed directly as an argument is coerced like arithmetic, so
+ * SUM(TRUE,FALSE,5)=6 and SUM(1,"x")=#VALUE!. Returns an error value to propagate, else null.
  */
 export function collectNumbers(
   ev: FunctionEvaluator,
