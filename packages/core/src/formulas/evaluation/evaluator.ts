@@ -1,7 +1,7 @@
 import { CellRange } from '../../model/cellRange.ts';
 import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
-import type { BinaryExpr, Expr, FunctionCallExpr, NameExpr, UnaryExpr } from '../ast/expr.ts';
+import type { BinaryExpr, Expr, FunctionCallExpr, NameExpr, SheetSpanExpr, UnaryExpr } from '../ast/expr.ts';
 import type { FunctionEvaluator } from '../functions/formulaFunction.ts';
 import { acceptsArgCount } from '../functions/functionMetadata.ts';
 import type { FunctionRegistry } from '../functions/functionRegistry.ts';
@@ -75,6 +75,15 @@ export class Evaluator implements FunctionEvaluator {
         return this.context.getCell(expr.address.sheet, expr.address.row, expr.address.column);
       case 'range':
         return this.#missingSheet(expr) ?? this.intersect(expr.range);
+      case 'sheetSpan': {
+        // Where one value is needed a range across sheets is #VALUE!, as in Calc.
+        const areas = this.#sheetSpanAreas(expr);
+        return Array.isArray(areas)
+          ? CellValue.error(
+              CellError.value('A range across sheets cannot be used where one value is needed.'),
+            )
+          : areas;
+      }
       case 'name':
         return this.#name(expr);
       case 'refError':
@@ -92,6 +101,15 @@ export class Evaluator implements FunctionEvaluator {
     const range = this.context.resolveName(node.name);
     if (!range) return CellValue.error(CellError.name(`Unknown name '${node.name}'.`));
     return this.intersect(range);
+  }
+
+  /** The same cells on every sheet a 3D range spans, or #REF! when either end's sheet is gone. */
+  #sheetSpanAreas(expr: SheetSpanExpr): CellRange[] | CellValue {
+    const first = expr.range.sheet!;
+    const sheets = this.context.sheetsBetween?.(first, expr.lastSheet);
+    if (!sheets)
+      return CellValue.error(CellError.reference(`Unknown sheet in '${first}' to '${expr.lastSheet}'.`));
+    return sheets.map((sheet) => expr.range.withSheet(sheet));
   }
 
   intersect(range: CellRange): CellValue {
@@ -176,6 +194,8 @@ export class Evaluator implements FunctionEvaluator {
         return this.#missingSheet(expr) ?? [new CellRange(expr.address)];
       case 'range':
         return this.#missingSheet(expr) ?? [expr.range];
+      case 'sheetSpan':
+        return this.#sheetSpanAreas(expr);
       case 'name': {
         const named = this.context.resolveName(expr.name);
         if (!named) return CellValue.error(CellError.name(`Unknown name '${expr.name}'.`));
@@ -244,6 +264,10 @@ export class Evaluator implements FunctionEvaluator {
   /** #REF! when `expr` is a reference, range or name on a sheet that does not exist; else null. */
   #missingSheet(expr: Expr): CellValue | null {
     let sheet: string | null;
+    if (expr.kind === 'sheetSpan') {
+      const areas = this.#sheetSpanAreas(expr);
+      return Array.isArray(areas) ? null : areas;
+    }
     if (expr.kind === 'range') sheet = expr.range.sheet;
     else if (expr.kind === 'reference') sheet = expr.address.sheet;
     else if (expr.kind === 'name') sheet = this.context.resolveName(expr.name)?.sheet ?? null;
@@ -265,6 +289,10 @@ export class Evaluator implements FunctionEvaluator {
   }
 
   tryEvaluateAreas(expr: Expr): readonly RangeValues[] | null {
+    if (expr.kind === 'sheetSpan') {
+      const areas = this.#sheetSpanAreas(expr);
+      return Array.isArray(areas) ? areas.map((a) => new RangeValues(a, this.context)) : null;
+    }
     if (expr.kind !== 'binary') {
       const range = this.tryEvaluateRange(expr);
       return range ? [range] : null;

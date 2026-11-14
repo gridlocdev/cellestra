@@ -167,7 +167,7 @@ export class RecalculationEngine {
     const precedents = new Map<string, CellRef>();
     const largeRanges: RangeRef[] = [];
     const resolve = (n: string): CellRange | null => this.#resolveName(n, cell.sheet);
-    ReferenceCollector.collect(ast, cell.sheet, resolve, precedents, largeRanges);
+    ReferenceCollector.collect(ast, cell.sheet, resolve, precedents, largeRanges, this.#sheetsBetween);
     this.#graph.setPrecedents(cell, precedents.values());
     this.#setLargeRanges(key, largeRanges);
     if (ReferenceCollector.isVolatile(ast)) this.#volatile.set(key, cell);
@@ -182,6 +182,10 @@ export class RecalculationEngine {
     this.#parseCache.set(formula, ast);
     return ast;
   }
+
+  /** The sheet names a 3D range from `first` to `last` spans, in tab order. */
+  readonly #sheetsBetween = (first: string, last: string): readonly string[] | null =>
+    this.#workbook.sheetsBetween(first, last)?.map((s) => s.name) ?? null;
 
   /** A name as the formula on `sheet` sees it: a sheet-local name shadows a global one. */
   #resolveName(name: string, sheet: string): CellRange | null {

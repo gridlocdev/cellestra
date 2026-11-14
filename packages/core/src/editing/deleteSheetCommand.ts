@@ -44,10 +44,12 @@ export class DeleteSheetCommand implements EditCommand {
     this.referencesBefore = captureReferences(workbook);
     // Charts read unqualified references against the first data sheet, which may be this one.
     const chartHome = defaultChartHome(workbook);
+    // The tab order before the delete, so a 3D range ending on this sheet can narrow to its neighbour.
+    const order = workbook.worksheets.map((s) => s.name);
     workbook.removeSheet(sheet);
     const deleted = this.sheetName;
     const transform = (expr: Expr, home: string): Expr =>
-      ReferenceAdjuster.forDeleteSheet(expr, deleted, home);
+      ReferenceAdjuster.forDeleteSheet(expr, deleted, home, order);
     for (const other of workbook.worksheets) {
       for (const [, , cell] of other.enumerateCells()) {
         if (cell.formula === null) continue;
@@ -105,6 +107,8 @@ export function sheetDeletionImpact(workbook: Workbook, sheetName: string): Shee
     const range = CellRange.tryParse(reference.trim());
     return range !== null && isDeleted(range.sheet ?? home);
   };
+  const sheetsBetween = (first: string, last: string): readonly string[] | null =>
+    workbook.sheetsBetween(first, last)?.map((s) => s.name) ?? null;
   for (const sheet of workbook.worksheets) {
     if (sheet === target) continue;
     const resolve = (name: string): CellRange | null =>
@@ -114,7 +118,7 @@ export function sheetDeletionImpact(workbook: Workbook, sheetName: string): Shee
       const parsed = Parser.tryParse(cell.formula);
       if (!parsed.ok) continue;
       const read = new Map<string, CellRef>();
-      ReferenceCollector.collect(parsed.expr, sheet.name, resolve, read);
+      ReferenceCollector.collect(parsed.expr, sheet.name, resolve, read, undefined, sheetsBetween);
       if ([...read.values()].some((ref) => isDeleted(ref.sheet))) formulas++;
     }
     const chart = sheet.chart;

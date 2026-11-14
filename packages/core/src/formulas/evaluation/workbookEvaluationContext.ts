@@ -65,6 +65,10 @@ export class WorkbookEvaluationContext implements EvaluationContext {
     return this.#sheet(sheet ?? this.currentSheet)?.cellExtent();
   }
 
+  sheetsBetween(first: string, last: string): readonly string[] | null {
+    return this.#workbook.sheetsBetween(first, last)?.map((s) => s.name) ?? null;
+  }
+
   resolveName(name: string): CellRange | null {
     return this.#workbook.findNamedRange(name, this.currentSheet)?.target ?? null;
   }

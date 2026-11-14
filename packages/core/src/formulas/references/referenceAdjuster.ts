@@ -1,14 +1,19 @@
 import { CellAddress } from '../../model/cellAddress.ts';
 import { CellRange } from '../../model/cellRange.ts';
 import { SheetDimensions } from '../../model/sheetDimensions.ts';
-import { Expr } from '../ast/expr.ts';
+import { Expr, type SheetSpanExpr } from '../ast/expr.ts';
 
 type MapAddress = (a: CellAddress) => CellAddress | null;
 type MapRange = (r: CellRange) => CellRange | null;
+/** A 3D range's fix-up. Left out, a 3D range stays as it is. */
+type MapSpan = (span: SheetSpanExpr) => Expr;
+
+const keepSpan: MapSpan = (span) => span;
 
 const sameSheet = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
-function rewrite(expr: Expr, mapAddress: MapAddress, mapRange: MapRange): Expr {
+function rewrite(expr: Expr, mapAddress: MapAddress, mapRange: MapRange, mapSpan = keepSpan): Expr {
+  const recurse = (e: Expr): Expr => rewrite(e, mapAddress, mapRange, mapSpan);
   switch (expr.kind) {
     case 'reference': {
       const mapped = mapAddress(expr.address);
@@ -18,19 +23,14 @@ function rewrite(expr: Expr, mapAddress: MapAddress, mapRange: MapRange): Expr {
       const mapped = mapRange(expr.range);
       return mapped ? Expr.range(mapped) : Expr.refError;
     }
+    case 'sheetSpan':
+      return mapSpan(expr);
     case 'unary':
-      return Expr.unary(expr.operator, rewrite(expr.operand, mapAddress, mapRange));
+      return Expr.unary(expr.operator, recurse(expr.operand));
     case 'binary':
-      return Expr.binary(
-        expr.operator,
-        rewrite(expr.left, mapAddress, mapRange),
-        rewrite(expr.right, mapAddress, mapRange),
-      );
+      return Expr.binary(expr.operator, recurse(expr.left), recurse(expr.right));
     case 'call':
-      return Expr.call(
-        expr.name,
-        expr.args.map((a) => rewrite(a, mapAddress, mapRange)),
-      );
+      return Expr.call(expr.name, expr.args.map(recurse));
     default:
       return expr; // literals, names, ref-errors are unchanged
   }
@@ -135,13 +135,18 @@ const del = (at: number, count: number): AxisEdit => ({
 export const ReferenceAdjuster = {
   /** Copy/fill from one position to another: shift relative parts by the delta. */
   forCopy(expr: Expr, columnDelta: number, rowDelta: number): Expr {
+    const mapRange = (r: CellRange): CellRange | null => {
+      const s = shiftAddress(r.start, columnDelta, rowDelta);
+      const e = shiftAddress(r.end, columnDelta, rowDelta);
+      return s && e ? new CellRange(s, e) : null;
+    };
     return rewrite(
       expr,
       (a) => shiftAddress(a, columnDelta, rowDelta),
-      (r) => {
-        const s = shiftAddress(r.start, columnDelta, rowDelta);
-        const e = shiftAddress(r.end, columnDelta, rowDelta);
-        return s && e ? new CellRange(s, e) : null;
+      mapRange,
+      (span) => {
+        const mapped = mapRange(span.range);
+        return mapped ? Expr.sheetSpan(mapped, span.lastSheet) : Expr.refError;
       },
     );
   },
@@ -273,8 +278,10 @@ export const ReferenceAdjuster = {
   forRenameSheet(expr: Expr, oldName: string, newName: string): Expr {
     const renamed = (a: CellAddress): CellAddress =>
       a.sheet !== null && sameSheet(a.sheet, oldName) ? a.withSheet(newName) : a;
-    return rewrite(expr, renamed, (r) =>
-      r.sheet !== null && sameSheet(r.sheet, oldName) ? new CellRange(renamed(r.start), renamed(r.end)) : r,
+    const renamedRange = (r: CellRange): CellRange =>
+      r.sheet !== null && sameSheet(r.sheet, oldName) ? new CellRange(renamed(r.start), renamed(r.end)) : r;
+    return rewrite(expr, renamed, renamedRange, (span) =>
+      Expr.sheetSpan(renamedRange(span.range), sameSheet(span.lastSheet, oldName) ? newName : span.lastSheet),
     );
   },
 
@@ -287,13 +294,31 @@ export const ReferenceAdjuster = {
     return rewrite(expr, own, (r) => (r.sheet === null ? new CellRange(own(r.start), own(r.end)) : r));
   },
 
-  /** A worksheet deleted: any reference whose effective sheet is the deleted one becomes #REF!. */
-  forDeleteSheet(expr: Expr, deletedSheet: string, homeSheet: string): Expr {
+  /**
+   * A worksheet deleted: any reference whose effective sheet is the deleted one becomes #REF!. A 3D
+   * range loses only that sheet: deleting a sheet inside it changes nothing, deleting an end moves
+   * the end to the next sheet inward, as in Calc. That needs `sheetOrder`, the tab order before the
+   * delete; without it a 3D range that ends on the deleted sheet becomes #REF!.
+   */
+  forDeleteSheet(expr: Expr, deletedSheet: string, homeSheet: string, sheetOrder?: readonly string[]): Expr {
     const affected = (sheet: string | null): boolean => sameSheet(sheet ?? homeSheet, deletedSheet);
+    const narrow = (span: SheetSpanExpr): Expr => {
+      const first = span.range.sheet!;
+      if (!affected(first) && !affected(span.lastSheet)) return span;
+      const index = (name: string): number => sheetOrder?.findIndex((s) => sameSheet(s, name)) ?? -1;
+      const a = index(first);
+      const b = index(span.lastSheet);
+      if (a < 0 || b < 0) return Expr.refError;
+      const left = sheetOrder!.slice(Math.min(a, b), Math.max(a, b) + 1).filter((s) => !affected(s));
+      if (left.length === 0) return Expr.refError;
+      const range = span.range.withSheet(left[0]!);
+      return left.length === 1 ? Expr.range(range) : Expr.sheetSpan(range, left[left.length - 1]!);
+    };
     return rewrite(
       expr,
       (a) => (affected(a.sheet) ? null : a),
       (r) => (affected(r.sheet) ? null : r),
+      narrow,
     );
   },
 } as const;

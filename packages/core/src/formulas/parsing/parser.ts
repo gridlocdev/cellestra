@@ -392,13 +392,17 @@ export class Parser {
   private parseRangeEnd(start: CellAddress): Expr {
     const end = this.current.type === 'name' ? CellAddress.tryParse(this.current.text) : null;
     if (!end) throw new FormulaParseException("Expected a cell reference after ':'.", this.current.position);
-    // A range from one sheet to another (`Sheet1.A1:Sheet3.B2`) spans every sheet between them.
-    // That is not modelled, so refuse it rather than read it as one sheet and change its meaning.
-    if (end.sheet !== null && end.sheet.toLowerCase() !== start.sheet?.toLowerCase())
-      throw new FormulaParseException(
-        'Ranges across several sheets are not supported.',
-        this.current.position,
-      );
+    if (end.sheet !== null && end.sheet.toLowerCase() !== start.sheet?.toLowerCase()) {
+      // Only a range qualified on both corners can span sheets; `A1:Sheet2.B2` has no first sheet.
+      if (start.sheet === null)
+        throw new FormulaParseException(
+          'A range across sheets must name the sheet on both corners.',
+          this.current.position,
+        );
+      this.advance();
+      // A range from one sheet to another (`Sheet1.A1:Sheet3.B2`) spans every sheet between them.
+      return Expr.sheetSpan(new CellRange(start, end.withSheet(start.sheet)), end.sheet);
+    }
     this.advance();
     // A sheet qualifier on the left corner applies to the whole range.
     const qualified = start.sheet !== null && end.sheet === null ? end.withSheet(start.sheet) : end;
@@ -415,30 +419,27 @@ export class Parser {
     const endToken = this.tokens[this.index + 1];
     if (!start || !endToken || (endToken.type !== 'name' && endToken.type !== 'number')) return null;
     const end = parseLine(endToken.text);
-    if (
-      !end ||
-      end.kind !== start.kind ||
-      (end.sheet !== null && end.sheet.toLowerCase() !== start.sheet?.toLowerCase())
-    )
-      return null;
+    if (!end || end.kind !== start.kind) return null;
+    // `Sheet1.A:Sheet3.C` spans sheets; an end on another sheet needs a sheet on the start too.
+    const acrossSheets = end.sheet !== null && end.sheet.toLowerCase() !== start.sheet?.toLowerCase();
+    if (acrossSheets && start.sheet === null) return null;
     this.index += 2; // the colon and the end
     const sheet = start.sheet;
+    let range: CellRange;
     if (start.kind === 'column') {
       const lastRow = SheetDimensions.maxRows - 1;
-      return Expr.range(
-        new CellRange(
-          new CellAddress(start.index, 0, start.absolute, true, sheet),
-          new CellAddress(end.index, lastRow, end.absolute, true, sheet),
-        ),
+      range = new CellRange(
+        new CellAddress(start.index, 0, start.absolute, true, sheet),
+        new CellAddress(end.index, lastRow, end.absolute, true, sheet),
       );
-    }
-    const lastColumn = SheetDimensions.maxColumns - 1;
-    return Expr.range(
-      new CellRange(
+    } else {
+      const lastColumn = SheetDimensions.maxColumns - 1;
+      range = new CellRange(
         new CellAddress(0, start.index, true, start.absolute, sheet),
         new CellAddress(lastColumn, end.index, true, end.absolute, sheet),
-      ),
-    );
+      );
+    }
+    return acrossSheets ? Expr.sheetSpan(range, end.sheet!) : Expr.range(range);
   }
 
   private parseFunctionCall(nameToken: Token): Expr {
@@ -465,6 +466,7 @@ function isReferenceExpr(expr: Expr): boolean {
   switch (expr.kind) {
     case 'reference':
     case 'range':
+    case 'sheetSpan':
     case 'name':
     case 'refError':
       return true;
@@ -504,7 +506,9 @@ function parseLine(text: string): Line | null {
   let sheet: string | null = null;
   const dot = findSheetSeparator(span);
   if (dot >= 0) {
-    sheet = unquoteSheet(span.slice(0, dot));
+    // As in `CellAddress`, a leading `$` marks an absolute sheet (`$Sheet1.A:$Sheet3.C`).
+    const prefix = span.slice(0, dot);
+    sheet = unquoteSheet(prefix.startsWith('$') ? prefix.slice(1) : prefix);
     if (sheet === null) return null;
     span = span.slice(dot + 1);
   }

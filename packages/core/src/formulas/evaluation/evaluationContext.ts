@@ -26,6 +26,12 @@ export interface EvaluationContext {
    * reference to a sheet that does not is #REF!.
    */
   hasSheet?(sheet: string | null): boolean;
+  /**
+   * The names of the sheets from `first` to `last` in tab order, both included, for a range across
+   * sheets (`Sheet1.A1:Sheet3.B2`). Null when either sheet does not exist; leaving it out makes
+   * every such range #REF!.
+   */
+  sheetsBetween?(first: string, last: string): readonly string[] | null;
   /** Resolve a defined name to its range; null for an unknown name. */
   resolveName(name: string): CellRange | null;
   /**

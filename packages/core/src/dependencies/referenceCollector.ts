@@ -72,7 +72,7 @@ export const ReferenceCollector = {
   /**
    * Collect the cells `expr` reads into `destination` (keyed by `CellRef.key`). Ranges larger than
    * `MAX_EXPANDED_CELLS` add only their corners there and, when `largeRanges` is given, their full
-   * extent there.
+   * extent there. `sheetsBetween` gives the sheets a 3D range (`Sheet1.A1:Sheet3.B2`) spans.
    */
   collect(
     expr: Expr,
@@ -80,7 +80,10 @@ export const ReferenceCollector = {
     resolveName: (name: string) => CellRange | null,
     destination: Map<string, CellRef>,
     largeRanges?: RangeRef[],
+    sheetsBetween?: (first: string, last: string) => readonly string[] | null,
   ): void {
+    const recurse = (e: Expr): void =>
+      ReferenceCollector.collect(e, homeSheet, resolveName, destination, largeRanges, sheetsBetween);
     switch (expr.kind) {
       case 'reference': {
         const ref = CellRef.of(expr.address.sheet ?? homeSheet, expr.address.row, expr.address.column);
@@ -90,21 +93,27 @@ export const ReferenceCollector = {
       case 'range':
         expand(expr.range, homeSheet, destination, largeRanges);
         break;
+      case 'sheetSpan': {
+        // Every sheet between the two ends; without the sheet order, at least the ends.
+        const first = expr.range.sheet!;
+        const sheets = sheetsBetween?.(first, expr.lastSheet) ?? [first, expr.lastSheet];
+        for (const sheet of sheets) expand(expr.range.withSheet(sheet), homeSheet, destination, largeRanges);
+        break;
+      }
       case 'name': {
         const named = resolveName(expr.name);
         if (named) expand(named, homeSheet, destination, largeRanges);
         break;
       }
       case 'unary':
-        ReferenceCollector.collect(expr.operand, homeSheet, resolveName, destination, largeRanges);
+        recurse(expr.operand);
         break;
       case 'binary':
-        ReferenceCollector.collect(expr.left, homeSheet, resolveName, destination, largeRanges);
-        ReferenceCollector.collect(expr.right, homeSheet, resolveName, destination, largeRanges);
+        recurse(expr.left);
+        recurse(expr.right);
         break;
       case 'call': {
-        for (const a of expr.args)
-          ReferenceCollector.collect(a, homeSheet, resolveName, destination, largeRanges);
+        for (const a of expr.args) recurse(a);
         const reshaped = reshapedSumRange(expr.name, expr.args, resolveName);
         if (reshaped) expand(reshaped, homeSheet, destination, largeRanges);
         break;

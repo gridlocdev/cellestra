@@ -122,6 +122,18 @@ export class Workbook {
     this.sheets.splice(target, 0, sheet!);
   }
 
+  /**
+   * The sheets from `first` to `last` in tab order, both included (either may come first), as a 3D
+   * reference `First.A1:Last.B2` reads them. Null when either sheet does not exist.
+   */
+  sheetsBetween(first: string, last: string): Worksheet[] | null {
+    const lower = (n: string): string => n.toLowerCase();
+    const a = this.sheets.findIndex((s) => lower(s.name) === lower(first));
+    const b = this.sheets.findIndex((s) => lower(s.name) === lower(last));
+    if (a < 0 || b < 0) return null;
+    return this.sheets.slice(Math.min(a, b), Math.max(a, b) + 1);
+  }
+
   /** Case-insensitive. */
   findSheet(name: string): Worksheet | undefined {
     const lower = name.toLowerCase();

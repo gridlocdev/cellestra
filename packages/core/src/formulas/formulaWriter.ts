@@ -142,6 +142,14 @@ function render(expr: Expr): string {
       return expr.address.toString();
     case 'range':
       return wholeLinesText(expr.range, a1SheetPrefix, '') ?? expr.range.toString();
+    case 'sheetSpan': {
+      const last = a1SheetPrefix(expr.lastSheet);
+      const { range } = expr;
+      return (
+        wholeLinesText(range, a1SheetPrefix, last) ??
+        `${range.start.toString()}:${last}${range.end.withoutSheet().toString()}`
+      );
+    }
     case 'name':
       return expr.name;
     case 'refError':

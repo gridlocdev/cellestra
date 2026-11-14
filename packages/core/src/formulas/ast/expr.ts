@@ -49,6 +49,17 @@ export interface RangeExpr {
   readonly range: CellRange;
 }
 
+/**
+ * A range through several sheets (a 3D reference), `Sheet1.A1:Sheet3.B2`: the same cells on every
+ * sheet from `range`'s sheet to `lastSheet` in tab order (either may come first). Both corners of
+ * `range` carry the first sheet.
+ */
+export interface SheetSpanExpr {
+  readonly kind: 'sheetSpan';
+  readonly range: CellRange;
+  readonly lastSheet: string;
+}
+
 /** A defined name / named range used in a formula (resolved at evaluation). */
 export interface NameExpr {
   readonly kind: 'name';
@@ -89,6 +100,7 @@ export type Expr =
   | ArrayExpr
   | ReferenceExpr
   | RangeExpr
+  | SheetSpanExpr
   | NameExpr
   | RefErrorExpr
   | UnaryExpr
@@ -105,6 +117,7 @@ export const Expr = {
   array: (rows: readonly (readonly CellValue[])[]): Expr => ({ kind: 'array', rows }),
   reference: (address: CellAddress): Expr => ({ kind: 'reference', address }),
   range: (range: CellRange): Expr => ({ kind: 'range', range }),
+  sheetSpan: (range: CellRange, lastSheet: string): Expr => ({ kind: 'sheetSpan', range, lastSheet }),
   name: (name: string): Expr => ({ kind: 'name', name }),
   refError: REF_ERROR as Expr,
   unary: (operator: UnaryOperator, operand: Expr): Expr => ({ kind: 'unary', operator, operand }),

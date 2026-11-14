@@ -70,6 +70,15 @@ const renderAddress = (a: CellAddress): string => `[${sheetDot(a.sheet)}${cell(a
 const renderRange = (r: CellRange): string =>
   `[${wholeLinesText(r, sheetDot, '.') ?? `${sheetDot(r.start.sheet)}${cell(r.start)}:.${cell(r.end)}`}]`;
 
+/** Calc writes both sheets of a 3D range absolute: `[$Sheet1.A1:$Sheet3.B2]`. */
+const absoluteSheetDot = (sheet: string | null): string =>
+  sheet === null ? '.' : `$${quoteSheetIfNeeded(sheet)}.`;
+
+const renderSheetSpan = (r: CellRange, lastSheet: string): string => {
+  const last = absoluteSheetDot(lastSheet);
+  return `[${wholeLinesText(r, absoluteSheetDot, last) ?? `${absoluteSheetDot(r.sheet)}${cell(r.start)}:${last}${cell(r.end)}`}]`;
+};
+
 function render(expr: Expr): string {
   switch (expr.kind) {
     case 'literal':
@@ -80,6 +89,8 @@ function render(expr: Expr): string {
       return renderAddress(expr.address);
     case 'range':
       return renderRange(expr.range);
+    case 'sheetSpan':
+      return renderSheetSpan(expr.range, expr.lastSheet);
     case 'name':
       return expr.name;
     case 'refError':
