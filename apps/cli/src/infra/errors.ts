@@ -1,3 +1,10 @@
+/** Success; for validate, diff and find, nothing to report. */
+export const EXIT_OK = 0;
+/** A problem was found (validate, diff, lint --strict, find), or the input was bad (missing file). */
+export const EXIT_PROBLEM = 1;
+/** The command line itself was wrong: unknown option or command, missing argument, unparsable value. */
+export const EXIT_USAGE = 2;
+
 /**
  * A mistake the user can fix (bad address, missing file, refusing to overwrite): printed as
  * `cellestra: <message>` with exit code 1, never as a stack trace.
@@ -6,6 +13,14 @@ export class CliError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'CliError';
+  }
+}
+
+/** A command line that doesn't parse or names no command: like `CliError`, but exit code 2. */
+export class UsageError extends CliError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UsageError';
   }
 }
 

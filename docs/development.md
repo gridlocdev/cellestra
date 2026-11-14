@@ -41,10 +41,12 @@ just cli --help                         # every command and option
 just cli convert Budget.ods Budget.csv  # convert between .ods and CSV, both directions
 just cli cat Budget.ods                 # print a sheet or range
 just cli eval "=SUM(1,2,3)"             # evaluate a formula with no file
-just cli validate Budget.ods            # exit non-zero on formula, #REF! or circular errors
+just cli validate Budget.ods            # exit 1 on formula, #REF! or circular errors
 just cli diff Old.ods New.ods           # compare two workbooks; exit 1 if they differ
 just cli functions                      # list the supported functions
 ```
+
+Exit codes: `0` success, `1` a problem was found (validate, diff, find, `lint --strict`) or the input was bad (a missing file, a bad address), `2` a usage error (an unknown command or option, a missing argument). `just cli man` lists them all.
 
 ## The NAS server
 

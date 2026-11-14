@@ -33,7 +33,8 @@ repository and were asked to.
 **Always pass `--json`.** Every reply becomes one JSON document with the same cell shape, and a
 write's report includes **every error cell now in the workbook** — you learn about a `#NAME?` in
 the same reply that wrote it, not on a later inspection. A user error under `--json` is
-`{"ok": false, "error": "…"}` on stdout with exit 1, so there is nothing to parse on stderr.
+`{"ok": false, "error": "…"}` on stdout with exit 1 (exit 2 when the command line itself is wrong:
+an unknown option or command, a missing argument), so there is nothing to parse on stderr.
 
 ```bash
 cellestra new book.ods --sheets "Budget,Notes" --json           # refuses to overwrite an existing file

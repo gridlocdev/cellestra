@@ -1,5 +1,5 @@
 import { buildRoot } from './index.ts';
-import { isExpectedError } from './infra/errors.ts';
+import { EXIT_OK, EXIT_PROBLEM, EXIT_USAGE, isExpectedError, UsageError } from './infra/errors.ts';
 import { Console, type CliIo } from './infra/io.ts';
 import { toJson } from './infra/json.ts';
 import { ParseError, parseArgs, renderHelp } from './spec.ts';
@@ -27,7 +27,7 @@ function runOnce(argv: readonly string[], io: CliIo, version: string): number {
         path.push(child.name);
       }
       con.out(renderHelp(command, path, command === root ? version : null));
-      return 1;
+      return EXIT_USAGE;
     }
     throw e;
   }
@@ -37,17 +37,17 @@ function runOnce(argv: readonly string[], io: CliIo, version: string): number {
         con.out(
           renderHelp(invocation.command, invocation.path, invocation.command === root ? version : null),
         );
-        return 0;
+        return EXIT_OK;
       case 'version':
         con.outLine(version);
-        return 0;
+        return EXIT_OK;
       case 'run':
         return invocation.parsed.command.run!(invocation.parsed, con, root);
     }
   } catch (e) {
     if (isExpectedError(e)) {
       con.errLine(`${TOOL}: ${e.message}`);
-      return 1;
+      return e instanceof UsageError ? EXIT_USAGE : EXIT_PROBLEM;
     }
     throw e;
   }

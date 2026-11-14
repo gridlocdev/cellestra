@@ -606,9 +606,17 @@ describe('--json reports', () => {
     expect(doc.error).toContain('Nope');
   });
 
+  it('exits 2 for a usage error, so 1 only means a problem was found or the input was bad', () => {
+    expect(run('get', 'book.ods', 'A1', '--no-such-option').exit).toBe(2);
+    expect(run('set').exit).toBe(2);
+    expect(run('frobnicate', 'x').exit).toBe(2);
+    expect(run('width', 'book.ods', 'A', 'wide').exit).toBe(2);
+    expect(run('get', path2('missing.ods'), 'A1').exit).toBe(1);
+  });
+
   it('a parse error under --json is a json document too', () => {
     const r = run('set', 'book.ods', '--json');
-    expect(r.exit).toBe(1);
+    expect(r.exit).toBe(2);
     const doc = json(r.out);
     expect(doc.ok).toBe(false);
     expect(doc.error.length).toBeGreaterThan(0);
@@ -1102,7 +1110,7 @@ describe('chart sheets', () => {
     expect(doc.title).toBe('Trend');
     expect(doc.categories).toBe('Sheet1.A2:A3');
 
-    expect(run('charts', 'update', ods, 'Chart1', '--legend', 'maybe', '--in-place').exit).toBe(1);
+    expect(run('charts', 'update', ods, 'Chart1', '--legend', 'maybe', '--in-place').exit).toBe(2);
     expect(run('charts', 'show', ods, 'Sheet1').exit).toBe(1);
     expect(run('charts', 'remove', ods, 'Chart1', '--in-place').exit).toBe(0);
     expect(run('charts', 'list', ods, '--json').out.trim()).toBe('[]');
@@ -1227,7 +1235,7 @@ describe('cellestra <file> — the launcher', () => {
 
   it('an argument that is not a workbook names both readings', () => {
     const r = run('recal');
-    expect(r.exit).toBe(1);
+    expect(r.exit).toBe(2);
     expect(r.err).toContain("isn't a workbook Cellestra opens");
     expect(r.err).toContain('cellestra --help');
   });

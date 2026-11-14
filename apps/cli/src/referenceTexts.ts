@@ -130,7 +130,7 @@ Contract
   man --json carries "contract": 1 — the version of these shapes and of the apply document. Additive keys never bump it.
 
 Errors
-  any verb  → {"ok": false, "error": "…"} on stdout (exit 1), plus the usual one-line stderr message.`;
+  any verb  → {"ok": false, "error": "…"} on stdout (exit 1, or 2 for a usage error), plus the usual one-line stderr message.`;
 
 /** The conventions block at the top of `cellestra man`. */
 export const CONVENTIONS = `## Conventions (read these first)

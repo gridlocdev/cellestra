@@ -27,7 +27,7 @@ import {
   type OdsPackage,
   type RecalculationResult,
 } from '@cellestra/core';
-import { CliError } from './errors.ts';
+import { CliError, UsageError } from './errors.ts';
 import type { Console } from './io.ts';
 
 export type WorkbookFormat = 'ods' | 'csv';
@@ -47,7 +47,7 @@ export function isWorkbook(path: string): boolean {
 /** `cellestra <file>`: open an .ods in the app; anything else is probably a mistyped verb. */
 export function launch(con: Console, path: string): number {
   if (!isWorkbook(path)) {
-    throw new CliError(
+    throw new UsageError(
       `'${path}' isn't a workbook Cellestra opens (${SPREADSHEET_EXTENSION}). ` +
         'If you meant a command, `cellestra --help` lists them.',
     );

@@ -15,7 +15,8 @@ import { jsonOpt } from './options.ts';
 
 const EXIT_CODES: Record<string, string> = {
   '0': 'Success. For validate: no errors. For diff: identical. For find: at least one match.',
-  '1': 'A user-caused problem (bad address, missing file, unknown sheet, refused overwrite, invalid JSON) — one `cellestra: …` line on stderr, and under --json a {"ok": false, "error"} document on stdout. Also: validate found errors; diff found differences; find found nothing; eval hit an error value.',
+  '1': 'A problem was found: validate found errors; diff found differences; find found nothing; lint --strict found something; eval hit an error value. Also bad input (bad address, missing file, unknown sheet, refused overwrite, invalid JSON) — one `cellestra: …` line on stderr, and under --json a {"ok": false, "error"} document on stdout.',
+  '2': 'A usage error: an unknown command or option, a missing argument, or an option value that does not parse. Same stderr line and --json document as 1, and the help goes to stdout.',
   'other / stack trace': 'A bug in Cellestra, not in your input.',
 };
 

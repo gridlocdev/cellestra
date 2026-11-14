@@ -1,4 +1,4 @@
-import { CliError } from './infra/errors.ts';
+import { UsageError } from './infra/errors.ts';
 import type { Console } from './infra/io.ts';
 
 /**
@@ -50,8 +50,8 @@ export interface CommandSpec {
   readonly run?: RunCommand;
 }
 
-/** A parse problem (unknown option, missing argument): the user's to fix, like `CliError`. */
-export class ParseError extends CliError {
+/** A parse problem (unknown option, missing argument): a usage error, exit code 2. */
+export class ParseError extends UsageError {
   constructor(message: string) {
     super(message);
     this.name = 'ParseError';
@@ -146,7 +146,7 @@ export class Parsed {
     const value = (values[values.length - 1] ?? '').toLowerCase();
     if (value === '' || value === 'true' || value === 'on' || value === 'yes') return true;
     if (value === 'false' || value === 'off' || value === 'no') return false;
-    throw new CliError(`'${values[values.length - 1]}' must be true or false.`);
+    throw new ParseError(`'${values[values.length - 1]}' must be true or false.`);
   }
 
   #optionSpec(name: string): OptionSpec | undefined {
