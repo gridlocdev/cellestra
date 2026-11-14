@@ -376,7 +376,7 @@ export class AppController {
         if (NAS_BUILD) this.nasAvailable.value = (await this.nas.info()) !== null;
         if (this.nasAvailable.peek()) this.#pollNasDocument();
         addEventListener('beforeunload', (e) => {
-          if (this.session.modified.peek()) e.preventDefault();
+          if (this.hasUnsavedWork) e.preventDefault();
         });
       }
       void this.refreshRecents();
@@ -979,8 +979,22 @@ export class AppController {
     });
   }
 
+  /**
+   * Commit the cell edit that is open, if any, so what was typed counts as a change before the
+   * document is saved, replaced or closed. False when the value was refused (the editor stays open).
+   */
+  commitOpenEdit(): boolean {
+    return this.grid.current?.commitEdit() ?? true;
+  }
+
+  /** Changes that closing the tab would lose: unsaved edits, or a cell edit not committed yet. */
+  get hasUnsavedWork(): boolean {
+    return this.session.modified.peek() || (this.grid.current?.isEditing() ?? false);
+  }
+
   /** True when it is safe to replace the document (saved, discarded, or clean). */
   async confirmDiscard(): Promise<boolean> {
+    if (!this.commitOpenEdit()) return false;
     if (!this.session.modified.peek()) return true;
     const choice = await this.ask<'save' | 'discard' | 'cancel'>('cancel', (resolve) => ({
       kind: 'confirm-discard',

@@ -1,6 +1,13 @@
 import { CellRange, CellValue, EditCommands, OdsWriter, SheetDimensions, Workbook } from '@cellestra/core';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { ConflictError, MAX_ROW, type DocumentRef, type FileStore, type OpenedDocument } from '@cellestra/ui';
+import {
+  ConflictError,
+  MAX_ROW,
+  type DocumentRef,
+  type FileStore,
+  type GridController,
+  type OpenedDocument,
+} from '@cellestra/ui';
 import type { AppController as Controller, DialogState as DialogShown } from '../src/app/controller.ts';
 
 // The controller expects a browser; give it just enough of one (no IndexedDB: recovery is a no-op).
@@ -958,6 +965,54 @@ describe('closing the document', () => {
     expect(native.confirmClose).toHaveBeenCalledOnce();
     // The window goes; the document in it is not swapped for a blank one first.
     expect(app.session.document.peek()?.name).toBe('a.ods');
+  });
+});
+
+describe('an open cell edit', () => {
+  /** A grid with an edit open: committing it changes the document, unless the value is refused. */
+  function editing(app: Controller, accept = true) {
+    let open = true;
+    const grid = {
+      isEditing: () => open,
+      commitEdit: vi.fn(() => {
+        if (!accept) return false;
+        if (open) app.session.touch();
+        open = false;
+        return true;
+      }),
+    };
+    app.grid.current = grid as unknown as GridController;
+    return grid;
+  }
+
+  it('commits before asking about unsaved changes, so the typed value is asked about', async () => {
+    const app = await makeApp();
+    app.session.load(OdsWriter.write(Workbook.createNew(), null), ref('a.ods'));
+    const grid = editing(app);
+    const asking = app.confirmDiscard();
+    expect(grid.commitEdit).toHaveBeenCalledOnce();
+    expect(app.dialog.peek()?.kind).toBe('confirm-discard');
+    (app.dialog.peek() as Extract<DialogShown, { kind: 'confirm-discard' }>).resolve('cancel');
+    expect(await asking).toBe(false);
+  });
+
+  it('keeps the document and the window when the typed value is refused', async () => {
+    const app = await makeApp();
+    const native = { confirmClose: vi.fn(), cancelClose: vi.fn() };
+    (app as unknown as { native: typeof native }).native = native;
+    app.session.load(OdsWriter.write(Workbook.createNew(), null), ref('a.ods'));
+    editing(app, false);
+    await app.requestClose();
+    expect(app.dialog.peek()).toBeNull();
+    expect(native.cancelClose).toHaveBeenCalledOnce();
+    expect(native.confirmClose).not.toHaveBeenCalled();
+  });
+
+  it('counts as unsaved work when the tab closes', async () => {
+    const app = await makeApp();
+    expect(app.hasUnsavedWork).toBe(false);
+    editing(app);
+    expect(app.hasUnsavedWork).toBe(true);
   });
 });
 

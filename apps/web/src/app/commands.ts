@@ -1192,7 +1192,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
   // edit, so the value lands in the cell it was typed into, on the sheet it was typed on.
   // While a question waits for an answer (save changes?, overwrite?), menu commands stay out of
   // it: running Save or New underneath would leave it unanswered.
-  catalog.beforeRun = () => !app.asking && (app.grid.current?.commitEdit() ?? true);
+  catalog.beforeRun = () => !app.asking && app.commitOpenEdit();
   return catalog;
 }
 
