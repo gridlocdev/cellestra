@@ -23,6 +23,7 @@ import {
   pdfExportTarget,
   saveAsMismatch,
   spreadsheetArgs,
+  syncDir,
   watchFile,
   withFileLock,
   writeAtomic,
@@ -104,6 +105,11 @@ describe('writeAtomic', () => {
       withFileLock(path.join(dir, '.', 'locked.ods'), job('b', 1)),
     ]);
     expect(order).toEqual(['a+', 'a-', 'b+', 'b-']);
+  });
+
+  it('fsyncs a folder, so a rename into it survives a power cut', async () => {
+    await expect(syncDir(dir)).resolves.toBeUndefined();
+    await expect(syncDir(path.join(dir, 'no-such-folder'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('creates new files', async () => {

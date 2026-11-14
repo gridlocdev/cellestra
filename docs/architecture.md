@@ -59,7 +59,7 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
 - **Roots.** `CELLESTRA_ROOTS=Name=/dir;...` names the folders the server exposes.
 - **Paths.** Every path is jailed to its root. This includes escapes through `..`, absolute paths, NUL bytes and symlinks.
 - **Writes.**
-  - Each save is atomic: temp file, then fsync, then rename.
+  - Each save is atomic: temp file, then fsync, then rename, then fsync the folder so the rename is on disk too (skipped where the platform can't fsync a folder). The desktop app saves the same way.
   - `If-Match` gives optimistic concurrency (412 if the file changed). `If-None-Match: *` stops a new file from overwriting an existing one.
   - The server sends strong ETags (a hash of the bytes). `If-Match` and `If-None-Match` accept a list of tags and ignore a `W/` prefix, so a tag a proxy weakened still matches.
   - A LibreOffice `.~lock` file next to the target blocks the save (423).

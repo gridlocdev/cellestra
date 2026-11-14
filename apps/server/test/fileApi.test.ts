@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FileApi, parseRoots } from '../src/fileApi.ts';
+import { FileApi, parseRoots, syncDir } from '../src/fileApi.ts';
 import { bindAuthProblem, createServer, defaultStaticDir, hostAllowed, parseHosts } from '../src/server.ts';
 
 let dir: string;
@@ -203,6 +203,11 @@ describe('read and write rules', () => {
     )!;
     expect((await put('weak.ods', 'three', { 'If-Match': `"stale", ${next}` })).status).toBe(200);
     expect((await put('weak.ods', 'four', { 'If-Match': `W/${next}` })).status).toBe(412);
+  });
+
+  it('fsyncs a folder, so a rename into it survives a power cut', async () => {
+    await expect(syncDir(dir)).resolves.toBeUndefined();
+    await expect(syncDir(path.join(dir, 'no-such-folder'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('answers If-Match on a missing file with 412', async () => {

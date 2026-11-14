@@ -177,7 +177,7 @@ export class FileApi {
   }
 
   /**
-   * Atomic save: write a temp file beside the target, fsync, rename over it. `ifMatch` is the etag
+   * Atomic save: write a temp file beside the target, fsync, rename over it, fsync the folder. `ifMatch` is the etag
    * the client opened (conflict → 412); `'*'`-less create with `ifNoneMatch` refuses to overwrite.
    * A LibreOffice `.~lock.<name>#` file means someone has it open there (PRD §10.2) → 423.
    * Writes to one path run one at a time, so two saves from the same etag cannot both win. The
@@ -264,7 +264,30 @@ export class FileApi {
       await unlink(tmp).catch(() => {});
       throw fsError(e);
     }
+    await syncDir(dir).catch((e: unknown) => {
+      throw fsError(e);
+    });
     return { etag: etagOf(bytes) };
+  }
+}
+
+/** Errors from fsyncing a folder on platforms or file systems that don't allow it (Windows, some SMB). */
+const DIR_SYNC_UNSUPPORTED = new Set(['EISDIR', 'EPERM', 'EINVAL', 'ENOTSUP', 'EBADF']);
+
+/**
+ * fsync a folder, so a rename into it (an atomic save) is on disk, not just the file's bytes. Where
+ * the platform can't fsync a folder, this does nothing.
+ */
+export async function syncDir(dir: string): Promise<void> {
+  let handle;
+  try {
+    handle = await open(dir, 'r');
+    await handle.sync();
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException | null)?.code;
+    if (code === undefined || !DIR_SYNC_UNSUPPORTED.has(code)) throw e;
+  } finally {
+    await handle?.close();
   }
 }
 

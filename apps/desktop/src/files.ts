@@ -85,7 +85,7 @@ export function spreadsheetArgs(argv: readonly string[], cwd: string): string[] 
 }
 
 /**
- * Atomic save: a temp file beside the target, fsync, rename. A symlink is followed, so the link
+ * Atomic save: a temp file beside the target, fsync, rename, fsync the folder. A symlink is followed, so the link
  * stays and its target is replaced. The replacement keeps the target's mode (and owner, where
  * permitted). A hard-linked target is written in place instead, since a rename would split the link.
  * A file we may not write (read-only, mode 0444) is refused, not replaced, even though the folder
@@ -129,6 +129,27 @@ export async function writeAtomic(p: string, bytes: Uint8Array): Promise<void> {
   } catch (e) {
     if (created) await unlink(tmp).catch(() => {});
     throw e;
+  }
+  await syncDir(path.dirname(real));
+}
+
+/** Errors from fsyncing a folder on platforms or file systems that don't allow it (Windows, some SMB). */
+const DIR_SYNC_UNSUPPORTED = new Set(['EISDIR', 'EPERM', 'EINVAL', 'ENOTSUP', 'EBADF']);
+
+/**
+ * fsync a folder, so a rename into it (an atomic save) is on disk, not just the file's bytes. Where
+ * the platform can't fsync a folder, this does nothing.
+ */
+export async function syncDir(dir: string): Promise<void> {
+  let handle;
+  try {
+    handle = await open(dir, 'r');
+    await handle.sync();
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException | null)?.code;
+    if (code === undefined || !DIR_SYNC_UNSUPPORTED.has(code)) throw e;
+  } finally {
+    await handle?.close();
   }
 }
 
