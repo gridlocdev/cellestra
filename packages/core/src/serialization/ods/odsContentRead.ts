@@ -350,6 +350,7 @@ class ContentReader implements XmlEventHandler {
     assembleValidations(this.workbook, readContentValidationRules(container), this.validationCells);
     applyCheckboxes(this.workbook, this.checkboxes);
     OdsPreserved.setWorkbook(this.workbook, {
+      spreadsheetAttributes: this.spreadsheet.attributes.map((a) => ({ name: a.name, value: a.value })),
       namedExpressions: this.namedExpressions,
       automaticStyles: this.styles.preservedAutomaticStyles,
       fontFaces: root.element(Office('font-face-decls'))?.clone() ?? null,

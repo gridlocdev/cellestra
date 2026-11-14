@@ -3,6 +3,7 @@ import { OdsPackage, OdsXmlNames, readOdsWithPackage, writeOds } from '../../src
 import { Office, Table, Text } from '../../src/serialization/ods/odsXmlNames.ts';
 import { CellValue } from '../../src/values/cellValue.ts';
 import { serializeXml, XmlDocument, XmlElement } from '../../src/xml/index.ts';
+import { readEntry } from './helpers.ts';
 
 const EXTRA_PART_BYTES = new Uint8Array([1, 2, 3, 4, 5]);
 
@@ -77,5 +78,30 @@ describe('UnknownContentPreservation', () => {
 
     const second = readOdsWithPackage(writeOds(first.workbook, first.package));
     expect(second.package.foreignSpreadsheetChildren).toEqual([{ beforeTables: true, xml: foreign }]);
+  });
+});
+
+describe('Workbook structure protection', () => {
+  it("keeps office:spreadsheet's attributes (structure protection and its key) through a save", () => {
+    const content = `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0"><office:body><office:spreadsheet table:structure-protected="true" table:protection-key="c2VjcmV0" table:protection-key-digest-algorithm="http://www.w3.org/2000/09/xmldsig#sha256" loext:protection-key-digest-algorithm-2="x"><table:table table:name="Sheet1"><table:table-row><table:table-cell/></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>`;
+    const pkg = new OdsPackage();
+    pkg.setText(OdsXmlNames.mimetypePart, OdsXmlNames.mimeType);
+    pkg.setText(OdsXmlNames.contentPart, content);
+
+    const first = readOdsWithPackage(pkg.write());
+    const saved = writeOds(first.workbook, first.package);
+    const again = writeOds(readOdsWithPackage(saved).workbook, readOdsWithPackage(saved).package);
+
+    for (const bytes of [saved, again]) {
+      const xml = readEntry(bytes, OdsXmlNames.contentPart);
+      const open = /<office:spreadsheet[^>]*>/.exec(xml)?.[0] ?? '';
+      expect(open).toContain('table:structure-protected="true"');
+      expect(open).toContain('table:protection-key="c2VjcmV0"');
+      expect(open).toContain(
+        'table:protection-key-digest-algorithm="http://www.w3.org/2000/09/xmldsig#sha256"',
+      );
+      expect(open).toMatch(/:protection-key-digest-algorithm-2="x"/);
+    }
   });
 });

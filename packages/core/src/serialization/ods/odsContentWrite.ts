@@ -72,6 +72,8 @@ export function writeContentXml(
   const registry = new StyleRegistry(workbook.styles, autoStyles, reserved, reservedStyleNames, commonStyles);
 
   const spreadsheet = new XmlElement(Office('spreadsheet'));
+  // Structure protection and its key live here; the model has no field for them.
+  for (const a of preserved?.spreadsheetAttributes ?? []) spreadsheet.setAttr(a.name, a.value);
 
   for (const child of foreign) if (child.beforeTables) spreadsheet.add(parseXmlElement(child.xml));
 

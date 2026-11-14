@@ -28,6 +28,11 @@ export interface PreservedTable {
 
 /** Workbook-level content: global named expressions and the automatic styles preserved content uses. */
 export interface PreservedWorkbook {
+  /**
+   * `office:spreadsheet`'s attributes: structure protection and its key, calculation flags. None of
+   * them is modeled, so they are written back as read.
+   */
+  readonly spreadsheetAttributes?: readonly XmlAttribute[];
   readonly namedExpressions: readonly XmlElement[];
   readonly automaticStyles: readonly XmlElement[];
   /** content.xml's `office:font-face-decls`, which the automatic styles written back may name. */
