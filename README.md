@@ -10,13 +10,13 @@ A spreadsheet editor for OpenDocument spreadsheets (`.ods`). You can use it in y
 
 ## Getting started
 
-There are no prebuilt downloads yet. Run the desktop app from source with Node 22.18 or later and [just](https://github.com/casey/just):
+Download the desktop app for macOS, Windows or Linux from the [Releases page](https://github.com/gridlocdev/cellestra/releases/latest), use it in your browser at [gridloc.dev](https://gridloc.dev/apps/cellestra/), or run it on your NAS with Docker:
 
 ```bash
-just setup && just run-desktop
+docker build -t cellestra . && docker run -d -p 8787:8787 -v /volume1/Documents:/data cellestra
 ```
 
-See [Getting started](docs/getting-started.md) for running it in the browser, on a NAS with Docker, and installing the desktop app.
+See [Getting started](docs/getting-started.md) for which file to pick, the first-launch warnings, and running it from source.
 
 ## Learn more
 

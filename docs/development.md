@@ -93,7 +93,7 @@ Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`. It packages the des
    git push origin main vX.Y.Z
    ```
 
-The apps aren't notarized or code-signed, so people see a warning the first time they open them.
+The apps aren't notarized or code-signed, so [Getting started](getting-started.md#download) tells people how to open them the first time.
 
 ## Cleaning up
 

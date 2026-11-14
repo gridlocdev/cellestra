@@ -1,8 +1,32 @@
 # Getting started
 
-You can run Cellestra in your browser, on a NAS with Docker, or as a desktop app. There are no prebuilt downloads yet, so each one starts from this repository.
+You can download the desktop app, use Cellestra in your browser at [gridloc.dev/apps/cellestra](https://gridloc.dev/apps/cellestra/), run it on a NAS with Docker, or run any of them from this repository.
 
-## What you need
+## Download
+
+Get the desktop app from the [Releases page](https://github.com/gridlocdev/cellestra/releases/latest):
+
+| System                | File                        |
+| --------------------- | --------------------------- |
+| macOS (Apple silicon) | `Cellestra-…-mac-arm64.dmg` |
+| macOS (Intel)         | `Cellestra-…-mac-x64.dmg`   |
+| Windows               | `Cellestra-…-win-x64.exe`   |
+| Linux                 | `Cellestra-….AppImage`      |
+
+The apps aren't signed by Apple or Microsoft yet, so the first launch needs one extra step:
+
+- **macOS** says Cellestra "can't be opened" or "is damaged". Open **System Settings > Privacy & Security**, scroll down, and click **Open Anyway** next to Cellestra. Or run this once after moving the app to Applications:
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/Cellestra.app
+  ```
+
+- **Windows** shows "Windows protected your PC". Click **More info**, then **Run anyway**.
+- **Linux**: make the AppImage executable (`chmod +x Cellestra-*.AppImage`), then run it.
+
+Cellestra doesn't check for updates yet. Watch the Releases page for new versions.
+
+## What you need to run it from source
 
 - For the browser and the desktop app: Node 22.18 or later, pnpm (through `corepack enable`) and [just](https://github.com/casey/just).
 - For the NAS: Docker.
