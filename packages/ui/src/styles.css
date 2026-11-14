@@ -682,3 +682,48 @@ button {
   margin: 4px 6px;
   background: var(--cs-border);
 }
+
+/* Find and Replace: the list of matches */
+.cs-find-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+}
+.cs-find-results li.cs-muted {
+  padding: 4px 8px;
+  color: var(--cs-text-2);
+  font-size: 12px;
+}
+.cs-find-results button {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  background: none;
+  color: var(--cs-text);
+  font: 12px var(--cs-font);
+  text-align: left;
+  cursor: pointer;
+}
+.cs-find-results button:hover {
+  background: var(--cs-hover);
+}
+.cs-find-results button[aria-current='true'] {
+  background: var(--cs-accent);
+  color: var(--cs-accent-text);
+}
+.cs-find-address {
+  flex: none;
+  min-width: 48px;
+  font-family: var(--cs-mono);
+}
+.cs-find-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

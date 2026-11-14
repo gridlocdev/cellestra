@@ -28,6 +28,7 @@ import {
   SheetDimensions,
   StructuralEditCommand,
   parseCsv,
+  type Cell,
   type CellStyle,
   type DataValidation,
   type EditCommand,
@@ -78,6 +79,7 @@ import {
 } from '@cellestra/ui';
 
 import type { ChartDefinition } from '@cellestra/charts';
+import { findMatches, nextMatch, replaceIn, replaceableText, type FindMatch } from './find.ts';
 
 /**
  * Built to be served by the NAS server (`VITE_CELLESTRA_NAS=1`). Other builds (desktop, a plain
@@ -2161,58 +2163,80 @@ export class AppController {
 
   // ── Find & go to ─────────────────────────────────────────────────────────
 
+  /** Every cell on the active sheet whose shown text or formula contains the query, row-major. */
+  findAll(query: string): FindMatch[] {
+    const wb = this.session.workbook.peek();
+    const sheet = this.sheet;
+    return findMatches(sheet, query, (r, c, cell) =>
+      this.session.display(cell.value, wb.styles.get(sheet.effectiveStyleId(r, c))),
+    );
+  }
+
+  /** Select a cell Find matched and scroll it into view. */
+  goToMatch(match: { readonly row: number; readonly column: number }): void {
+    this.selection.select(match.row, match.column);
+    this.grid.current?.revealActive();
+  }
+
   /** Next cell (row-major, wrapping) whose shown text or formula contains the query. */
   findNext(query: string, backwards = false): boolean {
-    if (!query) return false;
-    const q = query.toLowerCase();
-    const sheet = this.sheet;
-    const wb = this.session.workbook.peek();
-    // Walk the stored cells (row-major) rather than every position of the used range: one stray
-    // cell at XFD1048576 would make that 17 billion lookups.
-    const matches: [number, number][] = [];
-    for (const [r, c, cell] of sheet.enumerateCells()) {
-      if (cell.value.kind === 'empty' && cell.formula === null) continue;
-      const shown = this.session.display(cell.value, wb.styles.get(sheet.effectiveStyleId(r, c)));
-      if (shown.toLowerCase().includes(q) || (cell.formula ?? '').toLowerCase().includes(q))
-        matches.push([r, c]);
-    }
-    if (matches.length === 0) return false;
-    matches.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-    const { row, column } = this.selection.active.peek();
-    const after = (m: [number, number]) => m[0] > row || (m[0] === row && m[1] > column);
-    const before = (m: [number, number]) => m[0] < row || (m[0] === row && m[1] < column);
-    const hit = backwards
-      ? ([...matches].reverse().find(before) ?? matches[matches.length - 1]!)
-      : (matches.find(after) ?? matches[0]!);
-    this.selection.select(hit[0], hit[1]);
-    this.grid.current?.revealActive();
+    const hit = nextMatch(this.findAll(query), this.selection.active.peek(), backwards);
+    if (!hit) return false;
+    this.goToMatch(hit);
     return true;
+  }
+
+  /** The edit that writes `next` (a cell's replaced text or formula) back into it. */
+  #replaceWrite(row: number, column: number, cell: Cell, next: string) {
+    const s = this.session;
+    if (cell.formula === null) {
+      // Text stays text, as in Calc: '007 doesn't turn into 7, nor 1/2 into a date.
+      const value = next === '' ? CellValue.empty : CellValue.text(next);
+      return {
+        write: { row, column, value, isFormula: false },
+        command: EditCommands.setValue(this.sheetName, row, column, value),
+      };
+    }
+    const parsed = InputParser.parse(next, s.locale);
+    return {
+      write: { row, column, value: parsed.value, isFormula: parsed.formula !== null },
+      command: EditCommands.setInput(this.sheetName, row, column, next, s.locale, s.workbook.peek()),
+    };
+  }
+
+  /**
+   * Replace: when the active cell holds the query, replace it there (one undo step), then go to
+   * the next match. When it doesn't, only go to the next match, so the first press shows what the
+   * second will change. `replaced` says whether a cell changed, `found` whether any match is left.
+   */
+  replaceNext(query: string, replacement: string): { replaced: boolean; found: boolean } {
+    if (!query) return { replaced: false, found: false };
+    const { row, column } = this.selection.active.peek();
+    const cell = this.sheet.find(row, column);
+    const text = replaceableText(cell);
+    const next = text === null ? null : replaceIn(text, query, replacement);
+    let replaced = false;
+    if (cell && next !== null) {
+      const { write, command } = this.#replaceWrite(row, column, cell, next);
+      if (!this.#preflight([write])) return { replaced: false, found: true };
+      this.run(each('Replace', [command]));
+      replaced = true;
+    }
+    return { replaced, found: this.findNext(query) };
   }
 
   replaceAll(query: string, replacement: string): number {
     if (!query) return 0;
-    const sheet = this.sheet;
-    const s = this.session;
     const cmds: EditCommand[] = [];
     const writes: { row: number; column: number; value: CellValue; isFormula: boolean }[] = [];
-    const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
     // Snapshot the stored cells first: the commands run later, but the walk must not see its own writes.
-    for (const [r, c, cell] of [...sheet.enumerateCells()]) {
-      const text =
-        cell.formula !== null ? '=' + cell.formula : cell.value.kind === 'text' ? cell.value.value : null;
-      if (text === null || !pattern.test(text)) continue;
-      pattern.lastIndex = 0;
-      const next = text.replace(pattern, () => replacement);
-      if (cell.formula === null) {
-        // Text stays text, as in Calc: '007 doesn't turn into 7, nor 1/2 into a date.
-        const value = next === '' ? CellValue.empty : CellValue.text(next);
-        writes.push({ row: r, column: c, value, isFormula: false });
-        cmds.push(EditCommands.setValue(this.sheetName, r, c, value));
-        continue;
-      }
-      const parsed = InputParser.parse(next, s.locale);
-      writes.push({ row: r, column: c, value: parsed.value, isFormula: parsed.formula !== null });
-      cmds.push(EditCommands.setInput(this.sheetName, r, c, next, s.locale, s.workbook.peek()));
+    for (const [r, c, cell] of [...this.sheet.enumerateCells()]) {
+      const text = replaceableText(cell);
+      const next = text === null ? null : replaceIn(text, query, replacement);
+      if (next === null) continue;
+      const { write, command } = this.#replaceWrite(r, c, cell, next);
+      writes.push(write);
+      cmds.push(command);
     }
     if (!this.#preflight(writes)) return 0;
     this.run(each('Replace All', cmds));

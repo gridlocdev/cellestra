@@ -30,6 +30,10 @@ Number formats (general, number, currency, percent, date, time, scientific and t
 
 **Clean Up Sheet** and **Clean Up Workbook** read what the sheet holds and format it to match: a styled, frozen header row, a number format per column, alignment by type, columns fitted to their contents, and trimmed whitespace and numbers stored as text. It is one undo step.
 
+## Find and Replace
+
+**Find…** (`⌘F`) and **Find and Replace…** (`⌘H`) search the sheet's shown values and formulas, ignoring case. The dialog lists every match with its cell address and text; click one to go there. **Find Next** and **Previous** step through the matches, **Replace** replaces the match at the active cell and moves on to the next, and **Replace All** replaces every match in one undo step. Text stays text when it is replaced, so `007` doesn't turn into `7`.
+
 ## Data tools
 
 - **Sort Ascending**, **Sort Descending** and **Custom Sort…** sort a range by one or more columns, and **Sort & Filter…** chains sorts and filters in one dialog.

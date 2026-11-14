@@ -491,6 +491,60 @@ describe('createTable', () => {
   });
 });
 
+describe('find and replace one at a time', () => {
+  async function appWith(cells: [number, number, string][]) {
+    const app = await makeApp();
+    const sheet = app.session.activeSheet.peek();
+    for (const [r, c, t] of cells) sheet.setValue(r, c, CellValue.text(t));
+    return { app, sheet };
+  }
+
+  it('lists every match with its address and what it shows, in row-major order', async () => {
+    const { app, sheet } = await appWith([
+      [3, 0, 'apple pie'],
+      [0, 2, 'Apple'],
+      [1, 1, 'pear'],
+    ]);
+    sheet.setFormula(5, 1, 'LEN("apple")', CellValue.number(5));
+    expect(app.findAll('apple').map((m) => [m.address, m.text])).toEqual([
+      ['C1', 'Apple'],
+      ['A4', 'apple pie'],
+      ['B6', '=LEN("apple")'],
+    ]);
+    expect(app.findAll('')).toEqual([]);
+  });
+
+  it('first goes to a match, then replaces it and moves on', async () => {
+    const { app, sheet } = await appWith([
+      [0, 1, 'cat'],
+      [2, 0, 'a cat and a cat'],
+      [4, 4, 'dog'],
+    ]);
+    // A1 holds no match: the first press only finds B1.
+    expect(app.replaceNext('cat', 'dog')).toEqual({ replaced: false, found: true });
+    expect(app.selection.active.peek()).toEqual({ row: 0, column: 1 });
+    expect(app.replaceNext('cat', 'dog')).toEqual({ replaced: true, found: true });
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.text('dog'));
+    expect(app.selection.active.peek()).toEqual({ row: 2, column: 0 });
+    expect(app.replaceNext('cat', 'dog')).toEqual({ replaced: true, found: false });
+    expect(sheet.getValue(2, 0)).toEqual(CellValue.text('a dog and a dog'));
+    app.session.undo();
+    expect(sheet.getValue(2, 0)).toEqual(CellValue.text('a cat and a cat'));
+  });
+
+  it('wraps around to the first match after the last', async () => {
+    const { app } = await appWith([
+      [1, 0, 'x'],
+      [5, 0, 'x'],
+    ]);
+    app.selection.select(5, 0);
+    expect(app.findNext('x')).toBe(true);
+    expect(app.selection.active.peek()).toEqual({ row: 1, column: 0 });
+    expect(app.findNext('x', true)).toBe(true);
+    expect(app.selection.active.peek()).toEqual({ row: 5, column: 0 });
+  });
+});
+
 describe('replace all', () => {
   it('keeps text cells text, and formulas formulas', async () => {
     const app = await makeApp();

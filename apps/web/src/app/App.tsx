@@ -988,10 +988,18 @@ function PromptDialog(props: {
   );
 }
 
+/** How many matches the Find dialog lists; the count still says how many there are. */
+const FIND_LIST_LIMIT = 200;
+
 function FindDialog({ app }: { readonly app: AppController }) {
   const [query, setQuery] = useState(app.findQuery.peek());
   const [replacement, setReplacement] = useState('');
   const [note, setNote] = useState('');
+  // The list follows edits (Replace changes it) and the sheet in view.
+  const version = app.session.version.value;
+  const sheet = app.session.activeSheet.value;
+  const active = app.selection.active.value;
+  const matches = useMemo(() => app.findAll(query), [app, query, version, sheet]);
   const close = () => {
     app.findQuery.value = query;
     app.dialog.value = null;
@@ -1001,6 +1009,12 @@ function FindDialog({ app }: { readonly app: AppController }) {
     app.findQuery.value = query;
     setNote(app.findNext(query, back) ? '' : 'No matches.');
   };
+  const replaceOne = () => {
+    app.findQuery.value = query;
+    const r = app.replaceNext(query, replacement);
+    setNote(r.found ? '' : r.replaced ? 'Replaced the last match.' : 'No matches.');
+  };
+  const count = matches.length === 1 ? '1 match' : `${matches.length} matches`;
   return (
     <Dialog
       title="Find and Replace"
@@ -1014,6 +1028,9 @@ function FindDialog({ app }: { readonly app: AppController }) {
             onClick={() => setNote(`Replaced ${app.replaceAll(query, replacement)} cell(s).`)}
           >
             Replace All
+          </button>
+          <button type="button" class="cs-btn" onClick={replaceOne}>
+            Replace
           </button>
           <button type="button" class="cs-btn" onClick={() => next(true)}>
             Previous
@@ -1033,9 +1050,31 @@ function FindDialog({ app }: { readonly app: AppController }) {
           Replace with
           <input value={replacement} onInput={(e) => setReplacement(e.currentTarget.value)} />
         </label>
-        <span class="cs-status" style={{ padding: 0 }}>
-          {note}
+        <span class="cs-status" style={{ padding: 0 }} aria-live="polite">
+          {note || (query ? count : '')}
         </span>
+        {matches.length > 0 && (
+          <ul class="cs-find-results" aria-label="Matches">
+            {matches.slice(0, FIND_LIST_LIMIT).map((m) => (
+              <li key={`${m.row}:${m.column}`}>
+                <button
+                  type="button"
+                  aria-current={m.row === active.row && m.column === active.column ? 'true' : undefined}
+                  onClick={() => {
+                    app.findQuery.value = query;
+                    app.goToMatch(m);
+                  }}
+                >
+                  <span class="cs-find-address">{m.address}</span>
+                  <span class="cs-find-text">{m.text}</span>
+                </button>
+              </li>
+            ))}
+            {matches.length > FIND_LIST_LIMIT && (
+              <li class="cs-muted">and {matches.length - FIND_LIST_LIMIT} more</li>
+            )}
+          </ul>
+        )}
       </div>
     </Dialog>
   );
