@@ -1,7 +1,11 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
+import { trapTab } from './focusTrap.ts';
 
-/** A modal dialog: Escape and the backdrop close it, focus moves in and is restored on close. */
+/**
+ * A modal dialog: Escape and the backdrop close it, Tab cycles inside it, focus moves in on open
+ * and goes back to the element that had it on close.
+ */
 export function Dialog(props: {
   readonly title?: string;
   readonly onClose: () => void;
@@ -15,7 +19,9 @@ export function Dialog(props: {
     const previous = document.activeElement as HTMLElement | null;
     const first = ref.current?.querySelector<HTMLElement>('[autofocus], input, select, button');
     first?.focus();
-    return () => previous?.focus();
+    return () => {
+      if (previous?.isConnected && previous !== document.body) previous.focus();
+    };
   }, []);
   return (
     <div
@@ -33,6 +39,8 @@ export function Dialog(props: {
               e.preventDefault();
               e.stopPropagation();
               props.onClose();
+            } else if (ref.current) {
+              trapTab(ref.current, e);
             }
           }}
           onSubmit={(e) => {

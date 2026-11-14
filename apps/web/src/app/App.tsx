@@ -37,6 +37,7 @@ import {
   ValidationListPopup,
 } from './DataDialogs.tsx';
 import { ChartPane } from './ChartPane.tsx';
+import { cellAnnouncement } from './announce.ts';
 import { Ribbon } from './Ribbon.tsx';
 import { GridContextMenu } from './ContextMenu.tsx';
 
@@ -295,10 +296,11 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       <Footer app={app} />
       <Overlays app={app} catalog={catalog} />
       {dragging.value && <div class="cs-drop">Drop a spreadsheet to open it</div>}
+      <Announcer app={app} />
       {app.toast.value && (
         <div
           class="cs-toast"
-          role="status"
+          aria-hidden="true"
           style={
             app.toast.value.tone === 'error' ? { background: 'var(--cs-danger)', color: '#fff' } : undefined
           }
@@ -390,6 +392,44 @@ function Toolbar({
   );
 }
 
+const cellLabel = (row: number, column: number) => SheetDimensions.columnToLetters(column) + (row + 1);
+
+/** `A1:C9` for a range of more than one cell, null for a single cell. */
+function rangeLabel(r: { top: number; left: number; bottom: number; right: number }): string | null {
+  if (r.top === r.bottom && r.left === r.right) return null;
+  return `${cellLabel(r.top, r.left)}:${cellLabel(r.bottom, r.right)}`;
+}
+
+/**
+ * Screen-reader live regions, visually hidden: one says the active cell's address and value each
+ * time it moves (or its value changes), one repeats toasts. They stay in the page so the reader
+ * notices their text changing; a region that appears with its text already in it is often missed.
+ */
+function Announcer({ app }: { readonly app: AppController }) {
+  const s = app.session;
+  const cell = useComputed(() => {
+    void s.version.value;
+    if (s.activeSheet.value.isChartSheet) return '';
+    const { row, column } = app.selection.active.value;
+    const range = rangeLabel(app.selection.range.value);
+    return cellAnnouncement(cellLabel(row, column), app.shownText(row, column), range);
+  });
+  const toast = app.toast.value;
+  return (
+    <>
+      <div class="cs-sr-only" aria-live="polite" aria-atomic="true">
+        {cell.value}
+      </div>
+      <div class="cs-sr-only" role="status" aria-atomic="true">
+        {toast?.tone === 'info' ? toast.text : ''}
+      </div>
+      <div class="cs-sr-only" role="alert" aria-atomic="true">
+        {toast?.tone === 'error' ? toast.text : ''}
+      </div>
+    </>
+  );
+}
+
 function FormulaBarConnected({
   app,
   draft,
@@ -400,10 +440,7 @@ function FormulaBarConnected({
   const s = app.session;
   const address = useComputed(() => {
     const st = app.selection.state.value;
-    const r = app.selection.range.value;
-    const a = SheetDimensions.columnToLetters(st.column) + (st.row + 1);
-    if (r.top === r.bottom && r.left === r.right) return a;
-    return `${SheetDimensions.columnToLetters(r.left)}${r.top + 1}:${SheetDimensions.columnToLetters(r.right)}${r.bottom + 1}`;
+    return rangeLabel(app.selection.range.value) ?? cellLabel(st.row, st.column);
   });
   // The cell typing in the bar belongs to: its document, sheet and position.
   const target = useComputed(() => {
@@ -664,6 +701,16 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
   const s = app.session;
   const d = app.dialog.value;
   const refocus = () => queueMicrotask(() => app.grid.current?.focus());
+  // A dialog hands focus back to whatever opened it. When that was a menu item that has since gone
+  // (or nothing), focus would be left on the page itself, where no key reaches the grid: use the grid.
+  const open = d !== null;
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    const closed = wasOpen.current && !open;
+    wasOpen.current = open;
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (closed && lost) app.grid.current?.focus();
+  }, [open]);
   return (
     <>
       {app.paletteOpen.value && (

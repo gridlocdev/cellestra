@@ -338,6 +338,8 @@ I use Nielsen's heuristics as a checklist to keep the design honest. Each below 
 - The app is **fully operable from the keyboard**.
 - Respects system **text-size/zoom**, **reduced-motion**, and **increased-contrast** settings; the sheet has its own zoom too.
 - Clear, visible **focus indicators** on the active cell and focused controls.
+- A polite **live region** announces the active cell's address and shown value on every move, and toasts are announced as status (errors as alerts).
+- Modal dialogs **trap focus**: `Tab` cycles inside, `Esc` closes, and focus returns to the control that opened the dialog (the grid when that control is gone).
 
 ### UX success criteria
 - A new user can open, edit, and save a file without reading any instructions.

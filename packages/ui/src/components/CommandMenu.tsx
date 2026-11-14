@@ -124,6 +124,9 @@ function ListPopup(props: {
     } else if (e.key === 'Escape') {
       e.preventDefault();
       props.onClose();
+    } else if (e.key === 'Tab') {
+      // The field is the popup's only stop: keep focus in it rather than let Tab leave the modal.
+      e.preventDefault();
     }
   };
   return (

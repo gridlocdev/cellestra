@@ -135,6 +135,10 @@ const HANDLE_GRAB = 3;
 /** How long the pointer rests on a cell before its tooltip shows. */
 const TIP_DELAY_MS = 450;
 const MARQUEE_STEP_MS = 90;
+
+/** Whether the system asks for reduced motion (Settings › Accessibility › Display). */
+const reducedMotion = () =>
+  typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 interface Axes {
@@ -376,10 +380,11 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   // Redraw on any signal the frame reads.
   useEffect(() => effect(() => draw()), [size, editing, host, selection, zoom, palette, showFormulas]);
 
-  // The marquee's ants march while it is up.
+  // The marquee's ants march while it is up, unless the system asks for reduced motion: then the
+  // dashes stand still.
   useEffect(() => {
     const m = host.marquee;
-    if (!m) return;
+    if (!m || reducedMotion()) return;
     let timer = 0;
     const stop = effect(() => {
       const on = m.value !== null;

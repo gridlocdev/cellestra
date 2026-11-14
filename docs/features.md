@@ -56,6 +56,10 @@ The status bar under the grid narrates the last edit ("Pasted A1:C4", "Inserted 
 
 Every command can be reached from the keyboard. `⌘K` opens the command menu, which searches every command and shows its shortcut, and `⌘⇧P` switches sheets. **Keyboard Shortcuts** (`⌘/`) lists them all in the app. See [Controls](controls.md) for the full list.
 
+## Accessibility
+
+A screen reader such as VoiceOver hears the active cell's address and what it shows each time the selection moves (`B7, 1,234.50`, or `B7, blank`), with the selected range when there is one, and hears each message the app pops up at the bottom. In a dialog, `Tab` and `⇧Tab` cycle through its controls without leaving it, `Esc` closes it, and focus goes back to where it was before the dialog opened. With **Reduce motion** on in the system settings, the dashed border around copied cells stands still and nothing in the app animates or scrolls smoothly.
+
 ## Command line
 
 The `cellestra` command reads and edits `.ods` files from scripts and CI with the same engine as the app: convert to and from CSV, read and set cells, recalculate, check a workbook for formula errors, compare two workbooks, and more. See [Development](development.md#the-cellestra-cli) for how to run it.

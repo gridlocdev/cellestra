@@ -2172,6 +2172,15 @@ export class AppController {
     );
   }
 
+  /** What the cell at `row`, `column` on the active sheet shows, as the grid draws it. */
+  shownText(row: number, column: number): string {
+    const sheet = this.sheet;
+    const cell = sheet.find(row, column);
+    if (!cell) return '';
+    const style = this.session.workbook.peek().styles.get(sheet.effectiveStyleId(row, column));
+    return this.session.display(cell.value, style);
+  }
+
   /** Select a cell Find matched and scroll it into view. */
   goToMatch(match: { readonly row: number; readonly column: number }): void {
     this.selection.select(match.row, match.column);
