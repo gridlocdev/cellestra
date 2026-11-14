@@ -22,6 +22,7 @@ import {
   spreadsheetArgs,
   watchFile,
   withFileLock,
+  pdfExportTarget,
   writeAtomic,
 } from './files.ts';
 
@@ -315,9 +316,21 @@ function registerIpc(): void {
     };
     const result = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
     if (result.canceled || !result.filePath) return null;
-    const target = result.filePath.toLowerCase().endsWith('.pdf')
-      ? result.filePath
-      : `${result.filePath}.pdf`;
+    const { path: target, askOverwrite } = await pdfExportTarget(result.filePath);
+    if (askOverwrite) {
+      const confirm = {
+        type: 'warning' as const,
+        buttons: ['Replace', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        message: `“${path.basename(target)}” already exists. Do you want to replace it?`,
+        detail: target,
+      };
+      const { response } = win
+        ? await dialog.showMessageBox(win, confirm)
+        : await dialog.showMessageBox(confirm);
+      if (response !== 0) return null;
+    }
     const pdf = await withPrintWindow(html, (w) =>
       w.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true }),
     );

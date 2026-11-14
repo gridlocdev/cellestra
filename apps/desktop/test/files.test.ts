@@ -18,6 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   isAppUrl,
   PathGrants,
+  pdfExportTarget,
   saveAsMismatch,
   spreadsheetArgs,
   watchFile,
@@ -204,5 +205,30 @@ describe('saveAsMismatch', () => {
 
   it('refuses a path that is not a spreadsheet', () => {
     expect(saveAsMismatch('Budget.ods', '/tmp/Budget.txt')).toMatch(/Save as/);
+  });
+});
+
+describe('pdfExportTarget', () => {
+  it('asks before overwriting when .pdf was added to the chosen name and that file exists', async () => {
+    await writeFile(path.join(dir, 'report.pdf'), 'old');
+    expect(await pdfExportTarget(path.join(dir, 'report'))).toEqual({
+      path: path.join(dir, 'report.pdf'),
+      askOverwrite: true,
+    });
+  });
+
+  it('leaves the question to the save dialog when the chosen name already ends in .pdf', async () => {
+    await writeFile(path.join(dir, 'kept.PDF'), 'old');
+    expect(await pdfExportTarget(path.join(dir, 'kept.PDF'))).toEqual({
+      path: path.join(dir, 'kept.PDF'),
+      askOverwrite: false,
+    });
+  });
+
+  it('does not ask for a new file', async () => {
+    expect(await pdfExportTarget(path.join(dir, 'fresh'))).toEqual({
+      path: path.join(dir, 'fresh.pdf'),
+      askOverwrite: false,
+    });
   });
 });

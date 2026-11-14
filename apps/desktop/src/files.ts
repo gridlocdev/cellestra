@@ -39,6 +39,21 @@ export function saveAsMismatch(suggested: string, chosen: string): string | null
   return null;
 }
 
+/**
+ * Where Export PDF writes for a name chosen in the save dialog. The dialog already asked before
+ * overwriting the name it returned, but when that name lacks `.pdf` we add it, and the dialog never
+ * saw that file: `askOverwrite` says it exists and the user must be asked first.
+ */
+export async function pdfExportTarget(chosen: string): Promise<{ path: string; askOverwrite: boolean }> {
+  if (chosen.toLowerCase().endsWith('.pdf')) return { path: chosen, askOverwrite: false };
+  const target = `${chosen}.pdf`;
+  const exists = await stat(target).then(
+    () => true,
+    () => false,
+  );
+  return { path: target, askOverwrite: exists };
+}
+
 /** Only the app's own pages may use the bridge (not a navigated-away or injected frame). */
 export function isAppUrl(url: string | undefined | null): boolean {
   return typeof url === 'string' && url.startsWith('app://cellestra/');
