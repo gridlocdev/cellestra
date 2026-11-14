@@ -388,6 +388,7 @@ The mode is a document setting, saved in the file's `settings.xml`. **Data → M
 
 ### 8.7 Destructive-action confirmations
 - **Always confirm:** deleting a worksheet that holds data or that formulas, charts or validation lists on other sheets read (the question names how many formulas will show `#REF!`; an empty, unused sheet is deleted without asking, and undo brings it back); overwriting an existing file via Save As; closing/quitting with unsaved changes (Save / Don't Save / Cancel).
+- **Save in the unsaved-changes question, where the browser can only download.** Without the save picker, Save hands the workbook to the browser as a download and the close or open goes ahead. The browser can't say whether the download was kept, so the closed workbook's crash-recovery snapshot is set aside, and the next start offers it.
 - **Confirm only above a threshold:** clearing or deleting a range is silent (undo covers it) **unless** it would remove data from **more than 100 non-empty cells**, in which case Cellestra asks first.
 - Everything else relies on undo rather than nagging.
 
