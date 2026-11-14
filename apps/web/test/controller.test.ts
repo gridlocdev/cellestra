@@ -776,6 +776,36 @@ describe('paste at the sheet edge', () => {
   });
 });
 
+describe('pasting text from other apps', () => {
+  it('splits on tabs only: commas stay in the cell, lines become rows', async () => {
+    const app = await makeApp();
+    app.selection.select(0, 0);
+    app.paste('Smith, John\nWe met, and talked.\n');
+    const sheet = app.session.activeSheet.peek();
+    expect(sheet.getValue(0, 0)).toEqual(CellValue.text('Smith, John'));
+    expect(sheet.getValue(1, 0)).toEqual(CellValue.text('We met, and talked.'));
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.empty);
+  });
+
+  it('reads tab-separated rows, quoted cells with line breaks included', async () => {
+    const app = await makeApp();
+    app.selection.select(0, 0);
+    app.paste('a,1\t"two\nlines"\r\nb\t3');
+    const sheet = app.session.activeSheet.peek();
+    expect(sheet.getValue(0, 0)).toEqual(CellValue.text('a,1'));
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.text('two\nlines'));
+    expect(sheet.getValue(1, 0)).toEqual(CellValue.text('b'));
+    expect(sheet.getValue(1, 1)).toEqual(CellValue.number(3));
+  });
+
+  it('reads one quoted cell, as a copy of a cell with a line break puts it', async () => {
+    const app = await makeApp();
+    app.selection.select(0, 0);
+    app.paste('"say ""hi""\nthere"');
+    expect(app.session.activeSheet.peek().getValue(0, 0)).toEqual(CellValue.text('say "hi"\nthere'));
+  });
+});
+
 describe('clipboard across documents', () => {
   const dt = () => ({ setData: () => {} }) as unknown as DataTransfer;
   const odsWith = (text: string) => {

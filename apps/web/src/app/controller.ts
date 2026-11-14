@@ -2102,9 +2102,13 @@ export class AppController {
       return;
     }
     if (!text) return;
-    const rows = parseCsv(text.replace(/\r\n?/g, '\n').replace(/\n$/, ''), {
-      delimiter: text.includes('\t') ? '\t' : ',',
-    });
+    // Spreadsheets put TSV on the clipboard. Text without a tab is lines of plain text (a comma is
+    // just a comma), unless it is one quoted cell, which is how a cell with a line break copies.
+    const body = text.replace(/\r\n?/g, '\n').replace(/\n$/, '');
+    const rows =
+      body.includes('\t') || /^"(?:[^"]|"")*"$/.test(body)
+        ? parseCsv(body, { delimiter: '\t' })
+        : body.split('\n').map((line) => [line]);
     const locale = this.session.locale;
     const { row, column } = this.selection.active.peek();
     const textWidth = rows.reduce((w, r) => Math.max(w, r.length), 0);
