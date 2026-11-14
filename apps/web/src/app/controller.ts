@@ -170,6 +170,19 @@ export function normalizeAutoSave(value: number): number {
 /** The command chrome: a tabbed ribbon (the default) or the single compact toolbar. */
 export type Layout = 'ribbon' | 'bar';
 
+/** What the one message for a failed auto-save says: why it stopped and what restarts it. */
+export function autoSaveFailure(e: unknown): string {
+  const resume = 'Auto-save is paused until you save with ⌘S.';
+  if (e instanceof ConflictError) {
+    const why =
+      e.reason === 'locked' ? 'the file is locked by another app' : 'the file was changed by another app';
+    return `Auto-save stopped: ${why}. ${resume}`;
+  }
+  if (e instanceof DOMException && e.name === 'NotAllowedError')
+    return `Auto-save needs your permission to write the file. ${resume}`;
+  return `Auto-save couldn't write the file: ${message(e)}. ${resume}`;
+}
+
 function stored(key: string): string | null {
   try {
     return localStorage.getItem(key);
@@ -241,8 +254,11 @@ export class AppController {
   /** A close request is showing its prompt; repeated requests don't stack dialogs. */
   #closing = false;
   #autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Set after an auto-save write fails; a successful save of any kind clears it. */
-  #autoSaveSuspended = false;
+  /**
+   * The document generation in which an auto-save write failed: auto-save stays down for that
+   * document until a save of any kind succeeds. Opening another document starts afresh.
+   */
+  #autoSaveSuspendedIn: number | null = null;
   /** Settles when `start()` has finished (recovery offered): OS file opens wait for it. */
   readonly #ready: Promise<void>;
   #markReady: () => void = () => {};
@@ -536,11 +552,16 @@ export class AppController {
     this.#autoSaveTimer = setTimeout(() => void this.autoSave(), seconds * 1000);
   }
 
+  get #autoSaveSuspended(): boolean {
+    return this.#autoSaveSuspendedIn === this.session.generation;
+  }
+
   /**
    * The auto-save tick: write the document in place, if it can be written without a question.
    * Never opens a dialog — a new document, a browser file without a handle, a CSV that would lose
-   * formatting, and a file changed on disk all wait for a ⌘S instead. A failed
-   * write stands auto-save down until a save succeeds. Returns whether it wrote.
+   * formatting, and a file changed on disk all wait for a ⌘S instead. A failed write (a refused
+   * permission and a conflict included) says so once and stands auto-save down until a save
+   * succeeds. Returns whether it wrote.
    */
   async autoSave(): Promise<boolean> {
     if (this.#autoSaveTimer) clearTimeout(this.#autoSaveTimer);
@@ -569,16 +590,8 @@ export class AppController {
         this.saved(await store.save(ref, bytes, { force: false, background: true }), edits, generation);
         return true;
       } catch (e) {
-        // The browser wants the user's say-so to write the file: that waits for a ⌘S.
-        if (e instanceof DOMException && e.name === 'NotAllowedError') return false;
-        // Someone else wrote the file: whose bytes survive is not for a timer to decide.
-        if (e instanceof ConflictError) return false;
-        this.#autoSaveSuspended = true;
-        this.error(
-          new Error(
-            `Auto-save couldn't write the file: ${e instanceof Error ? e.message : String(e)}. It is paused until you save yourself.`,
-          ),
-        );
+        this.#autoSaveSuspendedIn = generation;
+        this.error(new Error(autoSaveFailure(e)));
         return false;
       }
     };
@@ -798,7 +811,7 @@ export class AppController {
       return;
     }
     this.session.markSaved(ref, edits);
-    this.#autoSaveSuspended = false;
+    this.#autoSaveSuspendedIn = null;
     if (!this.session.modified.peek()) void clearRecovery();
     void this.remember(ref);
     this.native?.watch(ref.store === 'native' ? ref.id : null);

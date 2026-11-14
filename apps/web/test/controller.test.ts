@@ -1,6 +1,6 @@
 import { CellRange, CellValue, EditCommands, OdsWriter, SheetDimensions, Workbook } from '@cellestra/core';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import type { DocumentRef, FileStore, OpenedDocument } from '@cellestra/ui';
+import { ConflictError, type DocumentRef, type FileStore, type OpenedDocument } from '@cellestra/ui';
 import type { AppController as Controller } from '../src/app/controller.ts';
 
 // The controller expects a browser; give it just enough of one (no IndexedDB: recovery is a no-op).
@@ -377,6 +377,39 @@ describe('auto-save', () => {
     expect(errors).toHaveLength(1);
     expect(await app.autoSave()).toBe(false);
     expect(errors).toHaveLength(1); // reported once, not on every tick
+  });
+
+  it('says once when a conflict or a refused permission stops it, and stays down until ⌘S', async () => {
+    for (const failure of [
+      new ConflictError('changed', 'changed elsewhere'),
+      new DOMException('no', 'NotAllowedError'),
+    ]) {
+      const app = await makeApp();
+      const fake = new FakeStore();
+      const errors: unknown[] = [];
+      withFake(app, fake);
+      app.error = (e) => void errors.push(e);
+      let attempts = 0;
+      fake.save = () => {
+        attempts++;
+        return Promise.reject(failure);
+      };
+      app.autoSaveSeconds.value = 30;
+      app.session.load(OdsWriter.write(Workbook.createNew(), null), ref('d.ods'));
+      app.session.touch();
+      expect(await app.autoSave()).toBe(false);
+      app.session.touch();
+      expect(await app.autoSave()).toBe(false);
+      expect(attempts).toBe(1); // no retry behind the user's back
+      expect(errors).toHaveLength(1);
+      expect(String(errors[0])).toMatch(/Auto-save .*paused until you save/);
+
+      // Another document starts afresh.
+      app.session.load(OdsWriter.write(Workbook.createNew(), null), ref('e.ods'));
+      app.session.touch();
+      await app.autoSave();
+      expect(attempts).toBe(2);
+    }
   });
 });
 
