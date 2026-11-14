@@ -147,15 +147,18 @@ export const OdsSupportXml = {
     // not draw) is opened by its directory's media type. Regenerating the manifest from part names
     // alone dropped that entry, and LibreOffice showed the object as an empty frame.
     const partList = [...parts];
-    for (const [dir, mediaType] of directoryEntries(previousManifest)) {
-      if (declared.has(dir) || !partList.some((p) => p.startsWith(dir))) continue;
+    const previous = manifestEntries(previousManifest);
+    for (const [dir, mediaType] of previous) {
+      if (!dir.endsWith('/') || declared.has(dir) || !partList.some((p) => p.startsWith(dir))) continue;
       manifest.add(fileEntry(dir, mediaType));
       declared.add(dir);
     }
 
+    // A part keeps the media type its source manifest gave it (an SVG picture, manifest.rdf); one
+    // the extension cannot name would otherwise turn into application/octet-stream.
     for (const part of partList) {
       if (part === N.mimetypePart) continue;
-      manifest.add(fileEntry(part, mediaTypeFor(part)));
+      manifest.add(fileEntry(part, previous.get(part) ?? mediaTypeFor(part)));
     }
     return new XmlDocument(manifest);
   },
@@ -317,15 +320,15 @@ function itemValue(entry: XmlElement, name: string): string | null {
   );
 }
 
-/** The directory entries (`Object 1/` and the like) of a manifest, with their media types. */
-function directoryEntries(manifestXml: string | null): Array<[path: string, mediaType: string]> {
-  if (manifestXml === null) return [];
+/** A manifest's entries (parts and directories like `Object 1/`, not the root) by path, with media types. */
+function manifestEntries(manifestXml: string | null): Map<string, string> {
+  const out = new Map<string, string>();
+  if (manifestXml === null) return out;
   const root = tryParseXml(manifestXml, { preserveWhitespace: false })?.root;
-  const out: Array<[string, string]> = [];
   for (const entry of root?.elements(Manifest('file-entry')) ?? []) {
     const path = entry.attr(Manifest('full-path'));
     const mediaType = entry.attr(Manifest('media-type'));
-    if (path && path !== '/' && path.endsWith('/') && mediaType) out.push([path, mediaType]);
+    if (path && path !== '/' && mediaType) out.set(path, mediaType);
   }
   return out;
 }
