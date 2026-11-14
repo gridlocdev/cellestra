@@ -74,6 +74,7 @@ function subtotal(args: readonly Expr[], ev: FunctionEvaluator): CellValue {
           if (value.kind === 'error') return value;
           if (value.kind !== 'empty') filled++;
           if (value.kind === 'number') nums.push(value.value);
+          else if (value.kind === 'boolean' && !area.isArray) nums.push(value.value ? 1 : 0);
         }
       }
     }

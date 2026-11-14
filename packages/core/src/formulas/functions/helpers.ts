@@ -66,11 +66,15 @@ export function collectNumbers(
   destination: number[],
 ): CellValue | null {
   for (const arg of args) {
-    const fromReference = ev.tryEvaluateAreas(arg) !== null;
+    const areas = ev.tryEvaluateAreas(arg);
+    const fromReference = areas !== null;
+    const fromCells = fromReference && !areas.some((a) => a.isArray);
     for (const value of ev.enumerateValues(arg)) {
       if (value.kind === 'error') return value;
       if (fromReference) {
+        // A boolean cell is the number 1 or 0, as in Calc; one in an inline array is skipped.
         if (value.kind === 'number') destination.push(value.value);
+        else if (value.kind === 'boolean' && fromCells) destination.push(value.value ? 1 : 0);
         continue;
       }
       const n = Coercion.toNumber(value);

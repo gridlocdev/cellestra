@@ -51,6 +51,7 @@ function sumArguments(
             const value = range.get(r, c);
             if (value.kind === 'error') return value;
             if (value.kind === 'number') nums.push(value.value);
+            else if (value.kind === 'boolean' && !range.isArray) nums.push(value.value ? 1 : 0);
           }
         }
       }
@@ -122,11 +123,14 @@ function countValues(args: readonly Expr[], ev: FunctionEvaluator, onlyNumbers: 
   for (const arg of args) {
     // COUNT counts numbers from references, but a value typed directly as an argument also counts
     // when it is a boolean or a numeric string — COUNT("x",1,TRUE)=2 (Excel/Calc).
-    const fromReference = ev.tryEvaluateAreas(arg) !== null;
+    const areas = ev.tryEvaluateAreas(arg);
+    const fromReference = areas !== null;
+    // A boolean cell is a number to Calc; one in an inline array is not.
+    const fromCells = fromReference && !areas.some((a) => a.isArray);
     for (const value of ev.enumerateValues(arg)) {
       if (!onlyNumbers) {
         if (value.kind !== 'empty') count++;
-      } else if (value.kind === 'number') count++;
+      } else if (value.kind === 'number' || (fromCells && value.kind === 'boolean')) count++;
       else if (!fromReference && value.kind !== 'empty' && typeof Coercion.toNumber(value) === 'number')
         count++;
     }
