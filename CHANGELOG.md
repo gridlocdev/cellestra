@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- **Downloads for macOS, Windows and Linux.** The desktop app is now on the [Releases page](https://github.com/gridlocdev/cellestra/releases/latest): a `.dmg` for Apple silicon or Intel Macs, an installer for Windows and an AppImage for Linux. You no longer need to build it from source. The apps aren't signed yet, so [Getting started](https://github.com/gridlocdev/cellestra/blob/main/docs/getting-started.md#download) explains how to open them the first time.
+
 ## 0.1.0
 
 The first release. Cellestra is a spreadsheet editor for OpenDocument spreadsheets (`.ods`) that runs in your browser, on your NAS and on the desktop.
