@@ -21,6 +21,20 @@ describe('xml tree', () => {
     expect(child.value).toBe('t');
   });
 
+  // A million-cell content.xml repeats a handful of names; sharing them keeps the tree small.
+  it('shares one name object per distinct name, and parsed elements stay editable', () => {
+    const doc = parseXml('<a:r xmlns:a="urn:a"><a:c a:k="1"/><a:c a:k="2"/><a:c/></a:r>');
+    const [first, second, third] = doc.root.elements(A('c'));
+    expect(first!.name).toBe(second!.name);
+    expect(first!.attributes[0]!.name).toBe(second!.attributes[0]!.name);
+
+    third!.setAttr(A('k'), '3').add(new XmlElement(B('leaf')), 'text');
+    expect(first!.attributes).toHaveLength(1);
+    expect(first!.nodes).toHaveLength(0);
+    expect(serializeXmlElement(third!)).toContain('a:k="3"');
+    expect(third!.element(B('leaf'))!.parent).toBe(third);
+  });
+
   it('serializes with declarations for the prefixes it uses', () => {
     const root = new XmlElement(A('root'), new XmlElement(B('leaf')).setAttr(A('k'), 'v & "q"'));
     const text = serializeXmlElement(root);

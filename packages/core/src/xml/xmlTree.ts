@@ -101,13 +101,25 @@ export type AttrValue = string | number | boolean;
 export class XmlElement {
   readonly kind = 'element';
   readonly name: XmlName;
-  readonly attributes: XmlAttribute[] = [];
-  readonly nodes: XmlNode[] = [];
+  // Not readonly only so `trimToSize` can swap in exact-length copies; edit them in place.
+  attributes: XmlAttribute[] = [];
+  nodes: XmlNode[] = [];
   parent: XmlElement | null = null;
 
   constructor(name: XmlName, ...content: XmlContent[]) {
     this.name = name;
     this.add(...content);
+  }
+
+  /**
+   * Shrink the attribute and child arrays to their length. An array grown by `push` keeps spare
+   * capacity (a one-item array holds room for seventeen), which across the million cells of a
+   * large content.xml was the biggest share of the parsed tree. The parser calls this as each
+   * element closes; the copies stay ordinary arrays, so later edits work as before.
+   */
+  trimToSize(): void {
+    this.attributes = this.attributes.slice();
+    this.nodes = this.nodes.slice();
   }
 
   get uri(): string {

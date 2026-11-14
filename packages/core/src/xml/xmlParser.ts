@@ -7,6 +7,7 @@ import {
   XmlText,
   xmlName,
   type XmlDeclaration,
+  type XmlName,
 } from './xmlTree.ts';
 
 export interface XmlParseOptions {
@@ -37,6 +38,19 @@ export function parseXml(text: string, options: XmlParseOptions = {}): XmlDocume
   const prolog: Array<XmlComment | XmlProcessingInstruction> = [];
   const stack: XmlElement[] = [];
   let root: XmlElement | null = null;
+  // One shared name per distinct (uri, prefix, local): a million cells repeat a handful of names,
+  // and a fresh name object (with its own strings) per element and attribute was a large share of
+  // the tree's memory.
+  const names = new Map<string, XmlName>();
+  const nameOf = (local: string, uri: string, prefix: string): XmlName => {
+    const key = `${prefix}\u0000${local}\u0000${uri}`;
+    let name = names.get(key);
+    if (!name) {
+      name = Object.freeze(xmlName(local, uri, prefix));
+      names.set(key, name);
+    }
+    return name;
+  };
   let error: Error | null = null;
 
   const addText = (value: string, cdata: boolean): void => {
@@ -69,9 +83,9 @@ export function parseXml(text: string, options: XmlParseOptions = {}): XmlDocume
     if (stack.length >= MAX_XML_DEPTH) {
       throw new XmlParseError(`Elements are nested more than ${MAX_XML_DEPTH} deep.`);
     }
-    const element = new XmlElement(xmlName(tag.local, tag.uri, tag.prefix));
+    const element = new XmlElement(nameOf(tag.local, tag.uri, tag.prefix));
     for (const a of Object.values(tag.attributes)) {
-      element.attributes.push({ name: xmlName(a.local, a.uri, a.prefix), value: a.value });
+      element.attributes.push({ name: nameOf(a.local, a.uri, a.prefix), value: a.value });
     }
     const parent = stack.at(-1);
     if (parent) parent.add(element);
@@ -79,7 +93,7 @@ export function parseXml(text: string, options: XmlParseOptions = {}): XmlDocume
     stack.push(element);
   });
   parser.on('closetag', () => {
-    stack.pop();
+    stack.pop()?.trimToSize();
   });
   parser.on('error', (e) => {
     error ??= e;
