@@ -103,7 +103,10 @@ export function editRule(
   return rest;
 }
 
-/** The rules a style's conditional maps stand for, in order. */
+/**
+ * The rules a style's conditional maps stand for, in order. A map whose condition can't be read
+ * (one only another app writes) has no rule; `rulesTransform` keeps it as it was.
+ */
 export function rulesOf(style: CellStyle): RuleDraft[] {
   const { conditionalMaps: maps, ...plain } = style;
   return (maps ?? []).flatMap((map): RuleDraft[] => {
@@ -187,7 +190,8 @@ export function baseCellAddress(sheet: string, row: number, column: number): str
 
 /**
  * The style change that gives every selected cell `rules`, or the first problem with them. Each
- * cell's applied formats are built over its own style, so its number format and borders stay.
+ * cell's applied formats are built over its own style, so its number format and borders stay, and
+ * the maps of its own that the dialog can't read stay too.
  */
 export function rulesTransform(
   rules: readonly RuleDraft[],
@@ -212,8 +216,9 @@ export function rulesTransform(
   }
   return {
     transform: (style) => {
-      const { conditionalMaps: _old, ...plain } = style;
-      if (built.length === 0) return plain;
+      const { conditionalMaps: old, ...plain } = style;
+      const unread = unreadMaps(old);
+      if (built.length === 0 && unread.length === 0) return plain;
       const conditionalMaps = built.map((b): CellStyleMap =>
         'map' in b
           ? b.map
@@ -224,7 +229,20 @@ export function rulesTransform(
               baseCellAddress: address,
             },
       );
+      // Rules the dialog can't read aren't shown, so they can't have been edited: each goes back
+      // where it was in the cell's list, in order.
+      for (const { index, map } of unread)
+        conditionalMaps.splice(Math.min(index, conditionalMaps.length), 0, map);
       return { ...plain, conditionalMaps };
     },
   };
+}
+
+/** The maps whose condition `rulesOf` can't read (so the dialog never shows), with their places. */
+function unreadMaps(maps: readonly CellStyleMap[] | undefined): { index: number; map: CellStyleMap }[] {
+  const out: { index: number; map: CellStyleMap }[] = [];
+  (maps ?? []).forEach((map, index) => {
+    if (!parseMapCondition(map.condition)) out.push({ index, map });
+  });
+  return out;
 }

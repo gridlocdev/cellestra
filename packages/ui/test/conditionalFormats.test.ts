@@ -112,4 +112,37 @@ describe('conditional format rules', () => {
     expect(cs.resolve(style, 'Sheet1', 0, 0).fill.background).toBe(0xffffc7ce);
     expect(cs.resolve(style, 'Sheet1', 1, 0)).toBe(style);
   });
+
+  describe('a rule the dialog cannot read', () => {
+    const map = (condition: string) => ({
+      condition,
+      applyStyleName: 'Accent',
+      applyStyle: applyPreset('bold', CellStyles.default),
+      baseCellAddress: 'Sheet1.A1',
+    });
+    const unread = map('cell-content-is-in-list("a";"b")');
+    const style: CellStyle = {
+      ...CellStyles.default,
+      conditionalMaps: [map('cell-content()>1'), unread, map('cell-content()<0')],
+    };
+
+    it('is not shown', () => {
+      expect(rulesOf(style).map((r) => r.value1)).toEqual(['1', '0']);
+    });
+
+    it('survives OK without changes, in its place', () => {
+      expect(transform(rulesOf(style))(style).conditionalMaps).toEqual(style.conditionalMaps);
+    });
+
+    it('survives edits to the rules around it', () => {
+      const [first, second] = rulesOf(style);
+      const maps = transform([editRule(first!, { value1: '2' }), second!])(style).conditionalMaps!;
+      expect(maps.map((m) => m.condition)).toEqual([
+        'cell-content()>2',
+        unread.condition,
+        'cell-content()<0',
+      ]);
+      expect(transform([])(style).conditionalMaps).toEqual([unread]);
+    });
+  });
 });
