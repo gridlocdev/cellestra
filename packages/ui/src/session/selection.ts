@@ -101,6 +101,37 @@ export class Selection {
     };
   }
 
+  /**
+   * Shift+Space / Ctrl+Space: every range widened to the whole rows (or columns) it spans. The
+   * active cell stays where it is.
+   */
+  selectLines(axis: 'rows' | 'columns'): void {
+    const s = this.state.value;
+    const ranges = s.ranges.map((r) =>
+      axis === 'rows' ? rangeOf(r.top, 0, r.bottom, MAX_COLUMN) : rangeOf(0, r.left, MAX_ROW, r.right),
+    );
+    const last = ranges[ranges.length - 1]!;
+    this.state.value = { ...s, anchorRow: last.top, anchorColumn: last.left, ranges };
+  }
+
+  /**
+   * Escape: a multi-cell or discontiguous selection back to its active cell (`cell`, when the
+   * active cell is merged, is the whole merge). False when the selection already is that cell.
+   */
+  collapse(cell?: GridRange): boolean {
+    const s = this.state.value;
+    const only = cell ?? rangeOf(s.row, s.column, s.row, s.column);
+    if (s.ranges.length === 1 && sameRange(s.ranges[0], only)) return false;
+    this.state.value = {
+      row: s.row,
+      column: s.column,
+      anchorRow: s.row,
+      anchorColumn: s.column,
+      ranges: [only],
+    };
+    return true;
+  }
+
   /** The moving corner of the last range (the one shift+arrow steps). */
   get extentCorner(): { row: number; column: number } {
     const s = this.state.value;

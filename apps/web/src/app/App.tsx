@@ -430,6 +430,7 @@ function FormulaBarConnected({
         if (!app.commit(row, column, text)) return;
         app.selection.select(Math.min(row + 1, 1_048_575), column);
       }}
+      nameBoxRef={app.nameBox}
       onGoTo={(ref) => app.goTo(ref)}
       onDone={() => app.grid.current?.focus()}
     />

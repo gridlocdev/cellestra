@@ -16,3 +16,34 @@ const IME_KEY_CODE = 229;
 export function startsComposition(e: KeyLike): boolean {
   return e.key === 'Dead' || e.key === 'Process' || e.isComposing || e.keyCode === IME_KEY_CODE;
 }
+
+/**
+ * A run of Tab presses along one row: where it started and where the last Tab landed. Enter at the
+ * end of a run goes back to the column the run started in, one row down (Calc and Excel do this,
+ * so a row of a form can be typed with Tab and the next row started with Enter).
+ */
+export interface TabRun {
+  readonly row: number;
+  /** The column the first Tab was pressed in. */
+  readonly startColumn: number;
+  /** Where the last Tab landed: the run only holds while the active cell is still there. */
+  readonly column: number;
+}
+
+interface At {
+  readonly row: number;
+  readonly column: number;
+}
+
+/** The run after a Tab (or Shift+Tab) from `from` to `to`; a Tab that changed rows ends it. */
+export function afterTab(run: TabRun | null, from: At, to: At): TabRun | null {
+  if (to.row !== from.row) return null;
+  const continues = run !== null && run.row === from.row && run.column === from.column;
+  return { row: to.row, startColumn: continues ? run.startColumn : from.column, column: to.column };
+}
+
+/** Where Enter starts its step down from: the run's first column while the run holds, else `at`. */
+export function enterOrigin(run: TabRun | null, at: At): At {
+  if (run === null || run.row !== at.row || run.column !== at.column) return at;
+  return { row: at.row, column: run.startColumn };
+}

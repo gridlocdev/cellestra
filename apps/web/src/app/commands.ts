@@ -8,7 +8,7 @@ import {
   type HorizontalAlignment,
   type VerticalAlignment,
 } from '@cellestra/core';
-import { CommandCatalog, type CommandSpec } from '@cellestra/ui';
+import { CommandCatalog, isMac, type CommandSpec } from '@cellestra/ui';
 import type { AppController } from './controller.ts';
 import { MAX_ZOOM, MIN_ZOOM, NAS_BUILD } from './controller.ts';
 
@@ -16,7 +16,7 @@ import { MAX_ZOOM, MIN_ZOOM, NAS_BUILD } from './controller.ts';
  * The one command catalog (PRD §9): the native menu, toolbar, ⌘K palette, and key bindings all read
  * it. Ids match the old desktop app's so muscle memory and docs carry over.
  */
-export function buildCommands(app: AppController): CommandCatalog {
+export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
   const s = app.session;
   const font =
     (f: Partial<CellStyle['font']>) =>
@@ -287,6 +287,32 @@ export function buildCommands(app: AppController): CommandCatalog {
       run: () => app.selectAll(),
     },
     {
+      id: 'edit.selectRow',
+      title: 'Select Row',
+      description: 'Select the whole rows of the selection',
+      group: 'Edit',
+      shortcut: 'shift+space',
+      run: () => app.selection.selectLines('rows'),
+    },
+    {
+      id: 'edit.selectColumn',
+      title: 'Select Column',
+      description: 'Select the whole columns of the selection',
+      group: 'Edit',
+      shortcut: 'ctrl+space',
+      run: () => app.selection.selectLines('columns'),
+    },
+    {
+      id: 'edit.goTo',
+      title: 'Go To…',
+      description: 'Type a cell, range, sheet or name in the Name Box and go there',
+      group: 'Edit',
+      // ⌃G on macOS and Ctrl+G elsewhere, as in Excel and Calc. (Not F5: in a browser that reloads.)
+      shortcut: 'ctrl+g',
+      keywords: 'name box jump cell reference navigate',
+      run: () => app.focusNameBox(),
+    },
+    {
       id: 'edit.find',
       title: 'Find…',
       description: 'Find text in the sheet',
@@ -311,7 +337,8 @@ export function buildCommands(app: AppController): CommandCatalog {
       title: 'Find Next',
       description: 'Go to the next match',
       group: 'Edit',
-      shortcut: 'mod+g',
+      // ⌘G on macOS. Elsewhere Ctrl+G is Go To, so Find Next takes F3, as browsers and editors do.
+      shortcut: mac ? 'mod+g' : 'f3',
       run: () => void (app.findNext(app.findQuery.value) || app.info('No matches.')),
       enabled: () => app.findQuery.value !== '',
     },

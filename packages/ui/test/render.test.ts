@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { CellRange, CellStyles, CellValue, DataEditCommands, Workbook, table } from '@cellestra/core';
 import { Axis } from '../src/grid/axis.ts';
 import { lightPalette } from '../src/grid/palette.ts';
-import { checkboxRect, fillHandleRect, renderGrid, wrap } from '../src/grid/render.ts';
+import {
+  checkboxRect,
+  fillHandleRect,
+  fitText,
+  overflowEdge,
+  renderGrid,
+  stickyHeaderTitles,
+  wrap,
+} from '../src/grid/render.ts';
 import { HEADER_HEIGHT, HEADER_WIDTH, Viewport } from '../src/grid/viewport.ts';
 
 /** A canvas context that records strokeRect calls (with the stroke colour and width at the time). */
@@ -210,5 +218,99 @@ describe('text spilling in from off screen', () => {
   it('leaves out text that does not reach the screen', () => {
     expect(textsDrawn(64 * 8, long)).not.toContain(long);
     expect(textsDrawn(64 * 2, 'short')).not.toContain('short');
+  });
+});
+
+describe('overflow marker', () => {
+  it('flags text cut off at the edge it is cut at, but not text that only runs off screen', () => {
+    expect(overflowEdge(100, 50, 'left', true)).toBe('right');
+    expect(overflowEdge(100, 50, 'center', true)).toBe('right');
+    expect(overflowEdge(100, 50, 'right', true)).toBe('left');
+    expect(overflowEdge(40, 50, 'left', true)).toBeNull();
+    expect(overflowEdge(100, 50, 'left', false)).toBeNull();
+  });
+
+  /** Colours of the strokes drawn, for a long text in A1 and `neighbour` in B1. */
+  function strokes(neighbour: string | null) {
+    const workbook = Workbook.createNew();
+    const sheet = workbook.worksheets[0]!;
+    sheet.setValue(0, 0, CellValue.text('x'.repeat(30))); // 180px in a 64px column
+    if (neighbour !== null) sheet.setValue(0, 1, CellValue.text(neighbour));
+    const colors: unknown[] = [];
+    const { ctx } = recordingContext();
+    const target = ctx as unknown as { stroke: () => void; strokeStyle: unknown };
+    target.stroke = () => void colors.push(target.strokeStyle);
+    renderGrid({
+      ctx,
+      viewport: new Viewport({
+        columns: new Axis(16384, 64, []),
+        rows: new Axis(1048576, 20, []),
+        frozenColumns: 0,
+        frozenRows: 0,
+        scrollX: 0,
+        scrollY: 0,
+        zoom: 1,
+        width: HEADER_WIDTH + 64 * 10,
+        height: HEADER_HEIGHT + 20 * 20,
+      }),
+      sheet,
+      styles: workbook.styles,
+      palette: lightPalette,
+      selection: ONE_CELL,
+      display: (v) => ({ text: v.kind === 'text' ? v.value : '' }),
+    });
+    return colors;
+  }
+
+  it('draws a chevron when a neighbour stops the spill, and none when the text spills freely', () => {
+    expect(strokes('b')).toContain(lightPalette.overflowMarker);
+    expect(strokes(null)).not.toContain(lightPalette.overflowMarker);
+  });
+});
+
+describe('sticky table headers', () => {
+  function headerTexts(scrollRows: number, frozenRows = 0) {
+    const workbook = Workbook.createNew();
+    const sheet = workbook.worksheets[0]!;
+    sheet.setValue(2, 1, CellValue.text('Fruit'));
+    sheet.setValue(2, 2, CellValue.text('Price'));
+    for (let r = 3; r < 60; r++) sheet.setValue(r, 1, CellValue.text(`row ${r}`));
+    sheet.addTable(table('Data', CellRange.fromBounds(2, 1, 59, 2)));
+    const viewport = new Viewport({
+      columns: new Axis(16384, 64, []),
+      rows: new Axis(1048576, 20, []),
+      frozenColumns: 0,
+      frozenRows,
+      scrollX: 0,
+      scrollY: scrollRows * 20,
+      zoom: 1,
+      width: HEADER_WIDTH + 64 * 10,
+      height: HEADER_HEIGHT + 20 * 20,
+    });
+    return stickyHeaderTitles(sheet, viewport, (row, column) => {
+      const v = sheet.find(row, column)?.value;
+      return v?.kind === 'text' ? v.value : '';
+    });
+  }
+
+  it('shows the table titles once its header row scrolls out of view', () => {
+    expect(headerTexts(0).size).toBe(0);
+    expect(headerTexts(2).size).toBe(0); // the header row is the top row: still on screen
+    expect([...headerTexts(10)]).toEqual([
+      [1, 'Fruit'],
+      [2, 'Price'],
+    ]);
+  });
+
+  it('gives the letters back past the table, and when the header row is frozen', () => {
+    expect(headerTexts(60).size).toBe(0);
+    expect(headerTexts(10, 3).size).toBe(0);
+  });
+
+  it('cuts a long title short with an ellipsis', () => {
+    const { ctx } = recordingContext();
+    expect(fitText(ctx, 'short', 60)).toBe('short');
+    expect(fitText(ctx, 'a much longer title', 60)).toBe('a much lo…');
+    expect(fitText(ctx, 'abc', 3)).toBe('');
   });
 });

@@ -1,6 +1,12 @@
 import { effect } from '@preact/signals';
 import { render } from 'preact';
-import { toAccelerator, type CommandCatalog, type CommandGroup, type NativeMenuItem } from '@cellestra/ui';
+import {
+  toAccelerator,
+  type CommandCatalog,
+  type CommandGroup,
+  type NativeMenuItem,
+  type Shortcut,
+} from '@cellestra/ui';
 import '@cellestra/ui/styles.css';
 import { App } from './app/App.tsx';
 import { buildCommands } from './app/commands.ts';
@@ -105,6 +111,14 @@ const BREAKS = new Set([
   'sheet.resetData',
 ]);
 
+/**
+ * A chord without ⌘/Ctrl on a printable key (⇧Space, ⌥=) also types text. As a menu accelerator
+ * the native menu would take it from every text field, so the page's own key handling keeps it.
+ */
+function typesText(s: Shortcut): boolean {
+  return !s.mod && !s.ctrl && (s.key.length === 1 || s.key === 'space');
+}
+
 function nativeMenu(catalog: CommandCatalog): NativeMenuItem[] {
   return MENU_ORDER.map((group) => {
     const items: NativeMenuItem[] = [];
@@ -120,7 +134,7 @@ function nativeMenu(catalog: CommandCatalog): NativeMenuItem[] {
         label: c.title,
         command: c.id,
         enabled: catalog.isEnabled(c),
-        ...(c.shortcutKey ? { accelerator: toAccelerator(c.shortcutKey) } : {}),
+        ...(c.shortcutKey && !typesText(c.shortcutKey) ? { accelerator: toAccelerator(c.shortcutKey) } : {}),
         ...(c.active ? { type: 'checkbox' as const, checked: c.active() } : {}),
       });
     }

@@ -312,7 +312,13 @@ describe('grid focus at launch', () => {
     const doc = globalThis.document as unknown as { body: unknown; activeElement: unknown };
     doc.body = body;
     const focus = vi.fn();
-    app.grid.current = { focus, beginEdit: () => {}, isEditing: () => false, commitEdit: () => true };
+    app.grid.current = {
+      focus,
+      beginEdit: () => {},
+      isEditing: () => false,
+      commitEdit: () => true,
+      revealActive: () => {},
+    };
 
     doc.activeElement = body;
     app.focusGridIfIdle();

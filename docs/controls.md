@@ -17,7 +17,8 @@
 | Cut / copy / paste             | `⌘X` / `⌘C` / `⌘V`    | `Ctrl+X` / `Ctrl+C` / `Ctrl+V`                   |
 | Paste values                   | `⇧⌘V`                 | `Ctrl+Shift+V`                                   |
 | Select all                     | `⌘A`                  | `Ctrl+A`                                         |
-| Find / find and replace / next | `⌘F` / `⌘H` / `⌘G`    | `Ctrl+F` / `Ctrl+H` / `Ctrl+G`                   |
+| Find / find and replace / next | `⌘F` / `⌘H` / `⌘G`    | `Ctrl+F` / `Ctrl+H` / `F3`                       |
+| Go to (the Name Box)           | `⌃G`                  | `Ctrl+G`                                         |
 | AutoSum                        | `⌥=`                  | `Alt+=`                                          |
 | Fill down / fill right         | `⌘D` / `⌘R`           | `Ctrl+D` / `Ctrl+R`                              |
 | Insert rows above              | `⇧⌘=`                 | `Ctrl+Shift+=`                                   |
@@ -46,18 +47,21 @@ In a browser tab, `⌘W` (`Ctrl+W`) belongs to the browser and closes the tab, s
 
 ## In the grid
 
-|                                | Key                                 |
-| ------------------------------ | ----------------------------------- |
-| Move one cell                  | Arrow keys                          |
-| Jump to the edge of the data   | `⌘` or `Ctrl` + arrow               |
-| Extend the selection           | `Shift` + arrow                     |
-| Move down / up after a cell    | `Enter` / `Shift+Enter`             |
-| Move right / left after a cell | `Tab` / `Shift+Tab`                 |
-| Page down / up                 | `Page Down` / `Page Up`             |
-| First column / cell A1         | `Home` / `⌘` or `Ctrl` + `Home`     |
-| Edit the active cell           | `F2`, or start typing to replace it |
-| Clear the selection's contents | `Delete` or `Backspace`             |
-| Tick a checkbox cell           | `Space`                             |
+|                                | Key                                           |
+| ------------------------------ | --------------------------------------------- |
+| Move one cell                  | Arrow keys                                    |
+| Jump to the edge of the data   | `⌘` or `Ctrl` + arrow                         |
+| Extend the selection           | `Shift` + arrow                               |
+| Move down / up after a cell    | `Enter` / `Shift+Enter`                       |
+| Move right / left after a cell | `Tab` / `Shift+Tab`                           |
+| Next row, back where Tab began | `Enter` after one or more `Tab`               |
+| Select the whole row / column  | `Shift+Space` / `⌃Space` or `Ctrl+Space`      |
+| Shrink the selection to a cell | `Esc` (the first press clears a copy outline) |
+| Page down / up                 | `Page Down` / `Page Up`                       |
+| First column / cell A1         | `Home` / `⌘` or `Ctrl` + `Home`               |
+| Edit the active cell           | `F2`, or start typing to replace it           |
+| Clear the selection's contents | `Delete` or `Backspace`                       |
+| Tick a checkbox cell           | `Space`                                       |
 
 ## While editing a cell
 
@@ -70,5 +74,7 @@ In a browser tab, `⌘W` (`Ctrl+W`) belongs to the browser and closes the tab, s
 | Cancel the edit               | `Esc`                                   |
 | Choose a suggested function   | `↑` / `↓`, then `Tab`                   |
 | Point at a cell in a formula  | Arrow keys; `Shift` + arrow for a range |
+
+**Go to** puts the cursor in the Name Box, left of the formula bar: type a cell (`B7`), a range (`B2:D9`), a cell on another sheet (`Sheet2!A1`) or a named range, then press `Enter` to go there or `Esc` to go back.
 
 In multi-line text, `↑` and `↓` move between lines first, and only leave the cell from the first or last line. **Keyboard Shortcuts** (`⌘/`) shows every shortcut in the app.

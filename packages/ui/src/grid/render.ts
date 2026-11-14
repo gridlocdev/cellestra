@@ -17,6 +17,8 @@ import { HEADER_HEIGHT, HEADER_WIDTH, type Band, type Rect, type Viewport } from
 const TABLE_OUTLINE_WIDTH = 2;
 /** How many columns beyond a pane's edge to look for text that spills into it. */
 const SPILL_SCAN_COLUMNS = 256;
+/** Height of one overflow chevron at 100% zoom, in CSS px. */
+const OVERFLOW_MARKER_SIZE = 6;
 
 export const CELL_PAD_X = 5;
 export const CELL_PAD_Y = 2;
@@ -468,15 +470,25 @@ function drawCellText(
 
   // Numbers that don't fit show ### (PRD §8.8), text spills or is clipped.
   let clip = rect;
+  /** Where text is cut off by a neighbour or its own cell: flagged with a chevron there. */
+  let cutAt: 'left' | 'right' | null = null;
   if (!style.alignment.wrapText && lines.length === 1) {
     const width = ctx.measureText(lines[0]!).width;
     if (isNumberLike && width > rect.w - 2 * pad) {
       lines[0] = '#'.repeat(
         Math.max(1, Math.floor((rect.w - 2 * pad) / Math.max(1, ctx.measureText('#').width))),
       );
-    } else if (!isNumberLike && spill && width > rect.w - 2 * pad) {
-      clip = spillRect(sheet, row, rect, width + 2 * pad, align, spill);
+    } else if (!isNumberLike && width > rect.w - 2 * pad) {
+      const room = spill
+        ? spillRect(sheet, row, rect, width + 2 * pad, align, spill)
+        : { rect, blocked: true };
+      clip = room.rect;
+      cutAt = overflowEdge(width, clip.w - 2 * pad, align, room.blocked);
     }
+  } else if (!style.alignment.wrapText) {
+    // Typed line breaks never spill: any line wider than the cell is cut off.
+    const widest = Math.max(...lines.map((t) => ctx.measureText(t).width));
+    cutAt = overflowEdge(widest, rect.w - 2 * pad, align, true);
   }
 
   const total = lines.length * lineHeight;
@@ -513,7 +525,47 @@ function drawCellText(
     }
     y += lineHeight;
   }
+  if (cutAt) drawOverflowMarker(ctx, clip, cutAt, palette.overflowMarker, v.zoom);
   ctx.restore();
+}
+
+/**
+ * Which edge of its cell text is cut off at, or null when it fits (or only runs off the screen,
+ * `blocked` false). Left- and centre-aligned text is flagged on the right, right-aligned on the
+ * left, as in LibreOffice Calc.
+ */
+export function overflowEdge(
+  textWidth: number,
+  room: number,
+  align: 'left' | 'center' | 'right',
+  blocked: boolean,
+): 'left' | 'right' | null {
+  if (!blocked || textWidth <= room) return null;
+  return align === 'right' ? 'left' : 'right';
+}
+
+/** Two small chevrons pointing out of the cell, just inside the edge the text is cut at. */
+function drawOverflowMarker(
+  ctx: CanvasRenderingContext2D,
+  rect: Rect,
+  edge: 'left' | 'right',
+  color: string,
+  zoom: number,
+): void {
+  const size = OVERFLOW_MARKER_SIZE * Math.min(1.5, Math.max(0.75, zoom));
+  const dir = edge === 'right' ? 1 : -1;
+  const tip = edge === 'right' ? rect.x + rect.w - 2 : rect.x + 2;
+  const cy = rect.y + rect.h / 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1, zoom);
+  ctx.beginPath();
+  for (const back of [0, size * 0.75]) {
+    const x = tip - dir * back;
+    ctx.moveTo(x - (dir * size) / 2, cy - size / 2);
+    ctx.lineTo(x, cy);
+    ctx.lineTo(x - (dir * size) / 2, cy + size / 2);
+  }
+  ctx.stroke();
 }
 
 /**
@@ -659,11 +711,17 @@ function spillRect(
   needed: number,
   align: 'left' | 'center' | 'right',
   spill: { cols: readonly Band[]; ci: number },
-): Rect {
+): { rect: Rect; blocked: boolean } {
   let x0 = rect.x;
   let x1 = rect.x + rect.w;
-  const free = (b: Band | undefined) =>
-    b !== undefined && !sheet.find(row, b.index)?.value.kind.match(/^(number|text|boolean|error)$/);
+  // Blocked: stopped by a neighbour with a value, not by running out of visible columns.
+  let blocked = false;
+  const free = (b: Band | undefined) => {
+    if (b === undefined) return false;
+    const taken = holdsValue(sheet.find(row, b.index));
+    blocked ||= taken;
+    return !taken;
+  };
   if (align !== 'right') {
     for (let j = spill.ci + 1; x1 - x0 < needed && free(spill.cols[j]); j++)
       x1 = spill.cols[j]!.start + spill.cols[j]!.size;
@@ -671,7 +729,7 @@ function spillRect(
   if (align !== 'left') {
     for (let j = spill.ci - 1; x1 - x0 < needed && free(spill.cols[j]); j--) x0 = spill.cols[j]!.start;
   }
-  return { x: x0, y: rect.y, w: x1 - x0, h: rect.h };
+  return { rect: { x: x0, y: rect.y, w: x1 - x0, h: rect.h }, blocked };
 }
 
 function drawSelection(input: RenderInput, pane: Range): void {
@@ -756,6 +814,13 @@ function drawHeaders(input: RenderInput): void {
   ctx.fillRect(0, HEADER_HEIGHT, HEADER_WIDTH, v.height);
   ctx.strokeStyle = palette.gridLine;
   ctx.lineWidth = 1;
+  const plainFont = ctx.font;
+  const titles = stickyHeaderTitles(input.sheet, v, (row, column) => {
+    const cell = input.sheet.find(row, column);
+    if (!cell || cell.isBlank) return '';
+    return input.display(cell.value, styleAt(input, row, column, input.sheet.effectiveStyleId(row, column)))
+      .text;
+  });
   for (const frozen of [false, true]) {
     columnPane(frozen, () => {
       ctx.beginPath();
@@ -766,7 +831,20 @@ function drawHeaders(input: RenderInput): void {
           ctx.fillRect(cb.start, 0, cb.size, HEADER_HEIGHT);
         }
         ctx.fillStyle = palette.headerText;
-        ctx.fillText(SheetDimensions.columnToLetters(cb.index), cb.start + cb.size / 2, HEADER_HEIGHT / 2);
+        const title = titles.get(cb.index);
+        if (title) {
+          // A table's own column title, shortened to fit the column. No clip: it would reset the
+          // path the dividers are being collected in.
+          ctx.font = `bold ${plainFont}`;
+          ctx.fillText(
+            fitText(ctx, title, cb.size - 2 * CELL_PAD_X),
+            cb.start + cb.size / 2,
+            HEADER_HEIGHT / 2,
+          );
+          ctx.font = plainFont;
+        } else {
+          ctx.fillText(SheetDimensions.columnToLetters(cb.index), cb.start + cb.size / 2, HEADER_HEIGHT / 2);
+        }
         line(ctx, crisp(cb.start + cb.size), 0, crisp(cb.start + cb.size), HEADER_HEIGHT);
       }
       ctx.stroke();
@@ -792,6 +870,45 @@ function drawHeaders(input: RenderInput): void {
   line(ctx, 0, crisp(HEADER_HEIGHT), v.width, crisp(HEADER_HEIGHT));
   line(ctx, crisp(HEADER_WIDTH), 0, crisp(HEADER_WIDTH), v.height);
   ctx.stroke();
+}
+
+/** `text` cut short with an ellipsis so it measures at most `width` (empty when nothing fits). */
+export function fitText(ctx: CanvasRenderingContext2D, text: string, width: number): string {
+  if (ctx.measureText(text).width <= width) return text;
+  const chars = [...text];
+  // The longest prefix that fits with its ellipsis (binary search: titles can be long).
+  let lo = 0;
+  let hi = chars.length - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.measureText(chars.slice(0, mid).join('') + '…').width <= width) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo > 0 ? chars.slice(0, lo).join('') + '…' : '';
+}
+
+/**
+ * Sticky table headers (PRD §10.1): scrolled down inside a table, past its header row, the column
+ * header strip shows the table's titles in place of the letters. Keyed by column; columns no such
+ * table covers, and blank titles, are absent. A header row in the frozen rows is on screen anyway.
+ */
+export function stickyHeaderTitles(
+  sheet: Worksheet,
+  v: Viewport,
+  title: (row: number, column: number) => string,
+): Map<number, string> {
+  const out = new Map<number, string>();
+  const top = v.visibleRows.find((b) => !b.frozen)?.index;
+  if (top === undefined) return out;
+  for (const t of sheet.tables) {
+    const r = t.range;
+    if (!t.hasHeader || r.top < v.frozenRows || top <= r.top || top > r.bottom) continue;
+    for (let c = r.left; c <= r.right; c++) {
+      const text = title(r.top, c);
+      if (text) out.set(c, text);
+    }
+  }
+  return out;
 }
 
 function edge(

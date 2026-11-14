@@ -248,6 +248,8 @@ export class AppController {
   readonly session = new WorkbookSession();
   readonly selection = new Selection();
   readonly grid: { current: GridController | null } = { current: null };
+  /** The formula bar's Name Box: Go To (⌃G) puts the keyboard there. */
+  readonly nameBox: { current: HTMLInputElement | null } = { current: null };
 
   readonly native: CellestraNative | null = nativeBridge();
   readonly browser = new BrowserStore();
@@ -1878,6 +1880,11 @@ export class AppController {
   }
 
   /** ⌘A: inside a table, the table first; pressed again (or outside one), the whole sheet. */
+  /** Go To: the Name Box takes a cell, a range, `Sheet!A1` or a name (Enter goes, Esc returns). */
+  focusNameBox(): void {
+    this.nameBox.current?.focus();
+  }
+
   selectAll(): void {
     const active = this.selection.active.peek();
     const t = this.activeTable;
@@ -2178,6 +2185,7 @@ export class AppController {
       ? ([...matches].reverse().find(before) ?? matches[matches.length - 1]!)
       : (matches.find(after) ?? matches[0]!);
     this.selection.select(hit[0], hit[1]);
+    this.grid.current?.revealActive();
     return true;
   }
 
@@ -2249,6 +2257,7 @@ export class AppController {
         right: range.right,
       }),
     );
+    this.grid.current?.revealActive();
     return true;
   }
 

@@ -33,7 +33,7 @@ import {
   type GridOverlay,
 } from './render.ts';
 import { canvasRowMeasure, ContentHeights } from './rowHeights.ts';
-import { startsComposition } from './keys.ts';
+import { afterTab, enterOrigin, startsComposition, type TabRun } from './keys.ts';
 import { insertLineBreak } from '../components/lineBreak.ts';
 import { Viewport, HEADER_HEIGHT, HEADER_WIDTH, type Rect } from './viewport.ts';
 import type { GridPalette } from './palette.ts';
@@ -114,6 +114,8 @@ export interface GridController {
   focus(): void;
   beginEdit(initial?: string): void;
   isEditing(): boolean;
+  /** Scroll the active cell into view (after a jump the grid didn't make: Find, Go To). */
+  revealActive(): void;
   /**
    * Commit the open inline edit, if any, before something else changes the sheet or document.
    * False when the value was refused (a stop validation rule) and the editor stays open.
@@ -227,6 +229,8 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     pointer: null as { x: number; y: number } | null,
     tipTimer: 0,
     tipCell: null as { row: number; column: number } | null,
+    /** The Tab presses along the current row, so Enter can go back to where they started. */
+    tabRun: null as TabRun | null,
   });
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
   /** The formula aids under the editor: function names matching what is typed, or the argument hint. */
@@ -422,10 +426,11 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     [zoom],
   );
 
-  const reveal = (row: number, column: number) => {
+  /** Scroll so the cell shows; `axes` limits it to one direction (a whole-row selection's far end). */
+  const reveal = (row: number, column: number, axes = { x: true, y: true }) => {
     const v = state.current.viewport ?? viewport();
-    const x = v.scrollToReveal('x', column);
-    const y = v.scrollToReveal('y', row);
+    const x = axes.x ? v.scrollToReveal('x', column) : state.current.scrollX;
+    const y = axes.y ? v.scrollToReveal('y', row) : state.current.scrollY;
     if (x !== state.current.scrollX || y !== state.current.scrollY) {
       state.current.scrollX = x;
       state.current.scrollY = y;
@@ -647,6 +652,8 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       const m = host.sheet.value.findMerge(row, column);
       return !!m && (m.range.top !== row || m.range.left !== column);
     };
+    const run = state.current.tabRun;
+    state.current.tabRun = null;
     if (cycleInRange && !extend && selection.cycle(dr, dc, skipCell)) {
       const a = selection.active.value;
       reveal(a.row, a.column);
@@ -654,7 +661,13 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     }
     const v = state.current.viewport ?? viewport();
     const sheet = host.sheet.value;
-    const from = extend ? selection.extentCorner : selection.active.value;
+    const active = selection.active.value;
+    // Enter after a run of Tabs goes down from the column the run started in.
+    const from = extend
+      ? selection.extentCorner
+      : cycleInRange && dr === 1 && dc === 0
+        ? enterOrigin(run, active)
+        : active;
     let row: number;
     let column: number;
     if (jump) ({ row, column } = host.edge(from.row, from.column, dr, dc));
@@ -675,7 +688,10 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       if (dc && v.columns.isHidden(column)) column = from.column;
     }
     selection.select(row, column, { extend, grow: growOverMerges });
-    reveal(row, column);
+    if (cycleInRange && !extend && dr === 0 && dc !== 0)
+      state.current.tabRun = afterTab(run, active, selection.active.value);
+    // Extending a whole-row (or whole-column) selection must not scroll to its far end.
+    reveal(row, column, extend ? { x: dc !== 0, y: dr !== 0 } : undefined);
   };
 
   // The hover tip's pending timer must not fire into an unmounted grid.
@@ -751,9 +767,18 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         e.preventDefault();
         host.clearSelection();
         return;
-      case 'Escape':
-        host.clearMarquee?.();
+      case 'Escape': {
+        // Esc drops the copy marquee first; with none, it collapses the selection to the active cell.
+        if (host.marquee?.value?.sheet === host.sheet.value.name) {
+          host.clearMarquee?.();
+          return;
+        }
+        const { row, column } = selection.active.value;
+        const m = host.sheet.value.selectionRangeAt(row, column);
+        if (selection.collapse({ top: m.top, left: m.left, bottom: m.bottom, right: m.right }))
+          e.preventDefault();
         return;
+      }
     }
     // Typing a printable character replaces the cell's content and starts editing. ⌥ (macOS) and
     // AltGr (Ctrl+Alt elsewhere) type characters too; ⌘ and plain Ctrl are shortcuts.
@@ -1243,6 +1268,10 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       focus: () => rootRef.current?.focus(),
       beginEdit,
       isEditing: () => editingRef.current !== null,
+      revealActive: () => {
+        const { row, column } = selection.active.peek();
+        reveal(row, column);
+      },
       commitEdit: () => endEdit(true),
     };
 

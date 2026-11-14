@@ -17,6 +17,8 @@ export function FormulaBar(props: {
   readonly onDone: () => void;
   /** Nothing to show or edit (a chart sheet is active): both fields are blank and disabled. */
   readonly disabled?: boolean;
+  /** Filled with the Name Box, so Go To can focus it. */
+  readonly nameBoxRef?: { current: HTMLInputElement | null };
 }) {
   const draft = useRef<FormulaBarDraft | null>(null);
   draft.current ??= new FormulaBarDraft(props.content);
@@ -39,6 +41,9 @@ export function FormulaBar(props: {
   return (
     <div class="cs-formula-bar">
       <input
+        ref={(el) => {
+          if (props.nameBoxRef) props.nameBoxRef.current = el;
+        }}
         class="cs-name-box"
         aria-label="Cell reference"
         disabled={props.disabled}
