@@ -66,22 +66,34 @@ function compareText(value: CellValue, op: Operator, operand: string): boolean {
   }
 }
 
+const escapeRegex = (c: string): string => c.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+/** Whether a pattern needs the regex path: it holds a wildcard or a `~` escape. */
+const hasWildcards = (pattern: string): boolean => /[*?~]/.test(pattern);
+
+/** `*` is any run, `?` any one character, and `~` makes the next `*`, `?` or `~` literal (Calc, Excel). */
 function wildcardToRegex(pattern: string): RegExp {
+  const chars = [...pattern];
   let source = '^';
-  for (const c of pattern) {
-    if (c === '*') source += '.*';
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i]!;
+    const next = chars[i + 1];
+    if (c === '~' && (next === '*' || next === '?' || next === '~')) {
+      source += escapeRegex(next);
+      i++;
+    } else if (c === '*') source += '.*';
     else if (c === '?') source += '.';
-    else source += c.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+    else source += escapeRegex(c);
   }
   return new RegExp(source + '$', 'iu');
 }
 
 /**
- * Case-insensitive equality with `*`/`?` wildcards and no operators — the exact-match test of
+ * Case-insensitive equality with `*`/`?` wildcards (`~` escapes one) and no operators — the exact-match test of
  * MATCH/VLOOKUP. Only reads `text`; callers decide which cell kinds take part.
  */
 export function textPattern(pattern: string): (text: string) => boolean {
-  if (!pattern.includes('*') && !pattern.includes('?')) {
+  if (!hasWildcards(pattern)) {
     const target = pattern.toUpperCase();
     return (t) => t.toUpperCase() === target;
   }
@@ -90,7 +102,7 @@ export function textPattern(pattern: string): (text: string) => boolean {
 }
 
 function textMatcher(pattern: string): Predicate {
-  if (!pattern.includes('*') && !pattern.includes('?')) {
+  if (!hasWildcards(pattern)) {
     const target = pattern.toUpperCase();
     return (v) => asText(v).toUpperCase() === target;
   }
