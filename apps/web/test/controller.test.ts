@@ -1,4 +1,4 @@
-import { CellRange, CellValue, EditCommands, OdsWriter, Workbook } from '@cellestra/core';
+import { CellRange, CellValue, EditCommands, OdsWriter, SheetDimensions, Workbook } from '@cellestra/core';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DocumentRef, FileStore, OpenedDocument } from '@cellestra/ui';
 import type { AppController as Controller } from '../src/app/controller.ts';
@@ -469,6 +469,41 @@ describe('autofit columns', () => {
     expect(slant).toBeGreaterThan(up!);
     expect(slant).toBeLessThan(flat!);
     expect(wrapped).toBe(up);
+  });
+});
+
+describe('paste at the sheet edge', () => {
+  it('refuses text that would run past the last column instead of wrapping into the next row', async () => {
+    const app = await makeApp();
+    const last = SheetDimensions.maxColumns - 1;
+    app.selection.select(3, last);
+    app.paste('1\t2');
+
+    const sheet = app.session.activeSheet.peek();
+    expect(sheet.getValue(3, last)).toEqual(CellValue.empty);
+    expect(sheet.getValue(4, 0)).toEqual(CellValue.empty);
+    expect(app.toast.peek()?.text).toMatch(/doesn't fit/);
+  });
+
+  it('refuses its own copied block the same way', async () => {
+    const app = await makeApp();
+    const sheet = app.session.activeSheet.peek();
+    app.session.execute(
+      EditCommands.setInput(sheet.name, 0, 0, 'a', app.session.locale, app.session.workbook.peek()),
+    );
+    app.session.execute(
+      EditCommands.setInput(sheet.name, 0, 1, 'b', app.session.locale, app.session.workbook.peek()),
+    );
+    app.selection.selectRange({ top: 0, left: 0, bottom: 0, right: 1 });
+    app.copy(false, { setData: () => {} } as unknown as DataTransfer);
+    const last = SheetDimensions.maxColumns - 1;
+    app.selection.select(3, last);
+    app.paste(null);
+
+    const after = app.session.activeSheet.peek();
+    expect(after.getValue(3, last)).toEqual(CellValue.empty);
+    expect(after.getValue(4, 0)).toEqual(CellValue.empty);
+    expect(app.toast.peek()?.text).toMatch(/doesn't fit/);
   });
 });
 

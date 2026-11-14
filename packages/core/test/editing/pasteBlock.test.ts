@@ -4,6 +4,7 @@ import { EditCommands } from '../../src/editing/editCommands.ts';
 import { EditHistory } from '../../src/editing/editHistory.ts';
 import { PasteBlockCommand } from '../../src/editing/pasteBlockCommand.ts';
 import { CellRange } from '../../src/model/cellRange.ts';
+import { SheetDimensions } from '../../src/model/sheetDimensions.ts';
 import { Workbook } from '../../src/model/workbook.ts';
 import { CellValue } from '../../src/values/cellValue.ts';
 
@@ -223,5 +224,25 @@ describe('PasteBlockCommand', () => {
 
     history.undo();
     expect(num(sheet.getValue(1, 1))).toBe(5);
+  });
+
+  it('refuses a paste that would run past the last column or row, writing nothing', () => {
+    const { history, sheet } = setup();
+    sheet.setValue(0, 0, CellValue.number(1));
+    sheet.setValue(0, 1, CellValue.number(2));
+    const block = ClipboardBlock.capture(sheet, R('A1:B1'), false);
+    const lastColumn = SheetDimensions.maxColumns - 1;
+
+    expect(() => history.execute(new PasteBlockCommand(sheet.name, [3, lastColumn], block))).toThrow(
+      /doesn't fit/,
+    );
+    expect(sheet.find(3, lastColumn)).toBeFalsy();
+    expect(sheet.find(4, 0)).toBeFalsy();
+    expect(history.canUndo).toBe(false);
+
+    const tall = ClipboardBlock.capture(sheet, R('A1:A2'), false);
+    expect(() =>
+      history.execute(new PasteBlockCommand(sheet.name, [SheetDimensions.maxRows - 1, 0], tall)),
+    ).toThrow(/doesn't fit/);
   });
 });

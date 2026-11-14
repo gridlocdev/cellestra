@@ -1920,6 +1920,11 @@ export class AppController {
     });
     const locale = this.session.locale;
     const { row, column } = this.selection.active.peek();
+    const textWidth = rows.reduce((w, r) => Math.max(w, r.length), 0);
+    if (!PasteBlockCommand.fits(row, column, rows.length, textWidth)) {
+      this.#showToast(PasteBlockCommand.doesNotFit, 'error');
+      return;
+    }
     const wb = this.session.workbook.peek();
     const incoming = rows.flatMap((cells, r) =>
       cells.map((v, c) => {
@@ -1932,7 +1937,7 @@ export class AppController {
       cells.map((v, c) => EditCommands.setInput(sheet, row + r, column + c, v, locale, wb)),
     );
     this.run(each('Paste', cmds));
-    const width = rows.reduce((w, r) => Math.max(w, r.length), 0);
+    const width = textWidth;
     if (rows.length > 0 && width > 0)
       this.selection.selectRange({
         top: row,

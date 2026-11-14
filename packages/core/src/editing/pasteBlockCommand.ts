@@ -1,13 +1,14 @@
 import { ReferenceAdjuster } from '../formulas/references/referenceAdjuster.ts';
 import { Cell } from '../model/cell.ts';
 import { CellRange } from '../model/cellRange.ts';
+import { SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import { StylePool } from '../styling/stylePool.ts';
 import { CellValue } from '../values/cellValue.ts';
 import type { ClipboardBlock, ClipboardCell } from './clipboardBlock.ts';
 import { CellSnapshots } from './cellSnapshots.ts';
-import { EditResult, requireSheet, type EditCommand } from './editCommand.ts';
+import { EditRefusedError, EditResult, requireSheet, type EditCommand } from './editCommand.ts';
 import { rewriteFormula } from './formulaRewrite.ts';
 import { PastePlanner, type PastePlan } from './pastePlanner.ts';
 
@@ -60,6 +61,7 @@ export class PasteBlockCommand implements EditCommand {
   }
 
   apply(workbook: Workbook): EditResult {
+    this.requireFit();
     const dest = requireSheet(workbook, this.destSheet);
     const source = workbook.findSheet(this.block.sourceSheet);
     const b = this.block;
@@ -99,7 +101,7 @@ export class PasteBlockCommand implements EditCommand {
 
   /** The values this paste would write (none for a formats-only paste), without applying it. */
   *projectWrites(): IterableIterator<ProjectedWrite> {
-    if (this.mode === 'formats') return;
+    if (this.mode === 'formats' || !this.fits) return;
     const b = this.block;
     for (const [ar, ac] of this.plan.anchors) {
       for (let r = 0; r < b.rows; r++) {
@@ -115,6 +117,24 @@ export class PasteBlockCommand implements EditCommand {
         }
       }
     }
+  }
+
+  /** False when the paste would run past the sheet's last row or column (`apply` refuses it). */
+  get fits(): boolean {
+    const { rows, columns } = this.block;
+    return this.plan.anchors.every(([row, column]) => PasteBlockCommand.fits(row, column, rows, columns));
+  }
+
+  /** Whether a `rows` × `columns` block placed at (row, column) stays inside the sheet. */
+  static fits(row: number, column: number, rows: number, columns: number): boolean {
+    return row + rows <= SheetDimensions.maxRows && column + columns <= SheetDimensions.maxColumns;
+  }
+
+  static readonly doesNotFit = "The clipboard doesn't fit here: it would run past the edge of the sheet.";
+
+  /** Refuse a paste that would run past the sheet's edge (the cells would wrap otherwise). */
+  private requireFit(): void {
+    if (!this.fits) throw new EditRefusedError(PasteBlockCommand.doesNotFit);
   }
 
   private adjustMovedReferences(workbook: Workbook, rowDelta: number, columnDelta: number): void {
