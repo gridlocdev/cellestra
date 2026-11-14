@@ -274,10 +274,37 @@ export class WorkbookSession {
     this.#lastAction.value = narrateHistory('redo', label);
   }
 
+  /** Recalculate every formula (F9), in either calculation mode. */
   recalculateAll(): void {
     this.#engine.rebuildGraph();
-    this.#circular.value = this.#engine.recalculateAll().hasCircularReference;
-    this.#version.value++;
+    const circular = this.#engine.recalculateAll().hasCircularReference;
+    batch(() => {
+      this.#circular.value = circular;
+      this.#lastAction.value = 'Recalculated';
+      this.#version.value++;
+    });
+  }
+
+  /**
+   * Switch between automatic and manual calculation (saved with the file, so it dirties it). Going
+   * back to automatic recalculates at once, so what the sheet shows is current again.
+   */
+  setCalculationMode(mode: CalculationMode): void {
+    const wb = this.#workbook.peek();
+    if (wb.settings.calculationMode === mode) return;
+    wb.settings.calculationMode = mode;
+    let circular = this.#circular.peek();
+    if (mode === 'automatic') {
+      this.#engine.rebuildGraph();
+      circular = this.#engine.recalculateAll().hasCircularReference;
+    }
+    batch(() => {
+      this.#circular.value = circular;
+      this.#modified.value = true;
+      this.#edits++;
+      this.#lastAction.value = `Calculation: ${mode === 'manual' ? 'Manual' : 'Automatic'}`;
+      this.#version.value++;
+    });
   }
 
   /** Recalculate TODAY/NOW/RAND cells (on focus or a timer). Manual calculation waits for F9. */

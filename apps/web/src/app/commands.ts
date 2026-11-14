@@ -1052,6 +1052,16 @@ export function buildCommands(app: AppController): CommandCatalog {
       icon: 'refresh-cw',
       run: () => s.recalculateAll(),
     },
+    {
+      id: 'formula.manualCalc',
+      title: 'Manual Calculation',
+      description: 'Recalculate only on F9 instead of after every edit',
+      group: 'Data',
+      icon: 'refresh-cw',
+      keywords: 'automatic calculation mode recalc',
+      run: () => s.setCalculationMode(s.calculationMode.peek() === 'manual' ? 'automatic' : 'manual'),
+      active: () => s.calculationMode.value === 'manual',
+    },
 
     // Sheet
     {

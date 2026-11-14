@@ -446,7 +446,13 @@ button {
   margin: 0 4px;
   border: 1px solid var(--cs-border);
   border-radius: 4px;
+  background: transparent;
+  font: inherit;
   font-size: 11px;
+  cursor: pointer;
+}
+.cs-calc-badge:hover {
+  background: var(--cs-hover);
 }
 
 /* Overlays */

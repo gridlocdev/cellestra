@@ -159,3 +159,30 @@ describe('WorkbookSession status', () => {
     expect(session.savedAt.value).toBeNull();
   });
 });
+
+describe('WorkbookSession.setCalculationMode', () => {
+  it('holds results in manual mode, and catches up when switched back to automatic', () => {
+    const session = new WorkbookSession();
+    const sheet = session.activeSheet.peek();
+    session.execute(EditCommands.setInput(sheet.name, 0, 1, '=A1*2', 'en-US'));
+    session.markSaved({ store: 'browser', id: 'x', name: 'x.ods', version: null });
+
+    session.setCalculationMode('manual');
+    expect(session.calculationMode.value).toBe('manual');
+    expect(session.workbook.peek().settings.calculationMode).toBe('manual');
+    expect(session.modified.value).toBe(true);
+    expect(session.lastAction.value).toBe('Calculation: Manual');
+
+    session.execute(EditCommands.setInput(sheet.name, 0, 0, '5', 'en-US'));
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(0));
+    session.recalculateAll();
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(10));
+    expect(session.lastAction.value).toBe('Recalculated');
+
+    session.execute(EditCommands.setInput(sheet.name, 0, 0, '7', 'en-US'));
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(10));
+    session.setCalculationMode('automatic');
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(14));
+    expect(session.calculationMode.value).toBe('automatic');
+  });
+});

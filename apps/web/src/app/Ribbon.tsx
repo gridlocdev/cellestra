@@ -434,6 +434,7 @@ function FormulasTab(ctx: Ctx) {
         <div class="rb-row">
           <Big {...ctx} id="formula.recalc" label="Recalculate" />
           <Col>
+            <Small {...ctx} id="formula.manualCalc" label="Manual calculation" />
             <Small {...ctx} id="view.showFormulas" label="Show formulas" />
           </Col>
         </div>

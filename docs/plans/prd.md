@@ -174,7 +174,7 @@ Everything reachable in the command bar is also reachable in the menu bar, the C
 | **Edit** | Undo (⌘Z) · Redo (⇧⌘Z) · Cut (⌘X) · Copy (⌘C) · Paste (⌘V) · Paste Special… (⌥⌘V) · Delete · Select All (⌘A) · Find → Find… (⌘F), Find & Replace… (⌥⌘F) · Fill → Down (⌘D), Right (⌘R) |
 | **Insert** | Rows Above · Rows Below · Columns Left · Columns Right · Sheet · Table (⌘T) · Function… (⌃⌥F) · Named Range… · Hyperlink… |
 | **Format** | Cells… (⌘1) · Number → … · Bold (⌘B), Italic (⌘I), Underline (⌘U), Strikethrough (⌘⇧X) · Alignment → Align Left/Center/Right (Horizontal), Align Top/Middle/Bottom (Vertical) · Borders → … · Merge Cells · Rows → Row Height…, Hide Rows (⌃9), Unhide Rows (⌃⇧9) · Columns → Column Width…, Hide Columns (⌃0), Unhide Columns (⌃⇧0) |
-| **Data** | Sort… · Sort & Filter… (⇧⌘F) · Filter · Clear Filter · Remove Duplicates… · Text to Columns… · Data Validation… · Recalculate (F9) · Calculation → Automatic / Manual · Named Ranges… · Import CSV… · Export CSV… |
+| **Data** | Sort… · Sort & Filter… (⇧⌘F) · Filter · Clear Filter · Remove Duplicates… · Text to Columns… · Data Validation… · Recalculate (F9) · Manual Calculation (toggle) · Named Ranges… · Import CSV… · Export CSV… |
 | **View** | Command Menu… (⌘K) · Go to Sheet… (⌘⇧P) · Zoom In (⌘=) · Zoom Out (⌘−) · Actual Size (⌥⌘0) · Gridlines · Headers · Formula Bar · Status Bar · Freeze Panes |
 | **Window** | Minimize (⌘M) · Zoom · (standard macOS window items) |
 | **Help** | Cellestra Help · Function Reference… |
@@ -371,6 +371,8 @@ Undo/redo is **session-only** (never written into the `.ods` file) and covers al
 
 ### 8.6 Calculation on open
 On open, cached values from the file are shown immediately. If calculation mode is **Automatic** (the default), a background recalculation runs once to confirm values; if **Manual**, cached values are kept until the user recalculates (F9).
+
+The mode is a document setting, saved in the file's `settings.xml`. **Data → Manual Calculation** (a checked toggle) or a click on the status bar's Auto/Manual badge switches it, which marks the document modified. Switching back to Automatic recalculates immediately.
 
 ### 8.7 Destructive-action confirmations
 - **Always confirm:** deleting a worksheet that holds data or that formulas, charts or validation lists on other sheets read (the question names how many formulas will show `#REF!`; an empty, unused sheet is deleted without asking, and undo brings it back); overwriting an existing file via Save As; closing/quitting with unsaved changes (Save / Don't Save / Cancel).

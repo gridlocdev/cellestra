@@ -500,9 +500,21 @@ function Footer({ app }: { readonly app: AppController }) {
         </span>
       )}
       <span class="cs-status">{summary.value}</span>
-      <span class="cs-status cs-calc-badge" title="Calculation mode">
+      <button
+        type="button"
+        class="cs-status cs-calc-badge"
+        title={
+          s.calculationMode.value === 'manual'
+            ? 'Manual calculation: press F9 to recalculate. Click to switch to automatic.'
+            : 'Automatic calculation. Click to switch to manual.'
+        }
+        onClick={() => {
+          s.setCalculationMode(s.calculationMode.peek() === 'manual' ? 'automatic' : 'manual');
+          queueMicrotask(() => app.grid.current?.focus());
+        }}
+      >
         {calculationBadge(s.calculationMode.value)}
-      </span>
+      </button>
       <span class="cs-status" title="Zoom">
         {Math.round(app.zoom.value * 100)}%
       </span>
