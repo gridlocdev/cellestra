@@ -63,6 +63,11 @@ export class OdsPackage {
     this.parts.set(name, content);
   }
 
+  /** Drop a part; true when it was there. */
+  remove(name: string): boolean {
+    return this.parts.delete(name);
+  }
+
   /** The parts that are NOT regenerated on save — preserved as-is (charts, images, etc.). */
   get preservedParts(): string[] {
     return this.partNames.filter((name) => !GeneratedParts.has(name));

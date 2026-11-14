@@ -343,6 +343,8 @@ This section pins down behaviors that would otherwise be guessed at.
 ### 8.1 Preserving unsupported `.ods` content
 On open, any element or attribute Cellestra does not model is **retained verbatim** and **written back unchanged** on save, so round-tripping never silently drops features (charts, pivot tables, etc.) that a file may contain. Cellestra never discards user data it doesn't understand; it only declines to *edit* it. If an edit makes verbatim preservation of a specific element impossible, the user's cell values, formulas, and styles still survive.
 
+Two parts describe the old content rather than hold data, and a save drops them: the **document signature** (`META-INF/documentsignatures.xml`, which signs the content.xml a save rewrites; LibreOffice drops it on edit too) and the **thumbnail** (`Thumbnails/thumbnail.png`, a picture of the old content).
+
 ### 8.2 The v1 function library
 - **Math/stats:** SUM, AVERAGE, MIN, MAX, COUNT, COUNTA, PRODUCT, ABS, INT, MOD, ROUND, ROUNDUP, ROUNDDOWN, POWER, SQRT, SUMIF, COUNTIF.
 - **Logical:** IF, IFERROR, AND, OR, NOT, TRUE, FALSE.

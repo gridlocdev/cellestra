@@ -12,13 +12,16 @@ import { Fo, OdsXmlNames as N, NumberNs, Office, Style } from './odsXmlNames.ts'
 /**
  * Writes a `Workbook` to `.ods` bytes. Regenerates content.xml, settings.xml, and the manifest from
  * the model; preserves the source package's styles.xml, meta.xml, and all unmodeled parts and
- * `office:spreadsheet` children verbatim (PRD §8.1).
+ * `office:spreadsheet` children verbatim (PRD §8.1). The document signature and the thumbnail are
+ * dropped: both describe content this save replaces (LibreOffice drops a signature on edit too).
  */
 export const OdsWriter = {
   write(workbook: Workbook, source: OdsPackage | null = null): Uint8Array {
     const pkg = source ?? new OdsPackage();
 
     pkg.setText(N.mimetypePart, N.mimeType);
+    pkg.remove(N.documentSignaturesPart);
+    pkg.remove(N.thumbnailPart);
 
     // Chart objects must exist (with assigned Object N names) before content.xml is built, since
     // the table writer embeds a draw frame pointing at each one.

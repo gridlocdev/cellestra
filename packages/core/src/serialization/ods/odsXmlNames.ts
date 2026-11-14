@@ -76,6 +76,10 @@ export const OdsXmlNames = {
   metaPart: 'meta.xml',
   settingsPart: 'settings.xml',
   manifestPart: 'META-INF/manifest.xml',
+  /** The document's digital signature: it signs content.xml, which every save rewrites. */
+  documentSignaturesPart: 'META-INF/documentsignatures.xml',
+  /** The file manager's preview, a picture of the content when the file was last saved elsewhere. */
+  thumbnailPart: 'Thumbnails/thumbnail.png',
 } as const;
 
 /** The parts Cellestra regenerates from the model on save (everything else is preserved verbatim). */
