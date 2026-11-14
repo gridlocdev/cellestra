@@ -257,7 +257,7 @@ export function mathFunctions(): FormulaFunction[] {
         const n = readNumber(ev, args[0]!);
         if (isFailure(n)) return n.failed;
         return n < 0
-          ? CellValue.error(CellError.value('SQRT of a negative number.'))
+          ? CellValue.error(CellError.number('SQRT of a negative number.'))
           : CellValue.number(Math.sqrt(n));
       },
     ),

@@ -94,8 +94,8 @@ describe('Functions', () => {
     expect(errorToken('AVERAGE(A1:A3)')).toBe('#DIV/0!');
   });
 
-  it('SQRT of a negative is an error', () => {
-    expect(errorToken('SQRT(-1)')).toBe('#VALUE!');
+  it('SQRT of a negative is #NUM! (Calc Err:502)', () => {
+    expect(errorToken('SQRT(-1)')).toBe('#NUM!');
   });
 
   it('SUMIF and COUNTIF', () => {
