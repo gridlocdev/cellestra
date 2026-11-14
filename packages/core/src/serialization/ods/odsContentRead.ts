@@ -6,6 +6,7 @@ import { CellRange } from '../../model/cellRange.ts';
 import type { Hyperlink } from '../../model/hyperlink.ts';
 import { MergedRegion } from '../../model/mergedRegion.ts';
 import { SheetDimensions } from '../../model/sheetDimensions.ts';
+import { SheetOutline, type LineGroup, type LineSpan } from '../../model/sheetOutline.ts';
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import { StylePool } from '../../styling/stylePool.ts';
@@ -153,10 +154,23 @@ type Frame =
       readonly role: 'root' | 'body' | 'spreadsheet' | 'subtree';
       readonly done: ((e: XmlElement) => void) | null;
     }
-  | { readonly kind: 'table' | 'rows' | 'columns'; readonly table: TableReader }
+  | { readonly kind: 'table'; readonly table: TableReader }
+  | {
+      readonly kind: 'rows' | 'columns';
+      readonly table: TableReader;
+      /** The group or print-title span this container opens; null for a plain `table:table-rows`. */
+      readonly span: OpenSpan | null;
+    }
   | { readonly kind: 'skip' };
 
 const SKIP: Frame = { kind: 'skip' };
+
+/** A row or column container being read: where it starts, and what it says about its lines. */
+interface OpenSpan {
+  readonly header: boolean;
+  readonly first: number;
+  readonly collapsed: boolean;
+}
 
 /**
  * Turns the events of `content.xml` into the workbook. The outline before `office:body`
@@ -214,11 +228,15 @@ class ContentReader implements XmlEventHandler {
         return;
       case 'rows':
         if (sameName(name, TABLE_ROW)) this.subtree(name, attributes, (e) => top.table.row(e));
-        else this.frames.push(isRowGroup(name) ? top : SKIP);
+        else
+          this.frames.push(isRowGroup(name) ? this.lineContainer('rows', top.table, name, attributes) : SKIP);
         return;
       case 'columns':
         if (sameName(name, TABLE_COLUMN)) this.subtree(name, attributes, (e) => top.table.column(e));
-        else this.frames.push(isColumnGroup(name) ? top : SKIP);
+        else
+          this.frames.push(
+            isColumnGroup(name) ? this.lineContainer('columns', top.table, name, attributes) : SKIP,
+          );
         return;
       case 'table':
         this.openInTable(top.table, name, attributes);
@@ -272,14 +290,36 @@ class ContentReader implements XmlEventHandler {
       this.subtree(name, attributes, (e) => table.column(e));
     } else if (isRowGroup(name)) {
       table.gridStarted();
-      this.frames.push({ kind: 'rows', table });
+      this.frames.push(this.lineContainer('rows', table, name, attributes));
     } else if (isColumnGroup(name)) {
       table.gridStarted();
-      this.frames.push({ kind: 'columns', table });
+      this.frames.push(this.lineContainer('columns', table, name, attributes));
     } else {
       const afterGrid = table.hasGrid;
       this.subtree(name, attributes, (e) => table.child(e, afterGrid));
     }
+  }
+
+  /**
+   * A frame for a row or column container. A group (`table:table-row-group`) and the print titles
+   * (`table:table-header-rows`) are modeled spans, closed when the container closes; a plain
+   * `table:table-rows` says nothing about its lines.
+   */
+  private lineContainer(
+    kind: 'rows' | 'columns',
+    table: TableReader,
+    name: XmlName,
+    attributes: XmlAttribute[],
+  ): Frame {
+    const header = name.local === `table-header-${kind}`;
+    const group = name.local === (kind === 'rows' ? 'table-row-group' : 'table-column-group');
+    if (!header && !group) return { kind, table, span: null };
+    const display = attributes.find((a) => a.name.uri === Table.uri && a.name.local === 'display');
+    return {
+      kind,
+      table,
+      span: { header, first: table.position(kind), collapsed: display?.value === 'false' },
+    };
   }
 
   /** Build a detached element and everything in it, and hand it to `done` when it closes. */
@@ -295,6 +335,8 @@ class ContentReader implements XmlEventHandler {
       frame.done?.(frame.element);
     } else if (frame?.kind === 'table') {
       frame.table.finish();
+    } else if ((frame?.kind === 'rows' || frame?.kind === 'columns') && frame.span) {
+      frame.table.closeSpan(frame.kind, frame.span);
     }
   }
 
@@ -381,6 +423,13 @@ class TableReader {
   private sawForms = false;
   private sawRow = false;
   hasGrid = false;
+  /** The next row and column a grid element starts at, counted as they arrive (held rows too). */
+  private nextRow = 0;
+  private nextColumn = 0;
+  private readonly rowGroups: LineGroup[] = [];
+  private readonly columnGroups: LineGroup[] = [];
+  private headerRows: LineSpan | null = null;
+  private headerColumns: LineSpan | null = null;
 
   constructor(
     workbook: Workbook,
@@ -404,10 +453,34 @@ class TableReader {
   }
 
   column(element: XmlElement): void {
+    this.nextColumn = Math.min(
+      this.nextColumn + readPositive(element, Table('number-columns-repeated')),
+      MAX_COLUMNS,
+    );
     this.grid.column(element);
   }
 
+  /** Where the next row or column will start. */
+  position(kind: 'rows' | 'columns'): number {
+    return kind === 'rows' ? this.nextRow : this.nextColumn;
+  }
+
+  /** A group or print-title container closed: it covered its first line up to the current one. */
+  closeSpan(kind: 'rows' | 'columns', span: OpenSpan): void {
+    const last = this.position(kind) - 1;
+    if (last < span.first) return;
+    if (span.header) {
+      // ODF allows one set of print titles per axis; a second is ignored, as LibreOffice ignores it.
+      if (kind === 'rows') this.headerRows ??= { first: span.first, last };
+      else this.headerColumns ??= { first: span.first, last };
+      return;
+    }
+    const group = { first: span.first, last, collapsed: span.collapsed };
+    (kind === 'rows' ? this.rowGroups : this.columnGroups).push(group);
+  }
+
   row(element: XmlElement): void {
+    this.nextRow = Math.min(this.nextRow + readPositive(element, Table('number-rows-repeated')), MAX_ROWS);
     this.sawRow = true;
     this.chart.row(element);
     this.checkboxes.row(element);
@@ -444,6 +517,14 @@ class TableReader {
     this.checkboxes.finish();
     this.readHeld();
     this.grid.finish();
+    const byNesting = (a: LineSpan, b: LineSpan): number => a.first - b.first || b.last - a.last;
+    const outline: SheetOutline = {
+      rowGroups: this.rowGroups.sort(byNesting),
+      columnGroups: this.columnGroups.sort(byNesting),
+      headerRows: this.headerRows,
+      headerColumns: this.headerColumns,
+    };
+    if (!SheetOutline.isEmpty(outline)) this.sheet.outline = outline;
 
     // Everything else the table carries is kept as it was: its attributes (protection, print
     // ranges, its table style) and its unmodeled children (shapes, forms, conditional formats).

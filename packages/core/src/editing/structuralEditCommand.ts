@@ -6,6 +6,7 @@ import { Column, Row } from '../model/lines.ts';
 import { MergedRegion } from '../model/mergedRegion.ts';
 import { cellKey, keyColumn, keyRow, SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
+import type { LineGroup, LineSpan, SheetOutline } from '../model/sheetOutline.ts';
 import type { Worksheet, WorksheetLayout } from '../model/worksheet.ts';
 import {
   EditRefusedError,
@@ -146,7 +147,35 @@ export class StructuralEditCommand implements EditCommand {
       tables: this.shiftTables(before.tables, rows),
       frozenRows: before.frozenRows,
       frozenColumns: before.frozenColumns,
+      outline: this.shiftOutline(before.outline, rows),
     };
+  }
+
+  /**
+   * Groups and print titles along the edit's axis grow and shrink with their lines, as LibreOffice's
+   * do; one wholly inside a deleted span goes. The other axis is untouched.
+   */
+  private shiftOutline(outline: SheetOutline, rows: boolean): SheetOutline {
+    const shiftSpan = (span: LineSpan): [number, number] | null => {
+      const surviving = this.survivingExtremes(span.first, span.last);
+      return surviving && this.mapSpan(surviving[0], surviving[1]);
+    };
+    const groups = (list: readonly LineGroup[]): LineGroup[] =>
+      list.flatMap((g) => {
+        const span = shiftSpan(g);
+        return span ? [{ first: span[0], last: span[1], collapsed: g.collapsed }] : [];
+      });
+    const header = (h: LineSpan | null): LineSpan | null => {
+      const span = h && shiftSpan(h);
+      return span ? { first: span[0], last: span[1] } : null;
+    };
+    return rows
+      ? { ...outline, rowGroups: groups(outline.rowGroups), headerRows: header(outline.headerRows) }
+      : {
+          ...outline,
+          columnGroups: groups(outline.columnGroups),
+          headerColumns: header(outline.headerColumns),
+        };
   }
 
   /**

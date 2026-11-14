@@ -18,6 +18,7 @@ import { checkboxCells, checkboxControl, checkboxForm, Form, formsElement, Ooo }
 import { appendParagraphText, odfCellAddress, odfRangeAddress } from './odsContentShared.ts';
 import { addDatabaseRanges } from './odsDatabaseRanges.ts';
 import type { ForeignXml } from './odsPackage.ts';
+import { LineContainers } from './odsLineContainers.ts';
 import { OdsPreserved } from './odsPreserved.ts';
 import { NO_PAGE_PLAN, isGeneratedTableStyle, type PagePlan } from './odsPageSetup.ts';
 import { StyleRegistry } from './odsStyleRegistry.ts';
@@ -204,9 +205,16 @@ function writeTable(
   // written, or the formatting is lost on save.
   for (const [index, model] of sheet.columns) if (!model.isDefault) lastColumn = Math.max(lastColumn, index);
 
-  writeColumns(table, sheet, lastColumn, registry);
+  // Groups and print titles are written in full, even over lines that hold nothing.
+  const { outline } = sheet;
+  const columnContainers = new LineContainers(table, 'column', outline.columnGroups, outline.headerColumns);
+  const rowContainers = new LineContainers(table, 'row', outline.rowGroups, outline.headerRows);
+  lastColumn = Math.max(lastColumn, columnContainers.lastLine);
+  lastRow = Math.max(lastRow, rowContainers.lastLine);
+
+  writeColumns(columnContainers, sheet, lastColumn, registry);
   const merges = new MergeSweep(sheet.merges);
-  writeRows(table, { sheet, registry, validations, lastColumn, checkboxes, merges }, lastRow);
+  writeRows(rowContainers, { sheet, registry, validations, lastColumn, checkboxes, merges }, lastRow);
 
   // A chart sheet embeds its chart as an ODF draw frame (the object was written by writeObjects).
   if (sheet.isChartSheet) OdsCharts.injectFrame(table, sheet);
@@ -217,18 +225,20 @@ function writeTable(
 }
 
 function writeColumns(
-  table: XmlElement,
+  containers: LineContainers,
   sheet: Worksheet,
   lastColumn: number,
   registry: StyleRegistry,
 ): void {
-  // One element per column up to the used width, coalescing identical neighbours.
+  // One element per column up to the used width, coalescing identical neighbours inside one group.
+  const boundaries = new Set(containers.boundaries);
   let column = 0;
   while (column <= lastColumn) {
     const signature = columnSignature(sheet, column, registry);
     let repeat = 1;
     while (
       column + repeat <= lastColumn &&
+      !boundaries.has(column + repeat) &&
       sameSignature(columnSignature(sheet, column + repeat, registry), signature)
     ) {
       repeat++;
@@ -242,7 +252,7 @@ function writeColumns(
     if (signature.defaultCellStyle !== null)
       element.setAttr(Table('default-cell-style-name'), signature.defaultCellStyle);
 
-    table.add(element);
+    containers.at(column).add(element);
     column += repeat;
   }
 }
@@ -275,7 +285,7 @@ function columnSignature(sheet: Worksheet, column: number, registry: StyleRegist
  * row identical to the one before it (no values, same cells, styles, validations and layout) is
  * folded into it, so a rule over B1:B1048576 is a handful of elements, not a million.
  */
-function writeRows(table: XmlElement, w: SheetWriter, lastRow: number): void {
+function writeRows(containers: LineContainers, w: SheetWriter, lastRow: number): void {
   const { sheet } = w;
   const cellColumns = new Map<number, number[]>();
   for (const [row, column] of sheet.enumerateCells()) {
@@ -296,9 +306,10 @@ function writeRows(table: XmlElement, w: SheetWriter, lastRow: number): void {
       .add(m.range.top)
       .add(m.range.top + 1)
       .add(m.range.bottom + 1);
+  for (const b of containers.boundaries) boundarySet.add(b);
   const boundaries = [...boundarySet].sort((a, b) => a - b);
 
-  const rows = new RowAppender(table);
+  const rows = new RowAppender(containers);
   let nextSpecial = 0;
   let nextBoundary = 0;
   let row = 0;
@@ -316,7 +327,7 @@ function writeRows(table: XmlElement, w: SheetWriter, lastRow: number): void {
         row++;
         continue;
       }
-      rows.append(writeRow(w, row, columns ?? []), 1);
+      rows.append(writeRow(w, row, columns ?? []), row, 1);
       lastEmptyLayout = layout;
       row++;
       continue;
@@ -327,20 +338,24 @@ function writeRows(table: XmlElement, w: SheetWriter, lastRow: number): void {
       boundaries[nextBoundary] ?? Infinity,
       lastRow + 1,
     );
-    rows.append(writeRow(w, row, []), until - row);
+    rows.append(writeRow(w, row, []), row, until - row);
     row = until;
   }
 }
 
-/** Appends rows to a table, folding each into the previous one when they are interchangeable. */
+/**
+ * Appends rows to a table (or the group they are in), folding each into the previous one when they
+ * are interchangeable and in the same group.
+ */
 class RowAppender {
-  private readonly table: XmlElement;
+  private readonly containers: LineContainers;
+  private container: XmlElement | null = null;
   private last: XmlElement | null = null;
   private lastSignature: string | null = null;
   private lastRepeat = 0;
 
-  constructor(table: XmlElement) {
-    this.table = table;
+  constructor(containers: LineContainers) {
+    this.containers = containers;
   }
 
   /** Repeat the last row `count` more times; false when there is no row to repeat. */
@@ -351,15 +366,18 @@ class RowAppender {
     return true;
   }
 
-  append(row: XmlElement, repeat: number): void {
+  append(row: XmlElement, position: number, repeat: number): void {
     const signature = rowSignature(row);
-    if (this.last && signature !== null && signature === this.lastSignature) {
+    const container = this.containers.at(position);
+    const sameContainer = container === this.container;
+    this.container = container;
+    if (this.last && sameContainer && signature !== null && signature === this.lastSignature) {
       this.lastRepeat += repeat;
       this.last.setAttr(Table('number-rows-repeated'), this.lastRepeat);
       return;
     }
     if (repeat > 1) row.setAttr(Table('number-rows-repeated'), repeat);
-    this.table.add(row);
+    container.add(row);
     this.last = row;
     this.lastSignature = signature;
     this.lastRepeat = repeat;

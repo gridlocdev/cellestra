@@ -10,6 +10,7 @@ import type { MergedRegion } from './mergedRegion.ts';
 import { cellKey, keyColumn, keyRow, SheetDimensions } from './sheetDimensions.ts';
 import { Defaults } from '../defaults.ts';
 import type { PageSetup } from './pageSetup.ts';
+import { SheetOutline } from './sheetOutline.ts';
 
 const DEFAULT_STYLE_ID = 0;
 
@@ -21,6 +22,7 @@ export interface WorksheetLayout {
   readonly tables: readonly Table[];
   readonly frozenRows: number;
   readonly frozenColumns: number;
+  readonly outline: SheetOutline;
 }
 
 /**
@@ -46,6 +48,8 @@ export class Worksheet {
   activeSort: SortSpec | null = null;
   /** How the sheet prints; null for the default page (A4, as LibreOffice). */
   pageSetup: PageSetup | null = null;
+  /** Row and column groups and print titles, kept for the file (immutable, replaced whole). */
+  outline: SheetOutline = SheetOutline.empty;
 
   constructor(name: string) {
     this.name = name;
@@ -407,6 +411,7 @@ export class Worksheet {
     copy.activeFilterSpec = this.activeFilterSpec;
     copy.activeSort = this.activeSort;
     copy.pageSetup = this.pageSetup;
+    copy.outline = this.outline;
     copy.chart = this.chart ? cloneChart(this.chart) : null;
     return copy;
   }
@@ -421,6 +426,7 @@ export class Worksheet {
       tables: [...this.tableList],
       frozenRows: this.frozenRows,
       frozenColumns: this.frozenColumns,
+      outline: this.outline,
     };
   }
 
@@ -434,6 +440,7 @@ export class Worksheet {
     this.tableList = [...layout.tables];
     this.frozenRows = layout.frozenRows;
     this.frozenColumns = layout.frozenColumns;
+    this.outline = layout.outline;
   }
 
   /**
