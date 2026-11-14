@@ -110,6 +110,22 @@ describe('CleanUp', () => {
     expect(NumberFormats.isGeneral(styleOf(workbook, sheet, 1, 0).numberFormat)).toBe(true);
   });
 
+  it('phone numbers with a leading plus stay text', () => {
+    const [workbook, sheet] = book();
+    fill(sheet, ['Phone'], ['+15551234567'], ['+447700900123']);
+    run(workbook, sheet);
+    expect(textAt(sheet, 1, 0)).toBe('+15551234567');
+    expect(textAt(sheet, 2, 0)).toBe('+447700900123');
+  });
+
+  it('codes that look like scientific notation stay text', () => {
+    const [workbook, sheet] = book();
+    fill(sheet, ['Code'], ['12E3'], ['4e10']);
+    run(workbook, sheet);
+    expect(textAt(sheet, 1, 0)).toBe('12E3');
+    expect(textAt(sheet, 2, 0)).toBe('4e10');
+  });
+
   it('one stray identifier stops the whole column being coerced', () => {
     const [workbook, sheet] = book();
     fill(sheet, ['Code'], ['12'], ['007']);

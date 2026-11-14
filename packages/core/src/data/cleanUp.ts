@@ -59,12 +59,16 @@ const MAX_INFERRED_DECIMALS = 4;
 const MAX_SAFE_DIGITS = 15;
 const BARE_CURRENCY = /^[$€£¥¤]+$/;
 const ANY_CURRENCY = /[$€£¥¤]/;
+// "+15551234567", "+44 7700 900123": nobody types a plain amount with a leading plus.
+const PHONE_LIKE = /^\+[0-9][0-9 ()-]*$/;
+// "12E3", "4e10": part numbers and lot codes far more often than scientific notation typed as text.
+const EXPONENT_LIKE = /^[0-9]+(\.[0-9]+)?[eE][+-]?[0-9]+$/;
 
 /**
  * Clean Up (PRD §8.17): per data block, style and freeze a header row, coerce numbers/dates typed as
  * text when a column is uniformly numeric, trim whitespace, give each column one inferred number
  * format, reset body alignment, and fit widths. It never rewrites formulas, overrides a chosen
- * number format, or coerces identifiers (leading zeros, more than 15 digits).
+ * number format, or coerces identifiers (leading zeros, more than 15 digits, "+" phone numbers, "12E3" codes).
  */
 export const CleanUp = {
   sheetLabel: 'Clean Up Sheet',
@@ -454,8 +458,12 @@ function fitColumns(
 
 // ---- Reading what a text cell really is ------------------------------------------
 
-/** Digits only, with a leading zero (and more than one digit) or more than 15 digits. */
+/**
+ * Text that only looks numeric: digits with a leading zero (and more than one digit) or more than 15
+ * digits, a phone number written with a leading "+", or a code in exponent form such as "12E3".
+ */
 function isIdentifier(text: string): boolean {
+  if (PHONE_LIKE.test(text) || EXPONENT_LIKE.test(text)) return true;
   if (!/^[0-9]+$/.test(text)) return false;
   return text.length > MAX_SAFE_DIGITS || (text.length > 1 && text[0] === '0');
 }

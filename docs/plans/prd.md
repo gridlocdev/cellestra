@@ -522,7 +522,8 @@ a document you did not write:
 - **Coercion is all-or-nothing per column.** Text becomes numbers only when every non-empty body cell
   in the column is (or would become) numeric. One `007` among labels means the column is left alone.
 - **Identifiers stay text.** A leading-zero digit run (`007`, an area code, a zip) and any digit string
-  too long to survive a `double` are identifiers, not numbers — and a column containing one is not
+  too long to survive a `double` are identifiers, not numbers, and so are a phone number written with
+  a leading `+` (`+15551234567`) and a code in exponent form (`12E3`). A column containing one is not
   coerced at all.
 - **No banded rows, rules, or borders.** Static fills are the only way to draw them (conditional
   formatting is a non-goal, §9), and a striped block that cannot restripe when rows are inserted is
