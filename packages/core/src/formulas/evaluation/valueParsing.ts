@@ -1,4 +1,4 @@
-import { DateConversion } from './dateConversion.ts';
+import { DateConversion, daysFromCivil } from './dateConversion.ts';
 import { localeInfo, type LocaleInfo } from './localeInfo.ts';
 
 interface NumberSymbols {
@@ -120,11 +120,16 @@ function fullYear(text: string): number {
   return y;
 }
 
+const LONGEST_MONTH = 31;
+
+/** The serial of a real calendar day in years 1–9999, or null. Never throws. */
 function validDate(year: number, month: number, day: number): number | null {
-  if (year < 1 || year > 9999 || month < 1 || month > 12 || day < 1) return null;
-  const serial = DateConversion.dateToSerial(year, month, day);
-  const back = DateConversion.dateFromSerial(serial);
-  return back.month === month && back.day === day ? serial : null;
+  if (year < 1 || year > 9999 || month < 1 || month > 12 || day < 1 || day > LONGEST_MONTH) return null;
+  // Check the day against the month first: DATE-style roll-over past 9999-12-31 throws.
+  // (daysFromCivil reads month 13 as January of the next year.)
+  const daysInMonth = daysFromCivil(year, month + 1, 1) - daysFromCivil(year, month, 1);
+  if (day > daysInMonth) return null;
+  return DateConversion.dateToSerial(year, month, day);
 }
 
 function parseDatePart(text: string, info: LocaleInfo): number | null {

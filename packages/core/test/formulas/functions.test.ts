@@ -180,6 +180,19 @@ describe('Functions', () => {
     expect(num(formula)).toBeCloseTo(expected, 10);
   });
 
+  it.each([
+    'VALUE("9999-12-40")', // past the last supported day
+    'VALUE("9999-12-32")',
+    'VALUE("2026-02-30")',
+    'VALUE("2026 June 99999999")', // a huge day with a month name
+  ])('VALUE of a day that does not exist is #VALUE!: %s', (formula) => {
+    expect(errorToken(formula)).toBe('#VALUE!');
+  });
+
+  it('VALUE still reads the last supported day', () => {
+    expect(num('VALUE("9999-12-31")')).toBe(2_958_465);
+  });
+
   // ---- Lookup -----------------------------------------------------------
 
   it('MATCH exact and approximate', () => {
