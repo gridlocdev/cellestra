@@ -67,8 +67,23 @@ describe('WorkbookSession.cellsChangedSince', () => {
     const before = session.version.peek();
     session.execute(bold('C3'));
     expect(session.cellsChangedSince(sheet.name, before)).toEqual([{ row: 2, column: 2 }]);
-    // A whole-column style reports no cells: the grid has to measure everything again.
+    // A whole-column style reports its column: the cells stored in it are the ones to measure again.
+    sheet.setValue(5, 3, CellValue.text('x'));
+    sheet.setValue(5, 4, CellValue.text('y'));
+    const styled = session.version.peek();
     session.execute(bold('D1:D1048576'));
+    expect(session.cellsChangedSince(sheet.name, styled)).toEqual([{ row: 5, column: 3 }]);
+    // So does a resized row or column.
+    const resized = session.version.peek();
+    session.execute(EditCommands.setColumnWidth(sheet.name, 4, 200));
+    session.execute(EditCommands.setRowHeight(sheet.name, 5, 40));
+    expect(session.cellsChangedSince(sheet.name, resized)).toEqual([
+      { row: 5, column: 4 },
+      { row: 5, column: 3 },
+      { row: 5, column: 4 },
+    ]);
+    // An edit that reports nothing can't be followed: the grid measures everything again.
+    session.execute(EditCommands.setFrozenPanes(sheet.name, 1, 0));
     expect(session.cellsChangedSince(sheet.name, start)).toBeNull();
   });
 });

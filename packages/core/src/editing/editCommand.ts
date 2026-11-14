@@ -11,19 +11,47 @@ export interface ChangedCell {
 /** A zero-based (row, column) position. */
 export type Position = readonly [row: number, column: number];
 
+/** A run of whole rows or whole columns of one sheet, `first` to `last` inclusive. */
+export interface ChangedLines {
+  readonly sheet: string;
+  readonly first: number;
+  readonly last: number;
+}
+
 /**
  * What an apply/undo changed: the cells whose content moved (for targeted recalc), or `structural`
- * when rows/columns/sheets shifted and everything must be re-planned.
+ * when rows/columns/sheets shifted and everything must be re-planned. `changedRows` and
+ * `changedColumns` are the whole lines whose cells may now look or measure differently without
+ * their content moving (a line style, a width or height, a merge), so a view re-measures the cells
+ * in those lines and leaves the rest.
  */
 export interface EditResult {
   readonly changedCells: readonly ChangedCell[];
+  readonly changedRows: readonly ChangedLines[];
+  readonly changedColumns: readonly ChangedLines[];
   readonly structural: boolean;
 }
 
+const NO_CELLS: readonly ChangedCell[] = Object.freeze([]);
+const NO_LINES: readonly ChangedLines[] = Object.freeze([]);
+const result = (
+  changedCells: readonly ChangedCell[],
+  changedRows: readonly ChangedLines[],
+  changedColumns: readonly ChangedLines[],
+  structural: boolean,
+): EditResult => ({ changedCells, changedRows, changedColumns, structural });
+
 export const EditResult = {
-  none: Object.freeze({ changedCells: Object.freeze([]), structural: false }) as EditResult,
-  structuralChange: Object.freeze({ changedCells: Object.freeze([]), structural: true }) as EditResult,
-  cells: (changedCells: readonly ChangedCell[]): EditResult => ({ changedCells, structural: false }),
+  none: Object.freeze(result(NO_CELLS, NO_LINES, NO_LINES, false)),
+  structuralChange: Object.freeze(result(NO_CELLS, NO_LINES, NO_LINES, true)),
+  cells: (changedCells: readonly ChangedCell[]): EditResult =>
+    result(changedCells, NO_LINES, NO_LINES, false),
+  /** Rows `first` to `last` of `sheet` changed how their cells look or measure. */
+  rows: (sheet: string, first: number, last: number): EditResult =>
+    result(NO_CELLS, [{ sheet, first, last }], NO_LINES, false),
+  /** Columns `first` to `last` of `sheet` changed how their cells look or measure. */
+  columns: (sheet: string, first: number, last: number): EditResult =>
+    result(NO_CELLS, NO_LINES, [{ sheet, first, last }], false),
 } as const;
 
 /**
@@ -102,13 +130,17 @@ export class CompositeEditCommand implements EditCommand {
 }
 
 export function combineResults(results: readonly EditResult[]): EditResult {
-  const changed: ChangedCell[] = [];
+  const cells: ChangedCell[] = [];
+  const rows: ChangedLines[] = [];
+  const columns: ChangedLines[] = [];
   let structural = false;
   for (const r of results) {
-    changed.push(...r.changedCells);
+    cells.push(...r.changedCells);
+    rows.push(...r.changedRows);
+    columns.push(...r.changedColumns);
     structural ||= r.structural;
   }
-  return { changedCells: changed, structural };
+  return result(cells, rows, columns, structural);
 }
 
 /** The named sheet, or throw: a command run against a workbook that lost its sheet is a bug. */

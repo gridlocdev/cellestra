@@ -46,8 +46,9 @@ export interface GridHost {
   /** Bumped on every model change; the grid redraws when it moves. */
   readonly version: ReadonlySignal<number>;
   /**
-   * The cells of `sheet` changed since `version` (edited or recalculated), or null when that is
-   * unknown. Lets the grid re-measure row heights for just those cells.
+   * The cells of `sheet` changed since `version` (edited, recalculated, or in a row or column an
+   * edit restyled, resized or merged), or null when that is unknown. Lets the grid re-measure row
+   * heights for just those cells.
    */
   cellsChangedSince?(sheet: string, version: number): readonly { row: number; column: number }[] | null;
   display(value: CellValue, style: CellStyle): DisplayText;
@@ -259,13 +260,17 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   /** Recompute the rows content makes taller; true when that changed. */
   const refreshContentHeights = (sheet: Worksheet, version: number): boolean => {
     const s = state.current;
-    const same = s.heights?.sheet === sheet && s.contentStamp === sheet.layoutStamp;
-    if (same && s.contentVersion === version) return false;
+    const sameSheet = s.heights?.sheet === sheet;
+    const sameLayout = s.contentStamp === sheet.layoutStamp;
+    if (sameSheet && sameLayout && s.contentVersion === version) return false;
     const since = s.contentVersion;
     s.contentVersion = version;
     s.contentStamp = sheet.layoutStamp;
-    // Same sheet and layout: re-measure only the cells edited or recalculated since.
-    const changed = same ? host.cellsChangedSince?.(sheet.name, since) : null;
+    // Same sheet: re-measure only the cells edited or recalculated since, and those in the rows and
+    // columns an edit restyled, resized or merged. A layout change with no new version came from
+    // outside the edits the session logs, so it measures everything again.
+    const followed = sameSheet && (sameLayout || version !== since);
+    const changed = followed ? host.cellsChangedSince?.(sheet.name, since) : null;
     if (changed && s.heights) return s.heights.update(changed);
     measureCtx.current ??= document.createElement('canvas').getContext('2d');
     s.heights = new ContentHeights(

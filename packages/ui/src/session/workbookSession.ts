@@ -355,14 +355,50 @@ export class WorkbookSession {
       if (result.structural) this.#structure.value++;
       this.#version.value++;
     });
-    // A style edit reports no cells: what it changed is unknown here, so it is logged as such.
+    // An edit that reports neither cells nor lines changed something unknown here: logged as such.
+    const lines = result.changedRows.length + result.changedColumns.length > 0;
     this.#logCells(
-      result.structural || result.changedCells.length === 0 ? null : [result.changedCells, evaluated],
+      result.structural || (result.changedCells.length === 0 && !lines)
+        ? null
+        : lines
+          ? this.#cellsInLines(result, [result.changedCells, evaluated])
+          : [result.changedCells, evaluated],
     );
   }
 
   #isAutomatic(): boolean {
     return this.#workbook.peek().settings.calculationMode === 'automatic';
+  }
+
+  /**
+   * `groups` plus the stored cells in the rows and columns the edit reported (a line style, a width,
+   * a merge), so a view re-measures those cells only. Null when they are too many to log.
+   */
+  #cellsInLines(
+    result: EditResult,
+    groups: (readonly (CellPosition & { readonly sheet: string })[])[],
+  ): (readonly (CellPosition & { readonly sheet: string })[])[] | null {
+    const wb = this.#workbook.peek();
+    let total = 0;
+    for (const g of groups) total += g.length;
+    const names = new Set(
+      [...result.changedRows, ...result.changedColumns].map((l) => l.sheet.toLowerCase()),
+    );
+    for (const name of names) {
+      const sheet = wb.worksheets.find((w) => w.name.toLowerCase() === name);
+      if (!sheet) continue;
+      const rows = result.changedRows.filter((l) => l.sheet.toLowerCase() === name);
+      const columns = result.changedColumns.filter((l) => l.sheet.toLowerCase() === name);
+      const within = (lines: typeof rows, i: number) => lines.some((l) => i >= l.first && i <= l.last);
+      const cells: (CellPosition & { readonly sheet: string })[] = [];
+      for (const [row, column] of sheet.enumerateCells()) {
+        if (!within(rows, row) && !within(columns, column)) continue;
+        if (++total > CELL_LOG_MAX_CELLS) return null;
+        cells.push({ sheet: sheet.name, row, column });
+      }
+      groups.push(cells);
+    }
+    return groups;
   }
 
   /** Cells each recent version changed, per lower-cased sheet name; null when that isn't known. */

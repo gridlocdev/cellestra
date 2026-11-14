@@ -258,11 +258,11 @@ export const EditCommands = {
         const col = requireSheet(wb, sheet).getOrCreateColumn(column);
         previous = col.width;
         col.width = width;
-        return EditResult.none;
+        return EditResult.columns(sheet, column, column);
       },
       (wb) => {
         requireSheet(wb, sheet).getOrCreateColumn(column).width = previous;
-        return EditResult.none;
+        return EditResult.columns(sheet, column, column);
       },
     );
   },
@@ -275,11 +275,11 @@ export const EditCommands = {
         const model = requireSheet(wb, sheet).getOrCreateRow(row);
         previous = model.height;
         model.height = height;
-        return EditResult.none;
+        return EditResult.rows(sheet, row, row);
       },
       (wb) => {
         requireSheet(wb, sheet).getOrCreateRow(row).height = previous;
-        return EditResult.none;
+        return EditResult.rows(sheet, row, row);
       },
     );
   },
@@ -317,13 +317,13 @@ export const EditCommands = {
           previous[c - firstColumn] = model.hidden;
           model.hidden = hidden;
         }
-        return EditResult.none;
+        return EditResult.columns(sheet, firstColumn, lastColumn);
       },
       (wb) => {
         const ws = requireSheet(wb, sheet);
         for (let c = firstColumn; c <= lastColumn; c++)
           ws.getOrCreateColumn(c).hidden = previous[c - firstColumn]!;
-        return EditResult.none;
+        return EditResult.columns(sheet, firstColumn, lastColumn);
       },
     );
   },
@@ -339,12 +339,12 @@ export const EditCommands = {
           previous[r - firstRow] = model.hidden;
           model.hidden = hidden;
         }
-        return EditResult.none;
+        return EditResult.rows(sheet, firstRow, lastRow);
       },
       (wb) => {
         const ws = requireSheet(wb, sheet);
         for (let r = firstRow; r <= lastRow; r++) ws.getOrCreateRow(r).hidden = previous[r - firstRow]!;
-        return EditResult.none;
+        return EditResult.rows(sheet, firstRow, lastRow);
       },
     );
   },
@@ -356,11 +356,11 @@ export const EditCommands = {
       'Merge Cells',
       (wb) => {
         requireSheet(wb, sheet).addMerge(new MergedRegion(range));
-        return EditResult.none;
+        return EditResult.rows(sheet, range.top, range.bottom);
       },
       (wb) => {
         requireSheet(wb, sheet).removeMerge(range.top, range.left);
-        return EditResult.none;
+        return EditResult.rows(sheet, range.top, range.bottom);
       },
     ),
 
@@ -372,17 +372,22 @@ export const EditCommands = {
         const ws = requireSheet(wb, sheet);
         removed = ws.findMerge(row, column) ?? null;
         if (removed) ws.removeMerge(row, column);
-        return EditResult.none;
+        return mergeRows(sheet, removed);
       },
       (wb) => {
         if (removed) requireSheet(wb, sheet).addMerge(removed);
-        return EditResult.none;
+        return mergeRows(sheet, removed);
       },
     );
   },
 } as const;
 
 type StyleChange = (style: CellStyle) => CellStyle;
+
+/** The rows a merge covers, or nothing when there was none. */
+function mergeRows(sheet: string, merge: MergedRegion | null): EditResult {
+  return merge ? EditResult.rows(sheet, merge.range.top, merge.range.bottom) : EditResult.none;
+}
 
 /**
  * Style whole columns and/or whole rows through their line models, never one cell per position.
@@ -402,6 +407,10 @@ export function lineStyleCommand(
   let rowsBefore: [index: number, styleId: number][] = [];
   let columnsBefore: [index: number, styleId: number][] = [];
   let cellsBefore: [row: number, column: number, before: Cell | null][] = [];
+  // Whole columns (the whole sheet included) or whole rows: every cell in them may look different.
+  const styledLines = columns
+    ? EditResult.columns(sheet, range.left, range.right)
+    : EditResult.rows(sheet, range.top, range.bottom);
   return new ActionCommand(
     label,
     (wb) => {
@@ -474,14 +483,14 @@ export function lineStyleCommand(
         cell.styleId = styleId;
         ws.pruneIfBlank(row, column, cell);
       }
-      return EditResult.none; // a style change moves no values: nothing to recalc
+      return styledLines; // a style change moves no values: nothing to recalc
     },
     (wb) => {
       const ws = requireSheet(wb, sheet);
       for (const [column, styleId] of columnsBefore) ws.getOrCreateColumn(column).styleId = styleId;
       for (const [row, styleId] of rowsBefore) ws.getOrCreateRow(row).styleId = styleId;
       for (const [row, column, before] of cellsBefore) ws.putCell(row, column, before?.clone() ?? null);
-      return EditResult.none;
+      return styledLines;
     },
   );
 }

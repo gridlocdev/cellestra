@@ -14,12 +14,13 @@ import { CellValue } from '../values/cellValue.ts';
 import { CellSnapshotCommand } from './cellSnapshotCommand.ts';
 import {
   ActionCommand,
+  combineResults,
   CompositeEditCommand,
   EditResult,
   requireSheet,
   type EditCommand,
 } from './editCommand.ts';
-import { clampedPositions, clampToUsed, EditCommands } from './editCommands.ts';
+import { clampedPositions, clampToUsed, coversWholeColumns, EditCommands } from './editCommands.ts';
 
 type LineState = [index: number, styleId: number, hidden: boolean];
 
@@ -212,6 +213,13 @@ export const DataEditCommands = {
     let sortState: SortSpec | null = null;
     let rowState: LineState[] = [];
     let columnState: LineState[] = [];
+    /** The range's rows and the rows of the merges it removed; its columns when they were whole. */
+    const changed = (): EditResult =>
+      combineResults([
+        EditResult.rows(sheet, range.top, range.bottom),
+        ...removedMerges.map((m) => EditResult.rows(sheet, m.range.top, m.range.bottom)),
+        coversWholeColumns(range) ? EditResult.columns(sheet, range.left, range.right) : EditResult.none,
+      ]);
     return new ActionCommand(
       'Clear All',
       (wb) => {
@@ -268,7 +276,7 @@ export const DataEditCommands = {
           col.styleId = StylePool.defaultId;
           col.hidden = false;
         }
-        return EditResult.none;
+        return changed();
       },
       (wb) => {
         const ws = requireSheet(wb, sheet);
@@ -281,7 +289,7 @@ export const DataEditCommands = {
           ws.activeSort = sortState;
         }
         restoreLines(ws, rowState, columnState);
-        return EditResult.none;
+        return changed();
       },
     );
   },
@@ -298,6 +306,7 @@ export const DataEditCommands = {
     let validations: DataValidation[] = [];
     let frozenRows = 0;
     let frozenColumns = 0;
+    const everyColumn = EditResult.columns(sheet, 0, SheetDimensions.maxColumns - 1);
     return new ActionCommand(
       'Reset Sheet Data',
       (wb) => {
@@ -328,7 +337,7 @@ export const DataEditCommands = {
         ws.replaceMerges([]);
         ws.frozenRows = 0;
         ws.frozenColumns = 0;
-        return EditResult.none;
+        return everyColumn;
       },
       (wb) => {
         const ws = requireSheet(wb, sheet);
@@ -341,7 +350,7 @@ export const DataEditCommands = {
         ws.replaceMerges(merges);
         ws.frozenRows = frozenRows;
         ws.frozenColumns = frozenColumns;
-        return EditResult.none;
+        return everyColumn;
       },
     );
   },

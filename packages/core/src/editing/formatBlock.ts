@@ -5,6 +5,7 @@ import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import type { CellStyle } from '../styling/cellStyle.ts';
 import {
+  combineResults,
   CompositeEditCommand,
   EditResult,
   requireSheet,
@@ -123,6 +124,8 @@ class PaintCommand implements EditCommand {
   private readonly target: CellRange;
   private cellSnapshot: [number, number, Cell | null][] | null = null;
   private mergeSnapshot: MergedRegion[] | null = null;
+  /** The cells the last apply painted. */
+  private area: CellRange | null = null;
 
   constructor(block: FormatBlock, sheetName: string, target: CellRange) {
     this.block = block;
@@ -148,7 +151,17 @@ class PaintCommand implements EditCommand {
       changed.push({ sheet: this.sheetName, row, column });
     }
     this.applyMerges(sheet, area);
-    return EditResult.cells(changed);
+    this.area = area;
+    return combineResults([EditResult.cells(changed), this.mergedRows(sheet.merges, area)]);
+  }
+
+  /**
+   * The rows of the merges over `area`, before the paint and `others` (after it, or undone): a merge
+   * reaching past the painted cells changed how those cells look too.
+   */
+  private mergedRows(others: readonly MergedRegion[], area: CellRange): EditResult {
+    const merges = [...(this.mergeSnapshot ?? []), ...others].filter((m) => m.range.intersects(area));
+    return combineResults(merges.map((m) => EditResult.rows(this.sheetName, m.range.top, m.range.bottom)));
   }
 
   undo(workbook: Workbook): EditResult {
@@ -156,10 +169,12 @@ class PaintCommand implements EditCommand {
     if (!this.cellSnapshot || !this.mergeSnapshot) return EditResult.none;
     for (const [row, column, before] of this.cellSnapshot)
       sheet.putCell(row, column, before?.clone() ?? null);
+    const painted = [...sheet.merges];
     sheet.replaceMerges(this.mergeSnapshot);
-    return EditResult.cells(
+    const cells = EditResult.cells(
       this.cellSnapshot.map(([row, column]) => ({ sheet: this.sheetName, row, column })),
     );
+    return this.area ? combineResults([cells, this.mergedRows(painted, this.area)]) : cells;
   }
 
   private applyMerges(sheet: Worksheet, area: CellRange): void {
