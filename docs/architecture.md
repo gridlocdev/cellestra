@@ -61,6 +61,7 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
 - **Writes.**
   - Each save is atomic: temp file, then fsync, then rename.
   - `If-Match` gives optimistic concurrency (412 if the file changed). `If-None-Match: *` stops a new file from overwriting an existing one.
+  - The server sends strong ETags (a hash of the bytes). `If-Match` and `If-None-Match` accept a list of tags and ignore a `W/` prefix, so a tag a proxy weakened still matches.
   - A LibreOffice `.~lock` file next to the target blocks the save (423).
   - Only `.ods`, `.csv` and `.tsv` files can be read or written, and no path segment may start with a dot.
   - Writes to one file are serialized, so the If-Match check and the rename cannot interleave. If-Match on a missing file is 412.

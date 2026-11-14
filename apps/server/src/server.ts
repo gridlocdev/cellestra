@@ -3,7 +3,7 @@ import { readFile, stat } from 'node:fs/promises';
 import http from 'node:http';
 import { isIP } from 'node:net';
 import path from 'node:path';
-import { ApiError, type FileApi } from './fileApi.ts';
+import { ApiError, etagListMatches, type FileApi } from './fileApi.ts';
 
 export interface ServerOptions {
   readonly api: FileApi;
@@ -139,7 +139,8 @@ async function api(
       return send(res, 200, await opts.api.list(q.get('root'), q.get('path')));
     case 'GET /api/file': {
       const { bytes, etag, modified } = await opts.api.read(q.get('root'), q.get('path'));
-      if (req.headers['if-none-match'] === etag) {
+      const ifNoneMatch = header(req, 'if-none-match');
+      if (ifNoneMatch !== null && etagListMatches(ifNoneMatch, etag)) {
         res.writeHead(304, { ETag: etag, ...SECURITY_HEADERS });
         return void res.end();
       }

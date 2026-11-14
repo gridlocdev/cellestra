@@ -188,6 +188,22 @@ describe('read and write rules', () => {
     expect(statuses.filter((s) => s === 412)).toHaveLength(statuses.length - 1);
   });
 
+  it('accepts an ETag a proxy weakened, and ETag lists, in If-Match and If-None-Match', async () => {
+    await writeFile(path.join(dir, 'weak.ods'), 'one');
+    const got = await fetch(`${base}/api/file?root=docs&path=weak.ods`, { headers: auth });
+    const etag = got.headers.get('etag')!;
+    const cached = await fetch(`${base}/api/file?root=docs&path=weak.ods`, {
+      headers: { ...auth, 'If-None-Match': `"other", W/${etag}` },
+    });
+    expect(cached.status).toBe(304);
+    expect((await put('weak.ods', 'two', { 'If-Match': `W/${etag}` })).status).toBe(200);
+    const next = (await fetch(`${base}/api/file?root=docs&path=weak.ods`, { headers: auth })).headers.get(
+      'etag',
+    )!;
+    expect((await put('weak.ods', 'three', { 'If-Match': `"stale", ${next}` })).status).toBe(200);
+    expect((await put('weak.ods', 'four', { 'If-Match': `W/${next}` })).status).toBe(412);
+  });
+
   it('answers If-Match on a missing file with 412', async () => {
     expect((await put('gone.ods', 'x', { 'If-Match': '"abc"' })).status).toBe(412);
   });

@@ -228,7 +228,7 @@ export class FileApi {
     if (opts.ifMatch && !opts.force) {
       if (!current)
         throw new ApiError(412, 'The file was moved or deleted on the server since you opened it');
-      if (opts.ifMatch !== '*' && etagOf(current) !== opts.ifMatch)
+      if (!etagListMatches(opts.ifMatch, etagOf(current)))
         throw new ApiError(412, 'The file changed on the server since you opened it');
     }
     if (!opts.force) {
@@ -321,6 +321,18 @@ async function queueKey(full: string): Promise<string> {
 
 export function etagOf(bytes: Uint8Array): string {
   return '"' + createHash('sha256').update(bytes).digest('base64url').slice(0, 27) + '"';
+}
+
+/**
+ * Does an `If-Match` or `If-None-Match` header (`*`, or a list like `"a", W/"b"`) name `etag`? A
+ * `W/` prefix is ignored. RFC 9110 asks for the strong comparison in If-Match, where a weak tag never
+ * matches, but we only emit strong tags, so a weak one is ours weakened by a proxy on the way (for
+ * example when it compressed the reply). Our tags hash the stored bytes, so it still names them.
+ */
+export function etagListMatches(header: string, etag: string): boolean {
+  if (header.trim() === '*') return true;
+  const tags = header.match(/(?:W\/)?"[^"]*"/g) ?? [];
+  return tags.some((t) => t.replace(/^W\//, '') === etag);
 }
 
 function fsError(e: unknown): Error {
