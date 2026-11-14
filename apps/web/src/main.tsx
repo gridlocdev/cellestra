@@ -1,16 +1,13 @@
 import { effect } from '@preact/signals';
 import { render } from 'preact';
-import {
-  toAccelerator,
-  type CommandCatalog,
-  type CommandGroup,
-  type NativeMenuItem,
-  type Shortcut,
-} from '@cellestra/ui';
 import '@cellestra/ui/styles.css';
 import { App } from './app/App.tsx';
 import { buildCommands } from './app/commands.ts';
 import { AppController } from './app/controller.ts';
+import { menuSchedule, menuSender, nativeMenu } from './app/nativeMenu.ts';
+
+/** How long the cursor must stand still before the desktop menu is worked out again. */
+const MENU_SETTLE_MS = 100;
 
 const app = new AppController();
 const catalog = buildCommands(app);
@@ -52,92 +49,25 @@ if (native) {
     });
   });
 
-  // Rebuild the menu when enabled/checked states may have moved; coalesced to one send per frame.
-  let queued = false;
+  // Enabled/checked states may have moved: work the menu out again, and send it only when it
+  // differs from what the app shows.
+  const menu = menuSender((items) => native.setMenu(items));
+  const menuChanged = menuSchedule(() => menu.send(nativeMenu(catalog)), MENU_SETTLE_MS);
+  // The menu bar is shared: the window that sent last owns it, so a window coming to the front
+  // claims it back even when its own menu didn't change.
+  addEventListener('focus', () => {
+    menu.forget();
+    menuChanged(true);
+  });
   effect(() => {
     void app.session.version.value;
-    void app.selection.state.value;
     void app.recents.value;
     void app.showFormulas.value;
     void app.isDark.value;
-    if (queued) return;
-    queued = true;
-    requestAnimationFrame(() => {
-      queued = false;
-      native.setMenu(nativeMenu(catalog));
-    });
+    menuChanged(true);
   });
-}
-
-const MENU_ORDER: readonly CommandGroup[] = [
-  'File',
-  'Edit',
-  'View',
-  'Insert',
-  'Format',
-  'Data',
-  'Sheet',
-  'Help',
-];
-/** Clipboard items use Electron roles so the page gets real copy/cut/paste events. */
-const ROLES: Record<string, string> = { 'edit.cut': 'cut', 'edit.copy': 'copy', 'edit.paste': 'paste' };
-/** Web-only commands. */
-const WEB_ONLY = new Set(['file.openLocal', 'file.download']);
-/** Separators before these ids. */
-const BREAKS = new Set([
-  'file.save',
-  'file.importCsv',
-  'edit.cut',
-  'edit.delete',
-  'edit.find',
-  'edit.autoSum',
-  'edit.deleteRows',
-  'view.zoomIn',
-  'view.theme',
-  'format.alignLeft',
-  'format.asAutomatic',
-  'format.borderAll',
-  'format.columnWidth',
-  'format.cleanUpSheet',
-  'format.cells',
-  'data.customSort',
-  'data.toggleFilter',
-  'data.createTable',
-  'data.validation',
-  'insert.function',
-  'insert.date',
-  'formula.recalc',
-  'sheet.next',
-  'sheet.resetData',
-]);
-
-/**
- * A chord without ⌘/Ctrl on a printable key (⇧Space, ⌥=) also types text. As a menu accelerator
- * the native menu would take it from every text field, so the page's own key handling keeps it.
- */
-function typesText(s: Shortcut): boolean {
-  return !s.mod && !s.ctrl && (s.key.length === 1 || s.key === 'space');
-}
-
-function nativeMenu(catalog: CommandCatalog): NativeMenuItem[] {
-  return MENU_ORDER.map((group) => {
-    const items: NativeMenuItem[] = [];
-    for (const c of catalog.all) {
-      if (c.group !== group || WEB_ONLY.has(c.id)) continue;
-      if (BREAKS.has(c.id) && items.length > 0) items.push({ type: 'separator' });
-      const role = ROLES[c.id];
-      if (role) {
-        items.push({ role });
-        continue;
-      }
-      items.push({
-        label: c.title,
-        command: c.id,
-        enabled: catalog.isEnabled(c),
-        ...(c.shortcutKey && !typesText(c.shortcutKey) ? { accelerator: toAccelerator(c.shortcutKey) } : {}),
-        ...(c.active ? { type: 'checkbox' as const, checked: c.active() } : {}),
-      });
-    }
-    return { label: group, submenu: items };
+  effect(() => {
+    void app.selection.state.value;
+    menuChanged(false);
   });
 }
