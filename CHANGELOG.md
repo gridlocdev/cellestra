@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.2
+
+### Improvements
+
+- **Large edits and undo use less memory.** Clearing, sorting or filling checkboxes over whole columns keeps only the cells that hold something for undo, and a very large paste or fill no longer runs out of stack.
+- **Files that only look changed aren't reloaded.** When a sync client or a script touches the open file without changing it, your document and its undo history stay. A real change that arrives while a dialog, a cell edit or a save is open is reloaded once that's over.
+- **Print Selection on whole columns or rows** prints only the part that holds something, not thousands of empty pages.
+
+### Bugs fixed
+
+- A styled block, or columns formatted below a header row, no longer spreads to the whole row or column when the file is reopened. A header over several formatted columns opens instantly again instead of being refused as too large.
+- Closing the window, quitting, or opening another file while you're typing in a cell keeps what you typed.
+- Text pasted from another app without tabs goes in as lines in one column, instead of being split at its commas.
+- **Overwrite** after a conflict on the NAS still warns when LibreOffice has the file open.
+- In a browser that can only download, **Save** in the unsaved-changes question also keeps a recovery copy, which the next start offers, in case the download wasn't kept.
+- Undo and redo no longer lose a step when it fails partway.
+- Undo brings back a deleted sheet even when its name came from a file and wouldn't be allowed if you typed it.
+- A formula calling a function Cellestra doesn't have keeps the value LibreOffice saved, instead of showing `#NAME?`.
+- Cut and paste, and a full copy and paste, keep a cell's comment and its mixed text formatting.
+- Applying conditional formatting keeps the rules from the file that the dialog can't show.
+- Files that repeat cells or merged cells millions of times are refused with a clear message instead of using up all the memory.
+
 ## 0.2.1
 
 ### What's new
