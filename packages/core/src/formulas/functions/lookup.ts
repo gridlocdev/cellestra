@@ -12,7 +12,7 @@ import {
 } from './formulaFunction.ts';
 import { Arg, createMetadata } from './functionMetadata.ts';
 import { isFailure, readBoolean, readInt } from './helpers.ts';
-import type { RangeValues } from './rangeValues.ts';
+import { RangeValues } from './rangeValues.ts';
 
 /**
  * The exact-match test of MATCH/VLOOKUP: plain value equality, never a criteria expression. Text is
@@ -149,13 +149,36 @@ function indexReference(range: RangeValues, rowArg: number, colArg: number | nul
   return CellRange.fromBounds(top, left, bottom, right, r.sheet);
 }
 
+/**
+ * The area INDEX reads: its 4th argument picks one (1-based) of a list of ranges such as
+ * `(A1:B2,D1:E2)` or the sheets of a 3D range, and the first is the default. Past the last → #REF!.
+ */
+function indexSource(args: readonly Expr[], ev: FunctionEvaluator): RangeValues | CellValue {
+  let area = 1;
+  if (args.length > 3) {
+    const a = readInt(ev, args[3]!);
+    if (isFailure(a)) return a.failed;
+    area = a;
+  }
+  const areas = ev.tryEvaluateAreas(args[0]!);
+  if (!areas) {
+    // Not a reference: evaluate it for its error, or say INDEX needs a range.
+    const value = ev.evaluate(args[0]!);
+    return value.kind === 'error' ? value : CellValue.error(CellError.value('INDEX needs a range.'));
+  }
+  const source = areas[area - 1];
+  if (area < 1 || !source)
+    return CellValue.error(CellError.reference(`INDEX has no area ${area}; it has ${areas.length}.`));
+  return source;
+}
+
 /** The cells INDEX points at within its range (or inline array), or the error value it gives. */
 function indexTarget(
   args: readonly Expr[],
   ev: FunctionEvaluator,
 ): { readonly source: RangeValues; readonly target: CellRange } | CellValue {
-  const source = ev.tryEvaluateRange(args[0]!);
-  if (!source) return CellValue.error(CellError.value('INDEX needs a range.'));
+  const source = indexSource(args, ev);
+  if (!(source instanceof RangeValues)) return source;
   const target = evaluateIndexIn(source, args, ev);
   return target instanceof CellRange ? { source, target } : target;
 }
@@ -269,12 +292,13 @@ export function lookupFunctions(): FormulaFunction[] {
       createMetadata(
         'INDEX',
         'lookup',
-        'Returns the value at a position within a range, or a whole row or column when one is 0.',
+        'Returns the value at a position within a range, or a whole row or column when one is 0. With a list of ranges, area picks which one.',
         'any',
         'INDEX(A1:C10, 2, 3)',
         Arg.range('range'),
         Arg.number('row'),
         Arg.number('column', { optional: true }),
+        Arg.number('area', { optional: true }),
       ),
       evaluateIndex,
       indexValue,
