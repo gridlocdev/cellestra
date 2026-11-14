@@ -1,5 +1,6 @@
 import type { Expr } from '../ast/expr.ts';
 import type { EvaluationContext } from '../evaluation/evaluationContext.ts';
+import type { CellRange } from '../../model/cellRange.ts';
 import type { CellValue } from '../../values/cellValue.ts';
 import type { FunctionMetadata } from './functionMetadata.ts';
 import type { RangeValues } from './rangeValues.ts';
@@ -29,6 +30,11 @@ export interface FormulaFunction {
   readonly metadata: FunctionMetadata;
   /** Compute the result; return an error value rather than throwing for user-facing problems. */
   invoke(args: readonly Expr[], evaluator: FunctionEvaluator): CellValue;
+  /**
+   * For a function that returns a reference (INDEX): the range it refers to, or the error value it
+   * gives instead. A range-taking argument such as SUM's reads the range through this.
+   */
+  readonly reference?: (args: readonly Expr[], evaluator: FunctionEvaluator) => CellRange | CellValue;
 }
 
 export type FunctionBody = (args: readonly Expr[], evaluator: FunctionEvaluator) => CellValue;
@@ -36,4 +42,13 @@ export type FunctionBody = (args: readonly Expr[], evaluator: FunctionEvaluator)
 /** A function built from metadata plus a body. */
 export function defineFunction(metadata: FunctionMetadata, body: FunctionBody): FormulaFunction {
   return Object.freeze({ metadata, invoke: body });
+}
+
+/** A function that returns a reference, plus the body that gives its value in a single-value place. */
+export function defineReferenceFunction(
+  metadata: FunctionMetadata,
+  reference: NonNullable<FormulaFunction['reference']>,
+  body: FunctionBody,
+): FormulaFunction {
+  return Object.freeze({ metadata, invoke: body, reference });
 }

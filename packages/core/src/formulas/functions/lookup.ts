@@ -1,9 +1,15 @@
+import { CellRange } from '../../model/cellRange.ts';
 import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import type { Expr } from '../ast/expr.ts';
 import { approxEqual, ValueComparer } from '../evaluation/valueComparer.ts';
 import { textPattern } from './criteriaMatcher.ts';
-import { defineFunction, type FormulaFunction, type FunctionEvaluator } from './formulaFunction.ts';
+import {
+  defineFunction,
+  defineReferenceFunction,
+  type FormulaFunction,
+  type FunctionEvaluator,
+} from './formulaFunction.ts';
 import { Arg, createMetadata } from './functionMetadata.ts';
 import { isFailure, readBoolean, readInt } from './helpers.ts';
 import type { RangeValues } from './rangeValues.ts';
@@ -118,25 +124,41 @@ function lookupTable(args: readonly Expr[], ev: FunctionEvaluator, vertical: boo
   return vertical ? table.get(position, index - 1) : table.get(index - 1, position);
 }
 
-function index(range: RangeValues, rowArg: number, colArg: number | null): CellValue {
-  let rowWithin: number;
-  let colWithin: number;
-  if (colArg !== null) {
-    rowWithin = rowArg - 1;
-    colWithin = colArg - 1;
-  } else if (range.rowCount === 1) {
-    rowWithin = 0;
-    colWithin = rowArg - 1;
-  } else if (range.columnCount === 1) {
-    rowWithin = rowArg - 1;
-    colWithin = 0;
-  } else {
-    return CellValue.error(CellError.reference('INDEX needs a column number for a 2D range.'));
+/**
+ * The cells INDEX refers to, as Calc does: a row or column of 0 (or a column left out of a 2D range)
+ * means all of them, so INDEX(A1:B3, 0, 2) is B1:B3. With one number, a single row is indexed by
+ * column. A position past the range is #REF!.
+ */
+function indexReference(range: RangeValues, rowArg: number, colArg: number | null): CellRange | CellValue {
+  let row = rowArg;
+  let column = colArg ?? 0;
+  if (colArg === null && range.rowCount === 1 && range.columnCount > 1) {
+    row = 0;
+    column = rowArg;
   }
-  if (rowWithin < 0 || rowWithin >= range.rowCount || colWithin < 0 || colWithin >= range.columnCount) {
+  if (row < 0 || row > range.rowCount || column < 0 || column > range.columnCount) {
     return CellValue.error(CellError.reference('INDEX position is outside the range.'));
   }
-  return range.get(rowWithin, colWithin);
+  const r = range.range;
+  const top = row === 0 ? r.top : r.top + row - 1;
+  const bottom = row === 0 ? r.bottom : top;
+  const left = column === 0 ? r.left : r.left + column - 1;
+  const right = column === 0 ? r.right : left;
+  return CellRange.fromBounds(top, left, bottom, right, r.sheet);
+}
+
+function evaluateIndex(args: readonly Expr[], ev: FunctionEvaluator): CellRange | CellValue {
+  const range = ev.tryEvaluateRange(args[0]!);
+  if (!range) return CellValue.error(CellError.value('INDEX needs a range.'));
+  const rowArg = readInt(ev, args[1]!);
+  if (isFailure(rowArg)) return rowArg.failed;
+  let colArg: number | null = null;
+  if (args.length > 2) {
+    const c = readInt(ev, args[2]!);
+    if (isFailure(c)) return c.failed;
+    colArg = c;
+  }
+  return indexReference(range, rowArg, colArg);
 }
 
 /** The lookup & reference functions. */
@@ -209,29 +231,26 @@ export function lookupFunctions(): FormulaFunction[] {
           : CellValue.number(position + 1);
       },
     ),
-    defineFunction(
+    defineReferenceFunction(
       createMetadata(
         'INDEX',
         'lookup',
-        'Returns the value at a position within a range.',
+        'Returns the value at a position within a range, or a whole row or column when one is 0.',
         'any',
         'INDEX(A1:C10, 2, 3)',
         Arg.range('range'),
         Arg.number('row'),
         Arg.number('column', { optional: true }),
       ),
+      evaluateIndex,
       (args, ev) => {
-        const range = ev.tryEvaluateRange(args[0]!);
-        if (!range) return CellValue.error(CellError.value('INDEX needs a range.'));
-        const rowArg = readInt(ev, args[1]!);
-        if (isFailure(rowArg)) return rowArg.failed;
-        let colArg: number | null = null;
-        if (args.length > 2) {
-          const c = readInt(ev, args[2]!);
-          if (isFailure(c)) return c.failed;
-          colArg = c;
-        }
-        return index(range, rowArg, colArg);
+        const target = evaluateIndex(args, ev);
+        if (!(target instanceof CellRange)) return target;
+        if (!target.isSingleCell)
+          return CellValue.error(
+            CellError.value('INDEX gave a whole row or column where one value is needed.'),
+          );
+        return ev.context.getCell(target.sheet, target.top, target.left);
       },
     ),
   ];

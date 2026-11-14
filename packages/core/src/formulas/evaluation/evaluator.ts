@@ -188,6 +188,13 @@ export class Evaluator implements FunctionEvaluator {
         const named = this.context.resolveName(expr.name);
         return named ? new RangeValues(named, this.context) : null;
       }
+      case 'call': {
+        // A reference-returning function (INDEX); its errors surface when it is evaluated instead.
+        const fn = this.#functions.get(expr.name);
+        if (!fn?.reference || !acceptsArgCount(fn.metadata, expr.args.length)) return null;
+        const target = fn.reference(expr.args, this);
+        return target instanceof CellRange ? new RangeValues(target, this.context) : null;
+      }
       default:
         return null;
     }
