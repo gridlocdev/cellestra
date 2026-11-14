@@ -458,6 +458,28 @@ describe('createTable', () => {
   });
 });
 
+describe('replace all', () => {
+  it('keeps text cells text, and formulas formulas', async () => {
+    const app = await makeApp();
+    const sheet = app.session.activeSheet.peek();
+    sheet.setValue(0, 0, CellValue.text('007'));
+    sheet.setValue(1, 0, CellValue.text('x+1'));
+    sheet.setValue(2, 0, CellValue.text('1/x'));
+    sheet.setValue(4, 0, CellValue.text('1/2'));
+    sheet.setFormula(3, 0, 'SUM(1;2)', CellValue.empty);
+    expect(app.replaceAll('x', '=')).toBe(2);
+    expect(app.replaceAll('7', '9')).toBe(1);
+    expect(app.replaceAll('2', '3')).toBe(2);
+    expect(app.replaceAll('SUM', 'MAX')).toBe(1);
+    expect(sheet.getValue(0, 0)).toEqual(CellValue.text('009'));
+    expect(sheet.getValue(1, 0)).toEqual(CellValue.text('=+1'));
+    expect(sheet.find(1, 0)?.formula).toBeNull();
+    expect(sheet.getValue(2, 0)).toEqual(CellValue.text('1/='));
+    expect(sheet.find(3, 0)?.formula).toBe('MAX(1;3)');
+    expect(sheet.getValue(4, 0)).toEqual(CellValue.text('1/3')); // not a date
+  });
+});
+
 describe('zoom', () => {
   it('opens a file at its saved zoom, and writes the zoom back without marking it modified', async () => {
     const app = await makeApp();

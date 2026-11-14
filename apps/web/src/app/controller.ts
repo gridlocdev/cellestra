@@ -2053,6 +2053,13 @@ export class AppController {
       if (text === null || !pattern.test(text)) continue;
       pattern.lastIndex = 0;
       const next = text.replace(pattern, () => replacement);
+      if (cell.formula === null) {
+        // Text stays text, as in Calc: '007 doesn't turn into 7, nor 1/2 into a date.
+        const value = next === '' ? CellValue.empty : CellValue.text(next);
+        writes.push({ row: r, column: c, value, isFormula: false });
+        cmds.push(EditCommands.setValue(this.sheetName, r, c, value));
+        continue;
+      }
       const parsed = InputParser.parse(next, s.locale);
       writes.push({ row: r, column: c, value: parsed.value, isFormula: parsed.formula !== null });
       cmds.push(EditCommands.setInput(this.sheetName, r, c, next, s.locale, s.workbook.peek()));
