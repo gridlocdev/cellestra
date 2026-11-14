@@ -66,6 +66,24 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 const ref = (name: string): DocumentRef => ({ store: 'nas', name, id: `r:${name}`, version: 'v1' });
 const csvBytes = new TextEncoder().encode('a,b\n1,2\n');
 
+describe('blocked storage', () => {
+  it('starts with defaults when every storage access throws', async () => {
+    const real = globalThis.localStorage;
+    const blocked = () => {
+      throw new DOMException('denied', 'SecurityError');
+    };
+    vi.stubGlobal('localStorage', { getItem: blocked, setItem: blocked, removeItem: blocked });
+    try {
+      const app = await makeApp();
+      expect(app.theme.value).toBe('system');
+      app.theme.value = 'dark'; // writing it back fails quietly too
+      expect(app.isDark.value).toBe(true);
+    } finally {
+      vi.stubGlobal('localStorage', real);
+    }
+  });
+});
+
 describe('saving', () => {
   it('keeps edits made during an in-flight save dirty', async () => {
     const app = await makeApp();

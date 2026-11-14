@@ -209,11 +209,21 @@ export function filledCellCount(sheet: Worksheet, ranges: readonly CellRange[]):
   return count;
 }
 
+/** A stored preference; null when it is unset or storage is blocked (private window, policy). */
 function stored(key: string): string | null {
   try {
     return localStorage.getItem(key);
   } catch {
     return null;
+  }
+}
+
+/** Remember a preference; when storage is blocked it lasts for this session only. */
+function store(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Storage blocked: nothing to keep it in.
   }
 }
 
@@ -244,7 +254,7 @@ export class AppController {
   /** The scale the grid draws at: 100% shows cells at a comfortable reading size, not raw CSS px. */
   readonly gridZoom = computed(() => this.zoom.value * BASE_GRID_ZOOM);
   readonly showFormulas = signal(false);
-  readonly theme = signal<Theme>((localStorage.getItem(THEME_KEY) as Theme | null) ?? 'system');
+  readonly theme = signal<Theme>((stored(THEME_KEY) as Theme | null) ?? 'system');
   readonly prefersDark = signal(matchMedia('(prefers-color-scheme: dark)').matches);
   readonly isDark = computed(() =>
     this.theme.value === 'system' ? this.prefersDark.value : this.theme.value === 'dark',
@@ -304,24 +314,14 @@ export class AppController {
       (e) => (this.prefersDark.value = e.matches),
     );
     effect(() => {
-      localStorage.setItem(THEME_KEY, this.theme.value);
+      store(THEME_KEY, this.theme.value);
       document.documentElement.dataset.theme = this.isDark.value ? 'dark' : 'light';
     });
     effect(() => {
-      try {
-        localStorage.setItem(LAYOUT_KEY, this.layout.value);
-        localStorage.setItem(RIBBON_COLLAPSED_KEY, String(this.ribbonCollapsed.value));
-      } catch {
-        // Storage blocked (private window): the choice lasts for this session.
-      }
+      store(LAYOUT_KEY, this.layout.value);
+      store(RIBBON_COLLAPSED_KEY, String(this.ribbonCollapsed.value));
     });
-    effect(() => {
-      try {
-        localStorage.setItem(AUTO_SAVE_KEY, String(this.autoSaveSeconds.value));
-      } catch {
-        // Storage blocked: the interval lasts for this session.
-      }
-    });
+    effect(() => store(AUTO_SAVE_KEY, String(this.autoSaveSeconds.value)));
     // Every edit (and every change of interval) restarts auto-save's countdown, so the save lands
     // in the pause after a burst of typing rather than in the middle of one.
     effect(() => {
