@@ -1,4 +1,6 @@
 export {
+  type ChartAggregate,
+  ChartAggregates,
   type ChartDefinition,
   type ChartSeries,
   type ChartSourceSeries,

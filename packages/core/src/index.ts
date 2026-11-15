@@ -291,6 +291,7 @@ export {
   tokenize,
 } from './styling/numberFormatter.ts';
 export { ChartDataResolver, type ResolvedChart, type ResolvedSeries } from './charts/chartDataResolver.ts';
+export { type GroupedData, ChartGrouping, type GroupingSeries } from './charts/chartGrouping.ts';
 export {
   ChartTableBinding,
   type FromRangesResult,

@@ -579,6 +579,8 @@ is **not** read as a freeze).
 
 On save the resolved plain ranges are written into the chart object as for any chart, so LibreOffice plots it; the binding rides along as `cellestra:*` foreign attributes (`source-table` and `source-categories` on `chart:chart`, `source-column` and `source-size-column` on each `chart:series`), the way a table's header-column flag does (§8.10). A file without them reads as a range chart.
 
+**Repeated categories.** On a category chart (column, bar, line, area, pie, doughnut, radar, filled radar), rows that share a category label become **one category**, in the order each label first appears, whether the chart reads a table or ranges. The chart's **aggregate** says how their values combine: **sum** (the default), **average**, **count** (non-empty cells), **min** or **max**. Gaps are skipped, and a group with no numbers stays a gap; a blank label never merges. Scatter and bubble charts plot every row. The aggregate is saved as `cellestra:aggregate` on `chart:chart` when it isn't sum; LibreOffice, which has no such setting, plots the rows ungrouped.
+
 ## 9. Non-goals (deliberately NOT in v1)
 
 Intentional exclusions, not oversights.

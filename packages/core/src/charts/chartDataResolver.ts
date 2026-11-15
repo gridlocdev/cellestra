@@ -1,8 +1,10 @@
 import type { ChartDefinition, ChartSeries, ChartStacking, ChartType } from '@cellestra/charts';
+import { ChartTypes } from '@cellestra/charts';
 import { Defaults } from '../defaults.ts';
 import { fixedDigits } from '../formulas/evaluation/decimalDigits.ts';
 import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
 import { CellRange } from '../model/cellRange.ts';
+import { ChartGrouping, type GroupingSeries } from './chartGrouping.ts';
 import { ChartTableBinding } from './chartTableBinding.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
@@ -96,15 +98,21 @@ function resolveRange(
 /** The most points one chart reference reads. */
 const MAX_CHART_CELLS = 100_000;
 
-function readNumbers(workbook: Workbook, reference: string | null, fallbackSheet: string): number[] {
+function readCells(workbook: Workbook, reference: string | null, fallbackSheet: string): GroupingSeries {
   const resolved = resolveRange(workbook, reference, fallbackSheet);
-  if (!resolved) return [];
   const values: number[] = [];
+  const filled: boolean[] = [];
+  if (!resolved) return { values, filled };
   for (const [row, column] of resolved.range.positions()) {
     const v = resolved.sheet.getValue(row, column);
     values.push(v.kind === 'number' ? v.value : v.kind === 'boolean' ? (v.value ? 1 : 0) : NaN);
+    filled.push(v.kind !== 'empty');
   }
-  return values;
+  return { values, filled };
+}
+
+function readNumbers(workbook: Workbook, reference: string | null, fallbackSheet: string): number[] {
+  return [...readCells(workbook, reference, fallbackSheet).values];
 }
 
 function readLabels(workbook: Workbook, reference: string | null, fallbackSheet: string): string[] {
@@ -128,20 +136,29 @@ function seriesName(workbook: Workbook, series: ChartSeries, fallbackSheet: stri
 /**
  * Resolves a chart definition's stored range strings (e.g. `Data.B2:B7`) against a workbook into
  * numbers and labels. Unqualified references default to the first data sheet. A chart bound to a
- * table reads the table's current columns instead (`ChartTableBinding`).
+ * table reads the table's current columns instead (`ChartTableBinding`). Rows that repeat a category
+ * label merge into one category by the chart's aggregate (`ChartGrouping`); scatter and bubble
+ * charts plot every row.
  */
 export const ChartDataResolver = {
   resolve(workbook: Workbook, definition: ChartDefinition): ResolvedChart {
     const chart = ChartTableBinding.materialize(workbook, definition);
     const fallbackSheet = defaultSheetName(workbook);
-    const categories = readLabels(workbook, chart.categoriesReference, fallbackSheet);
+    const labels = readLabels(workbook, chart.categoriesReference, fallbackSheet);
+    const cells = chart.series.map((s) => readCells(workbook, s.valuesReference, fallbackSheet));
+    // Rows that share a category label become one category; with no labels every row is its own.
+    const grouped =
+      ChartTypes.groupsCategories(chart.type) && labels.length > 0
+        ? ChartGrouping.group(labels, cells, chart.aggregate)
+        : { categories: labels, values: cells.map((c) => c.values) };
+    const categories = grouped.categories;
     const series: ResolvedSeries[] = chart.series.map((definition, i) => {
       const xValues = readNumbers(workbook, definition.xValuesReference, fallbackSheet);
       const bubbleSizes = readNumbers(workbook, definition.bubbleSizeReference, fallbackSheet);
       return {
         name: seriesName(workbook, definition, fallbackSheet, i + 1),
         type: definition.type ?? chart.type,
-        values: readNumbers(workbook, definition.valuesReference, fallbackSheet),
+        values: grouped.values[i]!,
         xValues: xValues.length > 0 ? xValues : null,
         bubbleSizes: bubbleSizes.length > 0 ? bubbleSizes : null,
       };

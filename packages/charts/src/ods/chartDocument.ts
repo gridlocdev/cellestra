@@ -1,5 +1,7 @@
 import {
+  ChartAggregates,
   ChartTypes,
+  type ChartAggregate,
   createChart,
   createSeries,
   type ChartDefinition,
@@ -86,6 +88,8 @@ export const ChartDocument = {
       if (chart.source.categoryColumn !== null)
         cellestraAttr(chartElement, 'source-categories', chart.source.categoryColumn);
     }
+    // So is grouping repeated categories: written only when it isn't the default sum.
+    if (chart.aggregate !== 'sum') cellestraAttr(chartElement, 'aggregate', chart.aggregate);
     if (chart.title) chartElement.children.push(title(chart.title));
     if (chart.showLegend) chartElement.children.push(el('chart:legend', [['chart:legend-position', 'end']]));
     chartElement.children.push(plotArea);
@@ -129,6 +133,7 @@ export const ChartDocument = {
       title: titleText(chartElement) ?? '',
       showLegend: child(chartElement, N.chart, 'legend') !== null,
       stacking: percentage ? 'percent' : stacked ? 'stacked' : 'none',
+      aggregate: parseAggregate(chartElement.attr(N.cellestraChart, 'aggregate')),
     });
     if (!plotArea) return chart;
 
@@ -203,6 +208,10 @@ function buildSeries(series: ChartSeries, chartType: ChartType, bound: ChartSour
 }
 
 /** Set `cellestra:<local>` on `node`, declaring the namespace there the first time. */
+function parseAggregate(text: string | null): ChartAggregate {
+  return ChartAggregates.find((a) => a === text) ?? 'sum';
+}
+
 function cellestraAttr(node: Node, local: string, value: string): void {
   if (!node.attrs.some(([k]) => k === 'xmlns:cellestra'))
     node.attrs.push(['xmlns:cellestra', N.cellestraChart]);

@@ -5,6 +5,9 @@ export type ChartType =
 
 export type ChartStacking = 'none' | 'stacked' | 'percent';
 
+/** How rows that share a category label combine into one category. */
+export type ChartAggregate = 'sum' | 'average' | 'count' | 'min' | 'max';
+
 export interface ChartSeries {
   name: string | null;
   /** A cell holding the series name (overrides `name` when resolvable). */
@@ -52,6 +55,11 @@ export interface ChartDefinition {
   objectName: string;
   /** The table the data comes from, by column names; null plots the ranges above as they are. */
   source: ChartTableSource | null;
+  /**
+   * How rows with the same category label combine (category charts only; scatter and bubble plot
+   * every row).
+   */
+  aggregate: ChartAggregate;
 }
 
 export function createChart(init: Partial<ChartDefinition> = {}): ChartDefinition {
@@ -66,6 +74,7 @@ export function createChart(init: Partial<ChartDefinition> = {}): ChartDefinitio
     yAxisTitle: null,
     objectName: '',
     source: null,
+    aggregate: 'sum',
     ...init,
   };
 }
@@ -140,4 +149,9 @@ export const ChartTypes = {
     ['column', 'bar', 'line', 'area', 'radar', 'filledRadar'].includes(t),
   supportsStacking: (t: ChartType): boolean => t === 'column' || t === 'bar' || t === 'area',
   isXY: (t: ChartType): boolean => t === 'scatter' || t === 'bubble',
+  /** Whether rows sharing a category label merge into one category (every chart but scatter and bubble). */
+  groupsCategories: (t: ChartType): boolean => t !== 'scatter' && t !== 'bubble',
 } as const;
+
+/** Every aggregate, in the order the chart panel lists them. */
+export const ChartAggregates: readonly ChartAggregate[] = ['sum', 'average', 'count', 'min', 'max'];
