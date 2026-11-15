@@ -17,7 +17,7 @@ import {
 } from '../../src/serialization/index.ts';
 import { CellStyles, NumberFormats } from '../../src/styling/cellStyle.ts';
 import { CellValue } from '../../src/values/cellValue.ts';
-import { OdsContentTooLargeError } from '../../src/serialization/ods/odsContentRead.ts';
+import { OdsContentTooLargeError } from '../../src/serialization/ods/odsReadLimits.ts';
 import { entryNames, readEntry, roundTrip } from './helpers.ts';
 
 const NS = [

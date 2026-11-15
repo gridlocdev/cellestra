@@ -228,6 +228,34 @@ export function formsElement(form: XmlElement): XmlElement {
     .add(form);
 }
 
+/** What may come before `office:forms` in a table (ODF 1.3 §9.1.2); everything else comes after. */
+const BEFORE_FORMS = ['title', 'desc', 'table-source', 'scenario'];
+
+/**
+ * Add a table's kept children from before its grid, with the sheet's checkbox form (if any) in
+ * place: joined to the file's own `office:forms` when it has one, so its other controls are kept,
+ * else in a new `office:forms` where the schema puts it.
+ */
+export function addTableForms(
+  table: XmlElement,
+  before: readonly XmlElement[],
+  checkboxForm: XmlElement | null,
+): void {
+  let form = checkboxForm;
+  for (const child of before) {
+    const copy = child.clone();
+    if (form && copy.is(Office('forms'))) {
+      copy.add(form);
+      form = null;
+    } else if (form && !(copy.uri === Table.uri && BEFORE_FORMS.includes(copy.local))) {
+      table.add(formsElement(form));
+      form = null;
+    }
+    table.add(copy);
+  }
+  if (form) table.add(formsElement(form));
+}
+
 /**
  * `'My Sheet'.B2`: the relative form LibreOffice writes for these two attributes. It reads a
  * `$`-absolute `table:end-cell-address` as A1, which stretches the control from the sheet corner.

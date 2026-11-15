@@ -1,7 +1,9 @@
 import type { DataValidation } from '../../data/types.ts';
+import type { UnmodeledCellContent } from '../../model/cell.ts';
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import type { XmlAttribute, XmlElement } from '../../xml/index.ts';
+import { Table, Text } from './odsXmlNames.ts';
 
 /**
  * Content read from a `.ods` file that the model has no field for, kept verbatim so a save writes it
@@ -99,3 +101,51 @@ export const OdsPreserved = {
     return databaseRangeSources.get(owner);
   },
 } as const;
+
+// ── Reading and writing a table's and a cell's kept content ────────────────
+
+/** A table's attributes to keep: all but `table:name`, which the writer owns. */
+export function keptTableAttributes(outline: XmlElement): XmlAttribute[] {
+  return outline.attributes
+    .filter((a) => !(a.name.uri === Table.uri && a.name.local === 'name'))
+    .map((a) => ({ name: a.name, value: a.value }));
+}
+
+/** Put a table's kept attributes back on the written `table:table`. */
+export function writeTableAttributes(table: XmlElement, preserved: PreservedTable | undefined): void {
+  for (const a of preserved?.attributes ?? []) table.setAttr(a.name, a.value);
+}
+
+/**
+ * Split a cell's children into its text paragraphs and the rest. Children other than the
+ * paragraphs (a comment, a shape anchored to the cell, a detective mark) are kept verbatim, on the
+ * side of the text they were on; `drop` names the children the model takes over.
+ */
+export function splitCellChildren(
+  element: XmlElement,
+  drop: (child: XmlElement) => boolean,
+): { paragraphs: XmlElement[]; preserved: UnmodeledCellContent | null } {
+  const before: XmlElement[] = [];
+  const after: XmlElement[] = [];
+  const paragraphs: XmlElement[] = [];
+  for (const child of element.elements()) {
+    if (child.is(Text('p'))) {
+      paragraphs.push(child);
+      continue;
+    }
+    if (drop(child)) continue;
+    (paragraphs.length > 0 ? after : before).push(child.clone());
+  }
+  return { paragraphs, preserved: before.length > 0 || after.length > 0 ? { before, after } : null };
+}
+
+/** Write a cell's kept children around what `writeContent` adds. */
+export function writeCellChildren(
+  element: XmlElement,
+  kept: UnmodeledCellContent | null | undefined,
+  writeContent: () => void,
+): void {
+  for (const child of kept?.before ?? []) element.add(child.clone());
+  writeContent();
+  for (const child of kept?.after ?? []) element.add(child.clone());
+}
