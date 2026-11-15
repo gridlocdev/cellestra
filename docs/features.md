@@ -50,6 +50,8 @@ A chart can plot a table by its column names instead of cell ranges. It then fol
 
 Rows that repeat a category label, such as several sales for one region, show as one bar or slice. The chart adds them up by default; it can show their average, count, smallest or largest value instead. Scatter and bubble charts plot every row.
 
+The chart panel opens with a **Table / Range** switch. In Table mode you pick a table and tick the columns to plot. In Range mode you type cell ranges, or press the pick button beside a field, select the cells on the sheet and press Enter (Esc goes back without changing anything).
+
 ## Sheets and the grid
 
 A workbook has any number of sheets: **Insert Sheet**, **Rename Sheet…**, **Duplicate Sheet** and **Delete Sheet** manage them, and **Go to Sheet…** jumps to one by name. **Freeze Panes** keeps header rows and columns in view, rows and columns can be hidden, resized and fitted with **Autofit Columns**, and **Zoom In** and **Zoom Out** change the view. Scrolled down inside a table, the column headers show the table's column titles in place of A, B, C. Text cut off by a filled neighbour (or its own merged cell) shows a small red chevron at the edge where it is cut.

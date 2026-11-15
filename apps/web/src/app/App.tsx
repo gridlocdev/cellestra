@@ -108,6 +108,12 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       clearSelection: () => void app.clearContents(),
       edge: (row, column, dr, dc) => app.edge(row, column, dr, dc),
       shortcut: (e, inText) => {
+        // Picking cells for a chart: Enter takes the selection, Escape goes back unchanged.
+        if (app.chartPick.peek() && !inText && (e.key === 'Enter' || e.key === 'Escape')) {
+          if (e.key === 'Enter') app.finishChartPick();
+          else app.cancelChartPick();
+          return true;
+        }
         // Copy/cut/paste use the native clipboard events below (no permission prompt).
         const command = catalog.forEvent(e, inText);
         if (!command || ['edit.copy', 'edit.cut', 'edit.paste'].includes(command.id)) return false;
@@ -278,6 +284,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
         </>
       )}
       <FormulaBarConnected app={app} draft={draft} />
+      {app.chartPick.value && <ChartPickBanner app={app} />}
       <div class="cs-main" onPointerUp={() => app.selectionDone()}>
         {s.activeSheet.value.isChartSheet ? (
           <ChartPane app={app} />
@@ -657,6 +664,26 @@ function summaryScope(app: AppController) {
     0,
   );
   return { sheet, ranges, area };
+}
+
+/** The prompt while cells are picked for a chart: what to select, and how to finish. */
+function ChartPickBanner({ app }: { readonly app: AppController }) {
+  const pick = app.chartPick.value;
+  if (!pick) return null;
+  return (
+    <div class="cs-pick-banner" role="status">
+      <span>
+        Select the cells for {pick.label} of the chart “{pick.chartSheet.name}”, then press Enter. Esc
+        cancels.
+      </span>
+      <button type="button" class="cs-btn" onClick={() => app.finishChartPick()}>
+        Use selection
+      </button>
+      <button type="button" class="cs-btn" onClick={() => app.cancelChartPick()}>
+        Cancel
+      </button>
+    </div>
+  );
 }
 
 /** Sum / average / count of the selection's numbers, like the old status bar. */

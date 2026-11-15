@@ -889,6 +889,31 @@ describe('chart sheets', () => {
     expect(app.session.canUndo.peek()).toBe(undoable);
     expect(app.sheet.find(0, 0)).toBeUndefined();
   });
+
+  it('pick a chart field on the data sheet: Enter fills it and returns, Escape changes nothing', async () => {
+    const { createChart, createSeries } = await import('@cellestra/charts');
+    const app = await makeApp();
+    const data = app.sheetName;
+    app.insertChartSheet(createChart({ series: [createSeries({ valuesReference: `${data}.B2:B4` })] }));
+    const chartSheet = app.sheet;
+
+    app.startChartPick({ kind: 'values', series: 0 });
+    expect(app.sheetName).toBe(data);
+    expect(app.range.toString()).toBe('B2:B4'); // the field's current range, selected
+    expect(app.chartPick.value?.label).toBe('series 1 values');
+    app.selection.selectRange({ top: 1, left: 2, bottom: 5, right: 2 });
+    app.finishChartPick();
+    expect(app.sheet).toBe(chartSheet);
+    expect(app.chartPick.value).toBeNull();
+    expect(chartSheet.chart!.series[0]!.valuesReference).toBe(`${data}.C2:C6`);
+    app.session.undo();
+    expect(chartSheet.chart!.series[0]!.valuesReference).toBe(`${data}.B2:B4`);
+
+    app.startChartPick({ kind: 'categories' });
+    app.cancelChartPick();
+    expect(app.sheet).toBe(chartSheet);
+    expect(chartSheet.chart!.categoriesReference).toBeNull();
+  });
 });
 
 describe('zoom', () => {

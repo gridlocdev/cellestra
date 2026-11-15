@@ -1,9 +1,23 @@
-import type { ChartDefinition, ChartSeries, ChartStacking, ChartType } from '@cellestra/charts';
+import type {
+  ChartAggregate,
+  ChartDefinition,
+  ChartSeries,
+  ChartStacking,
+  ChartType,
+} from '@cellestra/charts';
 import { cloneChart, createChart, createSeries, ChartTypes } from '@cellestra/charts';
-import { ChartDataResolver, type Workbook, type Worksheet } from '@cellestra/core';
+import {
+  ChartDataResolver,
+  ChartTableBinding,
+  type ChartField,
+  type ChartSeriesFieldKind,
+  type Workbook,
+  type Worksheet,
+} from '@cellestra/core';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { ChartSvg } from './ChartSvg.tsx';
+import { ChartTableFields } from './ChartTableFields.tsx';
 
 export interface ChartSheetViewProps {
   readonly workbook: Workbook;
@@ -15,6 +29,11 @@ export interface ChartSheetViewProps {
   readonly dark?: boolean;
   /** A committed edit: the host applies it (e.g. via `ChartEditCommands.setChart`). */
   readonly onChange: (next: ChartDefinition) => void;
+  /**
+   * "Pick on sheet" for a reference field: the host shows the data sheet, lets the user select
+   * cells, and sets the field. Omitted, the buttons don't show.
+   */
+  readonly onPick?: (field: ChartField) => void;
 }
 
 /** The data shape a chart type needs; drives which fields the panel shows. */
@@ -49,6 +68,14 @@ export const CHART_TYPE_LABELS: readonly (readonly [ChartType, string])[] = [
   ['filledRadar', 'Filled Radar'],
 ];
 
+const AGGREGATE_LABELS: readonly (readonly [ChartAggregate, string])[] = [
+  ['sum', 'Sum'],
+  ['average', 'Average'],
+  ['count', 'Count'],
+  ['min', 'Min'],
+  ['max', 'Max'],
+];
+
 const STACKING_LABELS: readonly (readonly [ChartStacking, string])[] = [
   ['none', 'None'],
   ['stacked', 'Stacked'],
@@ -79,8 +106,10 @@ function Field(props: { label: string; tip: string; children: ComponentChildren 
 /**
  * The chart sheet page: the chart fills the left, and a panel on the right edits its data and
  * presentation. Title and type are pinned at the top; the rest adapts to the type's family so each
- * chart only asks for the data it plots. Text fields preview while typing and commit on change
- * (blur/Enter); pickers, the legend toggle, and add/remove series commit at once.
+ * chart only asks for the data it plots. A Table / Range toggle picks how the data is given: by a
+ * named table's columns (`ChartTableFields`), or by cell ranges typed or picked on the sheet. Text
+ * fields preview while typing and commit on change (blur/Enter); pickers, the legend toggle, and
+ * add/remove series commit at once.
  */
 export function ChartSheetView(props: ChartSheetViewProps) {
   const source = props.sheet.chart;
@@ -92,6 +121,53 @@ export function ChartSheetView(props: ChartSheetViewProps) {
       setDraft(source);
     }
   }, [source]);
+  // Table or Range: a bound chart is always in table mode; otherwise the user's last choice, else
+  // table mode when there is a table to plot and nothing plotted yet.
+  const [chosenMode, setChosenMode] = useState<'table' | 'range' | null>(null);
+  const [modeError, setModeError] = useState<string | null>(null);
+  useEffect(() => {
+    setChosenMode(null);
+    setModeError(null);
+  }, [props.sheet]);
+  const tableMode =
+    draft.source !== null ||
+    (chosenMode ?? (ChartTableBinding.startsInTableMode(props.workbook, draft) ? 'table' : 'range')) ===
+      'table';
+  /** Replace the whole chart and commit it (table-mode picks, the mode toggle, the type). */
+  const replaceChart = (next: ChartDefinition) => {
+    draftRef.current = next;
+    setDraft(next);
+    setModeError(null);
+    props.onChange(next);
+  };
+  const switchMode = (mode: 'table' | 'range') => {
+    if (mode === 'range') {
+      setChosenMode('range');
+      if (draft.source) replaceChart(ChartTableBinding.toRanges(props.workbook, draft));
+      return;
+    }
+    if (tableMode) return;
+    const result = ChartTableBinding.toTable(props.workbook, draft);
+    if (result.ok) {
+      setChosenMode('table');
+      replaceChart(result.chart);
+    } else {
+      setModeError(result.reason);
+    }
+  };
+  /** A "Pick on sheet" button for `field`, when the host supports picking. */
+  const pick = (field: ChartField) =>
+    props.onPick && (
+      <button
+        type="button"
+        class="cs-btn cs-chart-pick"
+        title="Pick on sheet: select the cells on the data sheet, then press Enter. Esc cancels."
+        aria-label="Pick on sheet"
+        onClick={() => props.onPick!(field)}
+      >
+        ⌖
+      </button>
+    );
 
   const update = (mutate: (c: ChartDefinition) => void, commit: boolean) => {
     const next = cloneChart(draftRef.current);
@@ -118,7 +194,13 @@ export function ChartSheetView(props: ChartSheetViewProps) {
   });
 
   // Re-read cells only when what the data depends on changes, not on every title keystroke.
-  const dataKey = JSON.stringify([draft.type, draft.categoriesReference, draft.series]);
+  const dataKey = JSON.stringify([
+    draft.type,
+    draft.categoriesReference,
+    draft.series,
+    draft.source,
+    draft.aggregate,
+  ]);
   const data = useMemo(
     () => ChartDataResolver.resolve(props.workbook, draft),
     // `version` stands in for workbook content changes.
@@ -150,6 +232,19 @@ export function ChartSheetView(props: ChartSheetViewProps) {
   }, []);
 
   const family = chartFamily(draft.type);
+  const categoryField = (
+    <Field {...categoryCopy(family)}>
+      <div class="cs-chart-ref">
+        <input
+          placeholder="e.g. Sheet1.A2:A7"
+          {...text(draft.categoriesReference ?? '', (c, v) => {
+            c.categoriesReference = blank(v);
+          })}
+        />
+        {pick({ kind: 'categories' })}
+      </div>
+    </Field>
+  );
 
   return (
     <div class="cs-chart-sheet">
@@ -160,6 +255,30 @@ export function ChartSheetView(props: ChartSheetViewProps) {
       </div>
       <aside class="cs-chart-panel" aria-label="Chart data">
         <h2>Chart data</h2>
+        <div class="cs-chart-mode" role="radiogroup" aria-label="Plot from">
+          {(['table', 'range'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={tableMode === (mode === 'table')}
+              class={tableMode === (mode === 'table') ? 'cs-chart-mode-on' : ''}
+              title={
+                mode === 'table'
+                  ? 'Plot a named table by picking its columns. The chart follows the table as it grows.'
+                  : 'Plot cell ranges you type or pick on the sheet.'
+              }
+              onClick={() => switchMode(mode)}
+            >
+              {mode === 'table' ? 'Table' : 'Range'}
+            </button>
+          ))}
+        </div>
+        {modeError && (
+          <p class="cs-chart-hint cs-chart-error" role="alert">
+            {modeError}
+          </p>
+        )}
         <Field label="Title" tip="The heading shown above the chart. Leave blank for no title.">
           <input
             {...text(draft.title, (c, v) => {
@@ -180,9 +299,7 @@ export function ChartSheetView(props: ChartSheetViewProps) {
             value={draft.type}
             onChange={(e) => {
               const v = (e.currentTarget as HTMLSelectElement).value as ChartType;
-              update((c) => {
-                c.type = v;
-              }, true);
+              replaceChart(ChartTableBinding.retype(props.workbook, draftRef.current, v));
             }}
           >
             {CHART_TYPE_LABELS.map(([t, label]) => (
@@ -216,14 +333,26 @@ export function ChartSheetView(props: ChartSheetViewProps) {
           </Field>
         )}
 
-        {family !== 'xy' && (
-          <Field {...categoryCopy(family)}>
-            <input
-              placeholder="e.g. Sheet1.A2:A7"
-              {...text(draft.categoriesReference ?? '', (c, v) => {
-                c.categoriesReference = blank(v);
-              })}
-            />
+        {ChartTypes.groupsCategories(draft.type) && (
+          <Field
+            label="Aggregate"
+            tip="Rows with the same category label become one category. This is how their values combine."
+          >
+            <select
+              value={draft.aggregate}
+              onChange={(e) => {
+                const v = (e.currentTarget as HTMLSelectElement).value as ChartAggregate;
+                update((c) => {
+                  c.aggregate = v;
+                }, true);
+              }}
+            >
+              {AGGREGATE_LABELS.map(([a, label]) => (
+                <option key={a} value={a}>
+                  {label}
+                </option>
+              ))}
+            </select>
           </Field>
         )}
 
@@ -269,27 +398,40 @@ export function ChartSheetView(props: ChartSheetViewProps) {
 
         <hr />
 
-        {family === 'partToWhole' ? (
+        {tableMode ? (
+          <ChartTableFields
+            workbook={props.workbook}
+            version={props.version}
+            chart={draft}
+            family={family}
+            onChange={replaceChart}
+          />
+        ) : family === 'partToWhole' ? (
           <>
+            {categoryField}
             <h3>Values</h3>
             <p class="cs-chart-hint">A pie or doughnut shows one set of values as proportions of a whole.</p>
             <Field
               label="Slice values"
               tip="The cells holding the value for each slice — one per slice label, e.g. Sheet1.B2:B7."
             >
-              <input
-                placeholder="e.g. Sheet1.B2:B7"
-                {...text(draft.series[0]?.valuesReference ?? '', (c, v) => {
-                  // A part-to-whole chart only draws its first series; create it on first edit.
-                  const first = c.series[0];
-                  if (first) first.valuesReference = v;
-                  else c.series.push(createSeries({ valuesReference: v }));
-                })}
-              />
+              <div class="cs-chart-ref">
+                <input
+                  placeholder="e.g. Sheet1.B2:B7"
+                  {...text(draft.series[0]?.valuesReference ?? '', (c, v) => {
+                    // A part-to-whole chart only draws its first series; create it on first edit.
+                    const first = c.series[0];
+                    if (first) first.valuesReference = v;
+                    else c.series.push(createSeries({ valuesReference: v }));
+                  })}
+                />
+                {pick({ kind: 'values', series: 0 })}
+              </div>
             </Field>
           </>
         ) : (
           <>
+            {family !== 'xy' && categoryField}
             <h3>Series</h3>
             <p class="cs-chart-hint">
               {family === 'xy'
@@ -308,6 +450,7 @@ export function ChartSheetView(props: ChartSheetViewProps) {
                   bubble={draft.type === 'bubble'}
                   chartType={draft.type}
                   text={(value, set) => text(value, (c, v) => set(c.series[i]!, v))}
+                  pick={(kind) => pick({ kind, series: i })}
                   onTypeChange={(t) =>
                     update((c) => {
                       c.series[i]!.type = t;
@@ -390,6 +533,8 @@ function SeriesRow(props: {
   bubble: boolean;
   chartType: ChartType;
   text: TextBinder;
+  /** The "Pick on sheet" button for one of this series' reference fields. */
+  pick: (kind: ChartSeriesFieldKind) => ComponentChildren;
   onTypeChange: (type: ChartType | null) => void;
   onRemove: () => void;
 }) {
@@ -423,24 +568,30 @@ function SeriesRow(props: {
         label="Name cell"
         tip="A single cell whose text names the series (e.g. the column header Sheet1.B1). Overrides the typed name."
       >
-        <input
-          placeholder="e.g. Sheet1.B1"
-          {...props.text(series.nameReference ?? '', (s, v) => {
-            s.nameReference = blank(v);
-          })}
-        />
+        <div class="cs-chart-ref">
+          <input
+            placeholder="e.g. Sheet1.B1"
+            {...props.text(series.nameReference ?? '', (s, v) => {
+              s.nameReference = blank(v);
+            })}
+          />
+          {props.pick('nameCell')}
+        </div>
       </Field>
       {family === 'xy' && (
         <Field
           label="X values"
           tip="The horizontal position of each point, e.g. Sheet1.A2:A7. Defaults to 1, 2, 3… when blank."
         >
-          <input
-            placeholder="e.g. Sheet1.A2:A7"
-            {...props.text(series.xValuesReference ?? '', (s, v) => {
-              s.xValuesReference = blank(v);
-            })}
-          />
+          <div class="cs-chart-ref">
+            <input
+              placeholder="e.g. Sheet1.A2:A7"
+              {...props.text(series.xValuesReference ?? '', (s, v) => {
+                s.xValuesReference = blank(v);
+              })}
+            />
+            {props.pick('xValues')}
+          </div>
         </Field>
       )}
       <Field
@@ -451,12 +602,15 @@ function SeriesRow(props: {
             : "The cells holding this series' numbers — one per category, e.g. Sheet1.B2:B7. This is the data that gets plotted."
         }
       >
-        <input
-          placeholder="e.g. Sheet1.B2:B7"
-          {...props.text(series.valuesReference, (s, v) => {
-            s.valuesReference = v;
-          })}
-        />
+        <div class="cs-chart-ref">
+          <input
+            placeholder="e.g. Sheet1.B2:B7"
+            {...props.text(series.valuesReference, (s, v) => {
+              s.valuesReference = v;
+            })}
+          />
+          {props.pick('values')}
+        </div>
       </Field>
       {family === 'cartesian' && (
         <Field
@@ -481,12 +635,15 @@ function SeriesRow(props: {
       )}
       {props.bubble && (
         <Field label="Bubble size" tip="The value that sizes each bubble — one per point, e.g. Sheet1.C2:C7.">
-          <input
-            placeholder="e.g. Sheet1.C2:C7"
-            {...props.text(series.bubbleSizeReference ?? '', (s, v) => {
-              s.bubbleSizeReference = blank(v);
-            })}
-          />
+          <div class="cs-chart-ref">
+            <input
+              placeholder="e.g. Sheet1.C2:C7"
+              {...props.text(series.bubbleSizeReference ?? '', (s, v) => {
+                s.bubbleSizeReference = blank(v);
+              })}
+            />
+            {props.pick('bubbleSizes')}
+          </div>
         </Field>
       )}
     </fieldset>

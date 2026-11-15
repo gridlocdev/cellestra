@@ -15,6 +15,9 @@ import {
   TableCommands,
   tableNameError,
   findTableByName,
+  ChartEditCommands,
+  ChartFields,
+  type ChartField,
   DataScope,
   EdgeNavigator,
   FilterEngine,
@@ -161,6 +164,14 @@ export type DialogState =
   | { readonly kind: 'namedRanges' }
   | { readonly kind: 'functions' };
 
+/** A chart field being picked on a data sheet: the chart sheet to return to and the field to set. */
+export interface ChartPick {
+  readonly chartSheet: Worksheet;
+  readonly field: ChartField;
+  /** How the prompt names the field: “the category labels”. */
+  readonly label: string;
+}
+
 /** What the data commands act on: a table, else the current region (or selection). */
 export interface DataTarget {
   readonly range: CellRange;
@@ -297,6 +308,8 @@ export class AppController {
     normalizeAutoSave(Number(stored(AUTO_SAVE_KEY) ?? AutoSaveSeconds.default)),
   );
   readonly formatPainter = signal<FormatBlock | null>(null);
+  /** A chart field being picked on the sheet (the chart panel's "Pick on sheet"), or null. */
+  readonly chartPick = signal<ChartPick | null>(null);
   readonly findQuery = signal('');
   /** The copy/cut source the grid outlines with marching ants, until paste, Escape, or an edit. */
   readonly marquee = signal<{ sheet: string; range: GridRange; cut: boolean } | null>(null);
@@ -378,6 +391,14 @@ export class AppController {
         }
         this.selection.state.value = kept;
       },
+    });
+    // A pick ends when the user leaves for a chart sheet or another workbook opens.
+    effect(() => {
+      const sheet = this.session.activeSheet.value;
+      const pick = this.chartPick.peek();
+      if (!pick) return;
+      if (sheet.isChartSheet || this.session.workbook.value.indexOf(pick.chartSheet) < 0)
+        this.chartPick.value = null;
     });
     // Switching sheets starts at A1 (Calc keeps a per-sheet cursor; good enough for now).
     let lastSheet = this.session.activeSheet.peek();
@@ -1714,6 +1735,50 @@ export class AppController {
   insertChartSheet(chart: ChartDefinition | null): void {
     if (!chart) return this.info('Select a range with numbers to chart.');
     this.session.insertSheet((wb) => wb.addChartSheet(chart));
+  }
+
+  /**
+   * "Pick on sheet" from the chart panel: show the data sheet with the field's current range
+   * selected, and wait for Enter (`finishChartPick`) or Escape (`cancelChartPick`).
+   */
+  startChartPick(field: ChartField): void {
+    const chartSheet = this.sheet;
+    const chart = chartSheet.chart;
+    if (!chartSheet.isChartSheet || !chart) return;
+    const wb = this.session.workbook.peek();
+    const target = ChartFields.pickTarget(wb, chart, field);
+    const sheet = target ? wb.findSheet(target.sheet) : null;
+    if (!target || !sheet) return this.info('There is no sheet with cells to pick.');
+    this.session.setActiveSheet(wb.indexOf(sheet));
+    const r = target.range;
+    if (r) this.selection.selectRange({ top: r.top, left: r.left, bottom: r.bottom, right: r.right });
+    this.chartPick.value = { chartSheet, field, label: ChartFields.label(field) };
+    queueMicrotask(() => this.grid.current?.focus());
+  }
+
+  /** Enter while picking: put the selection in the chart's field and go back to the chart. */
+  finishChartPick(): void {
+    const pick = this.chartPick.peek();
+    if (!pick) return;
+    const reference = ChartFields.reference(this.sheetName, this.range);
+    this.#endChartPick(pick);
+    const chart = pick.chartSheet.chart;
+    if (chart)
+      this.run(
+        ChartEditCommands.setChart(pick.chartSheet.name, ChartFields.set(chart, pick.field, reference)),
+      );
+  }
+
+  /** Escape while picking: go back to the chart and change nothing. */
+  cancelChartPick(): void {
+    const pick = this.chartPick.peek();
+    if (pick) this.#endChartPick(pick);
+  }
+
+  #endChartPick(pick: ChartPick): void {
+    this.chartPick.value = null;
+    const i = this.session.workbook.peek().indexOf(pick.chartSheet);
+    if (i >= 0) this.session.setActiveSheet(i);
   }
 
   // ── Clipboard ────────────────────────────────────────────────────────────

@@ -292,6 +292,7 @@ export {
 } from './styling/numberFormatter.ts';
 export { ChartDataResolver, type ResolvedChart, type ResolvedSeries } from './charts/chartDataResolver.ts';
 export { type GroupedData, ChartGrouping, type GroupingSeries } from './charts/chartGrouping.ts';
+export { type ChartField, ChartFields, type ChartSeriesFieldKind } from './charts/chartFields.ts';
 export {
   ChartTableBinding,
   type FromRangesResult,

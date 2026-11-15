@@ -1,5 +1,5 @@
 import type { ChartDefinition, ChartSeries, ChartTableSource, ChartType } from '@cellestra/charts';
-import { ChartTypes, cloneChart, createSeries } from '@cellestra/charts';
+import { ChartTypes, cloneChart, cloneSource, createSeries } from '@cellestra/charts';
 import { findTableByName, tableHeaderLabels } from '../data/tables.ts';
 import type { Table } from '../data/types.ts';
 import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
@@ -86,6 +86,15 @@ function findColumn(
   if (stored !== null && matches.includes(stored)) return stored;
   if (matches.length > 0) return matches[0]!;
   return stored;
+}
+
+/** Whether the chart has any range to plot (bound charts always count as having data). */
+function hasData(chart: ChartDefinition): boolean {
+  if (chart.source) return true;
+  if (chart.categoriesReference?.trim()) return true;
+  return chart.series.some(
+    (s) => s.valuesReference.trim() !== '' || (s.xValuesReference ?? '').trim() !== '',
+  );
 }
 
 function located(workbook: Workbook, source: ChartTableSource) {
@@ -284,6 +293,88 @@ export const ChartTableBinding = {
     if (xy && new Set(chart.series.map((s) => s.xValuesReference ?? '')).size > 1)
       return { ok: false, reason: 'Every series must share one X column to plot from a table.' };
     return { ok: true, chart: ChartTableBinding.bind(workbook, chart, source) };
+  },
+
+  /**
+   * Whether the chart panel opens in table mode: the chart is bound, or it plots nothing yet and
+   * the workbook has a table to plot from.
+   */
+  startsInTableMode(workbook: Workbook, chart: ChartDefinition): boolean {
+    if (chart.source) return true;
+    return !hasData(chart) && ChartTableBinding.tableNames(workbook).length > 0;
+  },
+
+  /**
+   * Range → Table for the panel's toggle: a chart with no data yet is seeded from the first table
+   * (or the one named); otherwise its ranges must line up with one table (`fromRanges`).
+   */
+  toTable(workbook: Workbook, chart: ChartDefinition, table: string | null = null): FromRangesResult {
+    if (!hasData(chart)) {
+      const name = table ?? ChartTableBinding.tableNames(workbook)[0];
+      const source = name ? ChartTableBinding.seed(workbook, name, chart.type) : null;
+      if (!source)
+        return { ok: false, reason: 'There is no table in the workbook. Make the data a table first.' };
+      return { ok: true, chart: ChartTableBinding.bind(workbook, chart, source) };
+    }
+    return ChartTableBinding.fromRanges(workbook, chart);
+  },
+
+  /** The chart plotting the table called `name` instead, seeded as a new chart would be. */
+  setTable(workbook: Workbook, chart: ChartDefinition, name: string): ChartDefinition {
+    const source = ChartTableBinding.seed(workbook, name, chart.type);
+    return source ? ChartTableBinding.bind(workbook, chart, source) : chart;
+  },
+
+  /** The bound chart with `column` labelling the categories (or giving the X values); null for none. */
+  setCategoryColumn(workbook: Workbook, chart: ChartDefinition, column: string | null): ChartDefinition {
+    if (!chart.source) return chart;
+    return ChartTableBinding.bind(workbook, chart, { ...cloneSource(chart.source), categoryColumn: column });
+  },
+
+  /**
+   * The bound chart plotting `columns`, in the table's column order. A column already plotted keeps
+   * its own settings (its "draw as" type, its bubble sizes).
+   */
+  setSeriesColumns(workbook: Workbook, chart: ChartDefinition, columns: readonly string[]): ChartDefinition {
+    if (!chart.source) return chart;
+    const source = cloneSource(chart.source);
+    const order = (ChartTableBinding.columns(workbook, source.table) ?? []).map((c) => c.name.toLowerCase());
+    const wanted = [...new Set(columns.map((c) => c.toLowerCase()))].sort(
+      (a, b) => order.indexOf(a) - order.indexOf(b),
+    );
+    source.series = wanted.map((lower) => {
+      const kept = source.series.find((s) => s.column.toLowerCase() === lower);
+      const name = columns.find((c) => c.toLowerCase() === lower)!;
+      return kept ?? { column: name, type: null, sizeColumn: null };
+    });
+    return ChartTableBinding.bind(workbook, chart, source);
+  },
+
+  /** The bound bubble chart with every series sized by `column`. */
+  setSizeColumn(workbook: Workbook, chart: ChartDefinition, column: string | null): ChartDefinition {
+    if (!chart.source) return chart;
+    const source = cloneSource(chart.source);
+    source.series = source.series.map((s) => ({ ...s, sizeColumn: column }));
+    return ChartTableBinding.bind(workbook, chart, source);
+  },
+
+  /**
+   * The chart as `type`. A bound chart keeps its columns where the new type can plot them: a pie
+   * keeps its first series; a change between category and X/Y charts, or to a bubble chart without
+   * sizes, picks its columns afresh from the table.
+   */
+  retype(workbook: Workbook, chart: ChartDefinition, type: ChartType): ChartDefinition {
+    const next = cloneChart(chart);
+    next.type = type;
+    if (!next.source) return next;
+    const familyChanged = ChartTypes.isXY(type) !== ChartTypes.isXY(chart.type);
+    const needsSizes = type === 'bubble' && next.source.series.some((s) => s.sizeColumn === null);
+    if (familyChanged || needsSizes) {
+      const seeded = ChartTableBinding.seed(workbook, next.source.table, type);
+      if (seeded) return ChartTableBinding.bind(workbook, next, seeded);
+    }
+    if (type === 'pie' || type === 'doughnut') next.source.series = next.source.series.slice(0, 1);
+    return ChartTableBinding.bind(workbook, next, next.source);
   },
 
   /** The chart with its binding pointed at `to` when it was bound to `from` (ignoring case). */

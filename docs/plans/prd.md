@@ -581,6 +581,14 @@ On save the resolved plain ranges are written into the chart object as for any c
 
 **Repeated categories.** On a category chart (column, bar, line, area, pie, doughnut, radar, filled radar), rows that share a category label become **one category**, in the order each label first appears, whether the chart reads a table or ranges. The chart's **aggregate** says how their values combine: **sum** (the default), **average**, **count** (non-empty cells), **min** or **max**. Gaps are skipped, and a group with no numbers stays a gap; a blank label never merges. Scatter and bubble charts plot every row. The aggregate is saved as `cellestra:aggregate` on `chart:chart` when it isn't sum; LibreOffice, which has no such setting, plots the rows ungrouped.
 
+**The panel: Table or Range.** A segmented **Table / Range** toggle heads the chart panel. It opens on **Table** for a bound chart, and for a chart with nothing plotted yet when the workbook has a table; otherwise on **Range**.
+- **Table** mode picks by name, with no typing: a **table** dropdown; an **X / Categories** dropdown (Slice labels, Spoke labels, or X values by type); a **Values** checklist of the other columns, number columns ticked when the chart is seeded. A pie or doughnut picks one column; a scatter picks X and a checklist of Y columns; a bubble picks X, Y and size. Changing the chart type keeps the columns where the new type can plot them, and picks afresh between category and X/Y types. A binding whose table is gone says so and shows its last cells.
+- **Range** mode keeps the reference fields, each with a **Pick on sheet** button: it shows the data sheet with the field's range selected; the user drag-selects; **Enter** (or *Use selection* on the prompt bar) fills the field and returns to the chart; **Esc** (or *Cancel*) returns unchanged.
+- **Table → Range** writes the binding's current ranges into the fields. **Range → Table** works when every range is one whole column of one table's data rows (series sharing one X column for scatter and bubble); otherwise the toggle stays on Range and says why. An empty chart switched to Table plots the first table.
+- An **Aggregate** dropdown (Sum, Average, Count, Min, Max) shows for category charts in both modes.
+
+Every change is one undoable chart edit, with the panel's usual preview-while-typing, commit-on-change behaviour.
+
 ## 9. Non-goals (deliberately NOT in v1)
 
 Intentional exclusions, not oversights.

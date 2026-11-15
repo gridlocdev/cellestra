@@ -191,3 +191,63 @@ describe('ODS round trip of a bound chart', () => {
     expect(chart.source).toBeNull();
   });
 });
+
+describe('Editing a bound chart from the panel', () => {
+  it('opens in table mode when bound, or when an empty chart could plot a table', () => {
+    const wb = book();
+    expect(ChartTableBinding.startsInTableMode(wb, bound(wb))).toBe(true);
+    expect(ChartTableBinding.startsInTableMode(wb, createChart())).toBe(true);
+    expect(ChartTableBinding.startsInTableMode(wb, ChartTableBinding.toRanges(wb, bound(wb)))).toBe(false);
+    expect(ChartTableBinding.startsInTableMode(Workbook.createNew(), createChart())).toBe(false);
+  });
+
+  it('seeds an empty chart from the first table when switched to table mode', () => {
+    const wb = book();
+    const result = ChartTableBinding.toTable(wb, createChart({ type: 'column' }));
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.chart.source).toEqual(source(['Sales', 'Cost']));
+    expect(ChartTableBinding.toTable(Workbook.createNew(), createChart())).toMatchObject({ ok: false });
+  });
+
+  it('picks the category column and the plotted columns, in table order, keeping series settings', () => {
+    const wb = book();
+    let chart = bound(wb, ['Cost']);
+    chart = {
+      ...chart,
+      source: { ...chart.source!, series: [{ column: 'Cost', type: 'line', sizeColumn: null }] },
+    };
+    chart = ChartTableBinding.setSeriesColumns(wb, chart, ['cost', 'Sales']);
+    expect(chart.source!.series).toEqual([
+      { column: 'Sales', type: null, sizeColumn: null },
+      { column: 'Cost', type: 'line', sizeColumn: null },
+    ]);
+    chart = ChartTableBinding.setCategoryColumn(wb, chart, null);
+    expect(chart.categoriesReference).toBeNull();
+  });
+
+  it('keeps one series for a pie and picks columns afresh for a scatter or bubble chart', () => {
+    const wb = book();
+    const chart = bound(wb, ['Sales', 'Cost']);
+    expect(ChartTableBinding.retype(wb, chart, 'pie').source!.series.map((s) => s.column)).toEqual(['Sales']);
+    expect(ChartTableBinding.retype(wb, chart, 'scatter').source).toEqual(source(['Cost'], 'Sales'));
+    const bubble = ChartTableBinding.retype(wb, chart, 'bubble');
+    expect(bubble.source!.series).toEqual([{ column: 'Cost', type: null, sizeColumn: null }]);
+    const sized = ChartTableBinding.setSizeColumn(wb, bubble, 'Sales');
+    expect(sized.series[0]!.bubbleSizeReference).toBe('Data.B2:B4');
+  });
+
+  it('plots another table when the table changes', () => {
+    const wb = book();
+    const sheet = wb.activeSheet;
+    sheet.setValue(0, 5, CellValue.text('Size'));
+    sheet.setValue(1, 5, CellValue.number(7));
+    sheet.addTable(makeTable('Sizes', R('F1:F2')));
+    const chart = ChartTableBinding.setTable(wb, bound(wb), 'Sizes');
+    expect(chart.source).toEqual({
+      table: 'Sizes',
+      categoryColumn: null,
+      series: [{ column: 'Size', type: null, sizeColumn: null }],
+    });
+    expect(chart.series[0]!.valuesReference).toBe('Data.F2:F2');
+  });
+});

@@ -600,6 +600,22 @@ button {
   box-shadow: var(--cs-shadow);
   max-width: 80vw;
 }
+/* Picking cells for a chart field: a prompt bar above the grid. */
+.cs-pick-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--cs-border);
+  background: rgba(42, 125, 225, 0.12);
+  color: var(--cs-text);
+}
+.cs-pick-banner > span {
+  flex: 1;
+}
+.cs-pick-banner > .cs-btn {
+  border: 1px solid var(--cs-border);
+}
 .cs-drop {
   position: fixed;
   inset: 0;
