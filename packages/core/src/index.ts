@@ -1,34 +1,371 @@
-export * from './defaults.ts';
-export * from './values/cellError.ts';
-export * from './values/cellValue.ts';
-export * from './model/sheetDimensions.ts';
-export * from './model/cellAddress.ts';
-export * from './model/cellRange.ts';
-export * from './model/sheetName.ts';
-export * from './model/cell.ts';
-export * from './model/hyperlink.ts';
-export * from './model/lines.ts';
-export * from './model/documentSettings.ts';
-export * from './model/namedRange.ts';
-export * from './model/mergedRegion.ts';
-export * from './model/pageSetup.ts';
-export * from './model/sheetOutline.ts';
-export * from './model/worksheet.ts';
-export * from './model/workbook.ts';
-export * from './data/index.ts';
-export * from './styling/color.ts';
-export * from './styling/contrast.ts';
-export * from './styling/cellStyle.ts';
-export * from './styling/stylePool.ts';
-export * from './styling/conditionalStyles.ts';
-export * from './styling/conditionalFormatRules.ts';
-export * from './styling/numberFormatParser.ts';
-export * from './styling/numberFormatCode.ts';
-export * from './styling/textMeasurer.ts';
-export * from './formulas/index.ts';
-export * from './dependencies/index.ts';
-export * from './serialization/index.ts';
-export * from './styling/numberFormatter.ts';
-export * from './charts/chartDataResolver.ts';
-export * from './editing/index.ts';
-export * from './printing/printHtml.ts';
+export { Defaults, nextChartSheetName, nextSheetName } from './defaults.ts';
+export { CellError, type CellErrorCode } from './values/cellError.ts';
+export {
+  type BooleanValue,
+  CellValue,
+  type CellValueKind,
+  type EmptyValue,
+  type ErrorValue,
+  type NumberValue,
+  roundTripNumber,
+  type TextValue,
+} from './values/cellValue.ts';
+export { cellKey, keyColumn, keyRow, SheetDimensions } from './model/sheetDimensions.ts';
+export { CellAddress, findSheetSeparator, quoteSheetIfNeeded, unquoteSheet } from './model/cellAddress.ts';
+export { CellRange } from './model/cellRange.ts';
+export { SheetName } from './model/sheetName.ts';
+export {
+  Cell,
+  type CellRichText,
+  type UnmodeledCellContent,
+  type UnparsedFormulaSource,
+} from './model/cell.ts';
+export type { Hyperlink } from './model/hyperlink.ts';
+export { bumpLineLayout, Column, lineLayoutGeneration, Row } from './model/lines.ts';
+export {
+  type CalculationMode,
+  DocumentSettings,
+  getHostLocale,
+  setHostLocale,
+} from './model/documentSettings.ts';
+export { type NamedRange, namedRangeError } from './model/namedRange.ts';
+export { MergedRegion } from './model/mergedRegion.ts';
+export {
+  type PageMargins,
+  type PageOrientation,
+  type PageScale,
+  type PageSetup,
+  PageSetups,
+  PAPER_SIZES,
+  type PaperSize,
+} from './model/pageSetup.ts';
+export { type LineGroup, type LineSpan, SheetOutline } from './model/sheetOutline.ts';
+export { Worksheet, type WorksheetLayout } from './model/worksheet.ts';
+export { Workbook } from './model/workbook.ts';
+export {
+  CleanUp,
+  type CleanUpNote,
+  cleanUpNoteText,
+  CleanUpPlan,
+  type ColumnFilter,
+  columnFilterMatches,
+  DataRegion,
+  DataScope,
+  dataValidation,
+  type DataValidation,
+  DuplicateRemover,
+  EdgeNavigator,
+  FilterEngine,
+  filterSpec,
+  type FilterSpec,
+  type IncomingWrite,
+  type RangeResolver,
+  SortEngine,
+  type SortLevel,
+  sortSpec,
+  type SortSpec,
+  StickyTableHeader,
+  table,
+  type Table,
+  TableAutoExpand,
+  tableHeaderLabels,
+  tableWithRange,
+  TextToColumns,
+  validationCovers,
+  type ValidationKind,
+  type ValidationOperator,
+  ValidationPreflight,
+  type ValidationResponse,
+  Validator,
+} from './data/index.ts';
+export { Argb, type ArgbColor } from './styling/color.ts';
+export { Contrast } from './styling/contrast.ts';
+export {
+  type Alignment,
+  Alignments,
+  type Border,
+  type BorderEdge,
+  BorderEdges,
+  type BorderLineStyle,
+  Borders,
+  type CellStyle,
+  type CellStyleMap,
+  CellStyles,
+  type CellStyleSource,
+  type Fill,
+  Fills,
+  type Font,
+  Fonts,
+  type HorizontalAlignment,
+  type NumberFormat,
+  NumberFormats,
+  type Protection,
+  Protections,
+  type RotationAlign,
+  styleKey,
+  type VerticalAlignment,
+} from './styling/cellStyle.ts';
+export { StylePool } from './styling/stylePool.ts';
+export {
+  ConditionalStyles,
+  type ConditionOperator,
+  type MapCondition,
+  parseMapCondition,
+  writeMapCondition,
+  writeOperand,
+} from './styling/conditionalStyles.ts';
+export {
+  applyPreset,
+  baseCellAddress,
+  editRule,
+  FORMAT_PRESETS,
+  type FormatPresetId,
+  newRule,
+  parseRuleValue,
+  RULE_KINDS,
+  type RuleDraft,
+  type RuleKind,
+  rulesOf,
+  rulesTransform,
+} from './styling/conditionalFormatRules.ts';
+export {
+  classifyNumberFormat,
+  isDateLikeKind,
+  type NumberFormatKind,
+  withoutLiterals,
+} from './styling/numberFormatParser.ts';
+export { NumberFormatCode } from './styling/numberFormatCode.ts';
+export { approximateTextMeasurer, type TextMeasurer } from './styling/textMeasurer.ts';
+export {
+  acceptsArgCount,
+  approxAdd,
+  approxEqual,
+  approxFloor,
+  approxSub,
+  approxValue,
+  Arg,
+  type ArgResult,
+  type ArgumentType,
+  type ArrayExpr,
+  type ArrayRows,
+  arrayText,
+  BINARY_SYMBOL,
+  type BinaryExpr,
+  type BinaryOperator,
+  binaryPrecedence,
+  booleanAsNumber,
+  type CivilDateTime,
+  civilFromDays,
+  Coercion,
+  collectNumbers,
+  compareOrdinalIgnoreCase,
+  createMetadata,
+  CriteriaMatcher,
+  DateConversion,
+  dateTimeFunctions,
+  dayOfWeekFromDays,
+  daysFromCivil,
+  defineFunction,
+  defineReferenceFunction,
+  type ErrorResult,
+  evaluateFormula,
+  type EvaluationContext,
+  type EvaluationResult,
+  Evaluator,
+  Expr,
+  type ExprKind,
+  fixedDigits,
+  type FormulaCallSite,
+  type FormulaFunction,
+  FormulaParseException,
+  FormulaSignatureScanner,
+  type FormulaSite,
+  FormulaWriter,
+  type FunctionArgument,
+  type FunctionBody,
+  type FunctionCallExpr,
+  type FunctionCategory,
+  type FunctionEvaluator,
+  type FunctionMetadata,
+  FunctionRegistry,
+  type FunctionTraits,
+  INVARIANT_SYMBOLS,
+  isCellError,
+  isFailure,
+  Lexer,
+  type LiteralExpr,
+  literalText,
+  localeInfo,
+  type LocaleInfo,
+  logicalFunctions,
+  lookupFunctions,
+  mathFunctions,
+  MAX_FORMULA_DEPTH,
+  MAX_FORMULA_NESTING,
+  MAX_FORMULA_TOKENS,
+  type NameExpr,
+  OpenFormulaTranslator,
+  parseDateTime,
+  type ParseError,
+  parseErrorToString,
+  parseInvariantFloat,
+  parseNumberAny,
+  Parser,
+  type ParseResult,
+  type RangeExpr,
+  RangeValues,
+  readBoolean,
+  readInt,
+  readNumber,
+  readText,
+  ReferenceAdjuster,
+  ReferenceCycler,
+  type ReferenceExpr,
+  type RefErrorExpr,
+  roundAwayFromZero,
+  roundHalfAway,
+  roundScaled,
+  safeLocale,
+  scientificG15,
+  type SheetSpanExpr,
+  significantDigits,
+  systemClock,
+  textFunctions,
+  textPattern,
+  toInt32,
+  type Token,
+  type TokenType,
+  tryParseNumberOrDate,
+  type UnaryExpr,
+  type UnaryOperator,
+  ValueComparer,
+  wholeLinesText,
+  withTraits,
+  WorkbookEvaluationContext,
+  writtenPrecedence,
+} from './formulas/index.ts';
+export {
+  CellRef,
+  DependencyGraph,
+  type EditRecalculation,
+  MAX_EXPANDED_CELLS,
+  type RangeRef,
+  rangeRefContains,
+  RecalculationEngine,
+  type RecalculationResult,
+  ReferenceCollector,
+} from './dependencies/index.ts';
+export {
+  CsvOptions,
+  fillFromCsv,
+  type ForeignXml,
+  MAX_UNCOMPRESSED_BYTES,
+  OdsCellStyles,
+  OdsCharts,
+  OdsDataStyles,
+  OdsPackage,
+  OdsPackageTooLargeError,
+  OdsReader,
+  type OdsReadResult,
+  OdsSupportXml,
+  OdsUnsupportedFileError,
+  OdsWriter,
+  OdsXmlNames,
+  parseCsv,
+  readContentXml,
+  readCsv,
+  readOds,
+  readOdsWithPackage,
+  writeContentXml,
+  writeCsv,
+  writeOds,
+} from './serialization/index.ts';
+export {
+  type Condition,
+  type DateField,
+  type FormatToken,
+  type FractionLayout,
+  NumberFormatter,
+  type Section,
+  splitSections,
+  tokenize,
+} from './styling/numberFormatter.ts';
+export { ChartDataResolver, type ResolvedChart, type ResolvedSeries } from './charts/chartDataResolver.ts';
+export {
+  ActionCommand,
+  AutoSumPlanner,
+  type AutoSumProposal,
+  captureFormulas,
+  captureReferences,
+  type CellEntryPlan,
+  CellSnapshotCommand,
+  CellSnapshots,
+  type ChangedCell,
+  type ChangedLines,
+  ChartEditCommands,
+  clampToUsed,
+  ClipboardBlock,
+  type ClipboardCell,
+  combineResults,
+  CompositeEditCommand,
+  coversWholeColumns,
+  coversWholeRows,
+  DataEditCommands,
+  DataToolCommands,
+  defaultChartHome,
+  DeleteSheetCommand,
+  type EditCommand,
+  EditCommands,
+  EditHistory,
+  EditRefusedError,
+  EditResult,
+  FillCommand,
+  FormatBlock,
+  HiddenLines,
+  InputParser,
+  type LineRun,
+  lineStyleCommand,
+  OVERSIZED_CELL_CAP,
+  type ParsedInput,
+  PasteBlockCommand,
+  type PasteMode,
+  type PastePlan,
+  PastePlanner,
+  planCellEntry,
+  type Position,
+  type ProjectedWrite,
+  type ReferenceSnapshot,
+  type ReferenceTransform,
+  RenameSheetCommand,
+  requireSheet,
+  restoreFormulas,
+  restoreReferences,
+  rewriteFormula,
+  SetPageSetupCommand,
+  sheetDeletionImpact,
+  type SheetDeletionImpact,
+  SheetLayoutCommands,
+  SortFilterCommands,
+  type StructuralAxis,
+  StructuralEditCommand,
+  type StructuralOperation,
+  SwapCellsCommand,
+  TableCommands,
+  type TableHeaderChoice,
+  type TablePlan,
+  transformColumn,
+  transformFilterSpec,
+  transformRange,
+  transformReferences,
+  transformSortSpec,
+  transformTableKeys,
+  ValidationCommands,
+} from './editing/index.ts';
+export {
+  printableRange,
+  type PrintDocument,
+  printHtml,
+  type PrintInput,
+  type PrintRange,
+  usedRange,
+} from './printing/printHtml.ts';

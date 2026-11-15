@@ -7,8 +7,24 @@ import type { OdsPackage } from './ods/odsPackage.ts';
 import { OdsReader, type OdsReadResult } from './ods/odsReader.ts';
 import { OdsWriter } from './ods/odsWriter.ts';
 
-export * from './ods/index.ts';
-export * from './csv/index.ts';
+export {
+  type ForeignXml,
+  MAX_UNCOMPRESSED_BYTES,
+  OdsCellStyles,
+  OdsCharts,
+  OdsDataStyles,
+  OdsPackage,
+  OdsPackageTooLargeError,
+  OdsReader,
+  type OdsReadResult,
+  OdsSupportXml,
+  OdsUnsupportedFileError,
+  OdsWriter,
+  OdsXmlNames,
+  readContentXml,
+  writeContentXml,
+} from './ods/index.ts';
+export { CsvOptions, fillFromCsv, parseCsv, readCsv, writeCsv } from './csv/index.ts';
 
 /** Read `.ods` bytes into a workbook. */
 export function readOds(bytes: Uint8Array): Workbook {

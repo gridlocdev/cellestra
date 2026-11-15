@@ -1,2 +1,2 @@
-export * from './chartDocument.ts';
-export * from './chartXmlNames.ts';
+export { ChartDocument, type ChartXmlElement } from './chartDocument.ts';
+export { ChartXmlNames } from './chartXmlNames.ts';
