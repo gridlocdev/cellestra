@@ -1,4 +1,10 @@
-import type { ChartDefinition, ChartSeries, ChartStacking, ChartType } from '@cellestra/charts';
+import type {
+  ChartAggregate,
+  ChartDefinition,
+  ChartSeries,
+  ChartStacking,
+  ChartType,
+} from '@cellestra/charts';
 import { ChartTypes } from '@cellestra/charts';
 import { Defaults } from '../defaults.ts';
 import { fixedDigits } from '../formulas/evaluation/decimalDigits.ts';
@@ -31,6 +37,13 @@ export interface ResolvedChart {
   readonly yAxisTitle: string | null;
   readonly categories: readonly string[];
   readonly series: readonly ResolvedSeries[];
+  /** How repeated category labels were combined; omitted means sum. */
+  readonly aggregate?: ChartAggregate;
+  /**
+   * How many source rows each category merged (for hover details), or null/omitted when no rows
+   * merged. Index `c` matches `categories[c]`.
+   */
+  readonly rowCounts?: readonly number[] | null;
   /** True when there is nothing to draw (no series, or every series is empty). */
   readonly isEmpty: boolean;
 }
@@ -172,6 +185,8 @@ export const ChartDataResolver = {
       yAxisTitle: chart.yAxisTitle,
       categories,
       series,
+      aggregate: chart.aggregate,
+      rowCounts: grouped.rowCounts ?? null,
       isEmpty: series.length === 0 || series.every((s) => s.values.length === 0),
     };
   },

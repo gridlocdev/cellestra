@@ -1,7 +1,8 @@
 import type { ResolvedChart } from '@cellestra/core';
-import { useMemo } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { type Hover, hitTest, type Point, placeTooltip } from './chartHover.ts';
 import { seriesColor } from './chartMath.ts';
-import { buildChartScene, type Paint, type Shape } from './chartScene.ts';
+import { buildChartScene, type ChartScene, type Paint, type Shape } from './chartScene.ts';
 
 export interface ChartSvgProps {
   /** The chart to draw; null shows a "No chart" placeholder. */
@@ -13,6 +14,8 @@ export interface ChartSvgProps {
    * variables (`--cs-bg`, `--cs-text`, …).
    */
   readonly dark?: boolean;
+  /** Show hover tooltips and highlights (the chart sheet); off for static copies. */
+  readonly interactive?: boolean;
 }
 
 /** Theme roles become CSS classes (see charts.css); series indices become palette colours. */
@@ -81,8 +84,9 @@ function renderShape(shape: Shape, key: number) {
           cx={shape.cx}
           cy={shape.cy}
           r={shape.r}
-          {...fillProps(shape.fill)}
+          {...paintProps(shape.fill, shape.stroke)}
           fill-opacity={shape.opacity}
+          stroke-width={shape.stroke ? (shape.strokeWidth ?? 1) : undefined}
         />
       );
     case 'text':
@@ -104,6 +108,73 @@ function renderShape(shape: Shape, key: number) {
   }
 }
 
+/** The tooltip for `hover`, placed by {@link placeTooltip} once its size is known. */
+function ChartTooltip(props: { hover: Hover; box: { width: number; height: number }; themeClass: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<Point | null>(null);
+  const { hover, box } = props;
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setAt(placeTooltip(hover.anchor, { width: el.offsetWidth, height: el.offsetHeight }, box));
+  }, [hover, box.width, box.height]);
+  const { info } = hover;
+  return (
+    <div
+      ref={ref}
+      class={`cs-chart-tip${props.themeClass}`}
+      style={at ? { left: `${at.x}px`, top: `${at.y}px` } : { left: '0px', top: '0px', visibility: 'hidden' }}
+    >
+      {info.title !== '' && <div class="cs-chart-tip-title">{info.title}</div>}
+      {info.rows.map((row, i) => (
+        <div key={i} class={row.emphasis ? 'cs-chart-tip-row cs-chart-tip-on' : 'cs-chart-tip-row'}>
+          <span
+            class="cs-chart-tip-swatch"
+            style={
+              row.series === undefined ? { visibility: 'hidden' } : { background: seriesColor(row.series) }
+            }
+          />
+          <span class="cs-chart-tip-label">{row.label}</span>
+          <span class="cs-chart-tip-value">{row.value}</span>
+        </div>
+      ))}
+      {info.note && <div class="cs-chart-tip-note">{info.note}</div>}
+    </div>
+  );
+}
+
+/**
+ * Pointer tracking for an interactive chart: the latest pointer position is hit-tested at most
+ * once per animation frame.
+ */
+function useChartHover(scene: ChartScene) {
+  const [hover, setHover] = useState<Hover | null>(null);
+  const frame = useRef(0);
+  const pending = useRef<Point | null>(null);
+  const sceneRef = useRef(scene);
+  sceneRef.current = scene;
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  useEffect(() => setHover(null), [scene]);
+
+  const track = (e: PointerEvent) => {
+    const rect = (e.currentTarget as Element).getBoundingClientRect();
+    pending.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      const p = pending.current;
+      if (p) setHover(hitTest(sceneRef.current, p.x, p.y));
+    });
+  };
+  const leave = (e: PointerEvent) => {
+    // A touch lifts with a leave; keep its tooltip until the next tap.
+    if (e.pointerType === 'touch') return;
+    pending.current = null;
+    setHover(null);
+  };
+  return { hover, onPointerMove: track, onPointerDown: track, onPointerLeave: leave };
+}
+
 /**
  * A from-scratch SVG chart renderer for every Cellestra chart type (column, bar, line, area, pie,
  * doughnut, scatter, bubble, radar, filled radar), with grouped/stacked/100% variants and
@@ -114,6 +185,43 @@ export function ChartSvg(props: ChartSvgProps) {
   const height = Math.max(0, Math.floor(props.height));
   const scene = useMemo(() => buildChartScene(props.chart, width, height), [props.chart, width, height]);
   const theme = props.dark === undefined ? '' : props.dark ? ' cs-chart-dark' : ' cs-chart-light';
+  if (!props.interactive) return <ChartSvgImage scene={scene} chart={props.chart} theme={theme} />;
+  return <InteractiveChart scene={scene} chart={props.chart} theme={theme} />;
+}
+
+function InteractiveChart(props: { scene: ChartScene; chart: ResolvedChart | null; theme: string }) {
+  const { hover, ...handlers } = useChartHover(props.scene);
+  const { width, height } = props.scene;
+  const box = useMemo(() => ({ width, height }), [width, height]);
+  return (
+    <div class="cs-chart-frame" style={{ width: `${width}px`, height: `${height}px` }}>
+      <ChartSvgImage
+        scene={props.scene}
+        chart={props.chart}
+        theme={props.theme}
+        highlight={hover?.highlight}
+        handlers={handlers}
+      />
+      {hover && <ChartTooltip hover={hover} box={box} themeClass={props.theme} />}
+    </div>
+  );
+}
+
+interface PointerHandlers {
+  readonly onPointerMove: (e: PointerEvent) => void;
+  readonly onPointerDown: (e: PointerEvent) => void;
+  readonly onPointerLeave: (e: PointerEvent) => void;
+}
+
+function ChartSvgImage(props: {
+  scene: ChartScene;
+  chart: ResolvedChart | null;
+  theme: string;
+  highlight?: readonly Shape[];
+  handlers?: PointerHandlers;
+}) {
+  const { scene, theme } = props;
+  const { width, height } = scene;
   return (
     <svg
       class={`cs-chart${theme}`}
@@ -123,8 +231,10 @@ export function ChartSvg(props: ChartSvgProps) {
       role="img"
       aria-label={props.chart?.title || 'Chart'}
       xmlns="http://www.w3.org/2000/svg"
+      {...props.handlers}
     >
       {scene.shapes.map(renderShape)}
+      {props.highlight && <g class="cs-chart-highlight">{props.highlight.map(renderShape)}</g>}
     </svg>
   );
 }

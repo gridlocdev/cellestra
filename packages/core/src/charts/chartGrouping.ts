@@ -11,6 +11,11 @@ export interface GroupingSeries {
 export interface GroupedData {
   readonly categories: readonly string[];
   readonly values: readonly (readonly number[])[];
+  /**
+   * How many source rows each category merged, set only when grouping merged or counted rows; a
+   * chart left as it is has none (every category is one row).
+   */
+  readonly rowCounts?: readonly number[];
 }
 
 function combine(aggregate: ChartAggregate, rows: readonly number[], series: GroupingSeries): number {
@@ -67,6 +72,7 @@ export const ChartGrouping = {
     return {
       categories: labels,
       values: series.map((s) => order.map((rows) => combine(aggregate, rows, s))),
+      rowCounts: order.map((rows) => rows.length),
     };
   },
 } as const;

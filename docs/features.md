@@ -50,6 +50,8 @@ A chart can plot a table by its column names instead of cell ranges. It then fol
 
 Rows that repeat a category label, such as several sales for one region, show as one bar or slice. The chart adds them up by default; it can show their average, count, smallest or largest value instead. Scatter and bubble charts plot every row.
 
+Hovering a chart shows what is under the pointer. On a column, bar, line, area or radar chart that is the category nearest the pointer with every series' value there (the hovered bar in bold, a stack's total, and each share on a 100% chart); on a pie or doughnut the slice's value and share; on a scatter or bubble chart the nearest point's X, Y and size. A category that merged repeated rows says so, for example "Sum of 3 rows". On a touch screen, tap to see it.
+
 The chart panel opens with a **Table / Range** switch. In Table mode you pick a table and tick the columns to plot. In Range mode you type cell ranges, or press the pick button beside a field, select the cells on the sheet and press Enter (Esc goes back without changing anything).
 
 ## Sheets and the grid

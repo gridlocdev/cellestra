@@ -250,7 +250,7 @@ export function ChartSheetView(props: ChartSheetViewProps) {
     <div class="cs-chart-sheet">
       <div class="cs-chart-host" ref={host}>
         {size.width > 0 && size.height > 0 && (
-          <ChartSvg chart={resolved} width={size.width} height={size.height} dark={props.dark} />
+          <ChartSvg chart={resolved} width={size.width} height={size.height} dark={props.dark} interactive />
         )}
       </div>
       <aside class="cs-chart-panel" aria-label="Chart data">

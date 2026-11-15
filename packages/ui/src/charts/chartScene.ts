@@ -22,6 +22,14 @@ import {
   valuePos,
   wedgePath,
 } from './chartMath.ts';
+import {
+  type ChartHit,
+  type HoverBar,
+  categoryInfo,
+  POINT_HIT_RADIUS,
+  pointInfo,
+  sliceInfo,
+} from './chartHover.ts';
 
 /**
  * A theme role (resolved to a CSS variable by the stylesheet) or a series palette index. Keeping
@@ -61,8 +69,10 @@ export type Shape =
       readonly cx: number;
       readonly cy: number;
       readonly r: number;
-      readonly fill: Paint;
+      readonly fill: Paint | null;
       readonly opacity?: number;
+      readonly stroke?: Paint;
+      readonly strokeWidth?: number;
     }
   | {
       readonly kind: 'text';
@@ -82,6 +92,8 @@ export interface ChartScene {
   readonly width: number;
   readonly height: number;
   readonly shapes: readonly Shape[];
+  /** Hover targets for {@link hitTest}, in the same coordinates as the shapes. */
+  readonly hits: readonly ChartHit[];
 }
 
 const r2 = (n: number): number => Math.round(n * 100) / 100;
@@ -95,12 +107,13 @@ const CATEGORY_SIZE = 11;
 /** Lay out a resolved chart in a `width` × `height` box. Null `chart` shows "No chart". */
 export function buildChartScene(chart: ResolvedChart | null, width: number, height: number): ChartScene {
   const shapes: Shape[] = [];
+  const hits: ChartHit[] = [];
   const bounds: Rect = { x: 0, y: 0, width, height };
   shapes.push({ kind: 'rect', ...bounds, fill: 'bg' });
 
   if (!chart || chart.isEmpty) {
     centered(shapes, chart ? 'No data — set the ranges in the panel.' : 'No chart', bounds, 14);
-    return { width, height, shapes };
+    return { width, height, shapes, hits };
   }
 
   let top = 12;
@@ -127,18 +140,18 @@ export function buildChartScene(chart: ResolvedChart | null, width: number, heig
     switch (chart.type) {
       case 'pie':
       case 'doughnut':
-        drawPie(shapes, chart, plot, chart.type === 'doughnut');
+        drawPie(shapes, hits, chart, plot, chart.type === 'doughnut');
         break;
       case 'scatter':
       case 'bubble':
-        drawScatter(shapes, chart, plot, chart.type === 'bubble');
+        drawScatter(shapes, hits, chart, plot, chart.type === 'bubble');
         break;
       case 'radar':
       case 'filledRadar':
-        drawRadar(shapes, chart, plot, chart.type === 'filledRadar');
+        drawRadar(shapes, hits, chart, plot, chart.type === 'filledRadar');
         break;
       default:
-        drawCartesian(shapes, chart, plot);
+        drawCartesian(shapes, hits, chart, plot);
         break;
     }
   }
@@ -160,7 +173,7 @@ export function buildChartScene(chart: ResolvedChart | null, width: number, heig
     }
   }
 
-  return { width, height, shapes };
+  return { width, height, shapes, hits };
 }
 
 function centered(shapes: Shape[], message: string, area: Rect, size: number): void {
@@ -191,7 +204,7 @@ function axisArea(chart: ResolvedChart, plot: Rect, left: number, bottom: number
 
 const tickGutter = (labels: readonly string[]): number => Math.max(44, widestLabel(labels, TICK_SIZE) + 10);
 
-function drawCartesian(shapes: Shape[], resolved: ResolvedChart, plot: Rect): void {
+function drawCartesian(shapes: Shape[], hits: ChartHit[], resolved: ResolvedChart, plot: Rect): void {
   // A series set to draw as a type that can't share category axes (pie, scatter…) draws as the
   // chart's own type instead of vanishing.
   const chart: ResolvedChart = {
@@ -254,7 +267,7 @@ function drawCartesian(shapes: Shape[], resolved: ResolvedChart, plot: Rect): vo
     shapes.push({ kind: 'path', d: polyline(topPts), fill: null, stroke: { series: e.i }, strokeWidth: 2 });
   });
 
-  drawBars(
+  const barList = drawBars(
     shapes,
     bars.map((e) => e.s),
     bars.map((e) => e.i),
@@ -277,6 +290,81 @@ function drawCartesian(shapes: Shape[], resolved: ResolvedChart, plot: Rect): vo
   lines.forEach(({ i }, k) =>
     drawLineSeries(shapes, lineValues[k]!, i, area, categories, min, max, bandSize, horizontal),
   );
+
+  // Hover: one target per category band, across the whole plot, so thin bars and lines are easy.
+  const point = (c: number, v: number) => categoryPoint(c, v, area, min, max, bandSize, horizontal);
+  const markers: { c: number; series: number; at: [number, number] }[] = [];
+  areas.forEach((e, k) => {
+    lanes[k]!.top.forEach((v, c) => {
+      if (!Number.isNaN(valueAt(e.s, c))) markers.push({ c, series: e.i, at: point(c, v) });
+    });
+  });
+  lines.forEach((e, k) => {
+    lineValues[k]!.forEach((v, c) => {
+      if (!Number.isNaN(v)) markers.push({ c, series: e.i, at: point(c, v) });
+    });
+  });
+  for (let c = 0; c < categories; c++) {
+    const start = (horizontal ? area.y : area.x) + bandSize * c;
+    const centre = start + bandSize / 2;
+    const band: Rect = horizontal
+      ? { x: area.x, y: start, width: area.width, height: bandSize }
+      : { x: start, y: area.y, width: bandSize, height: area.height };
+    const highlight: Shape[] = [];
+    if (lines.length + areas.length > 0) {
+      highlight.push(
+        horizontal
+          ? {
+              kind: 'line',
+              x1: area.x,
+              y1: r2(centre),
+              x2: rectRight(area),
+              y2: r2(centre),
+              stroke: 'muted',
+              width: 1,
+            }
+          : {
+              kind: 'line',
+              x1: r2(centre),
+              y1: area.y,
+              x2: r2(centre),
+              y2: rectBottom(area),
+              stroke: 'muted',
+              width: 1,
+            },
+      );
+    }
+    // The anchor is the mark that reaches furthest up (or right, for a bar chart).
+    let reach = horizontal ? -Infinity : Infinity;
+    const further = (along: number) => (reach = horizontal ? Math.max(reach, along) : Math.min(reach, along));
+    for (const m of markers) {
+      if (m.c !== c) continue;
+      highlight.push(markerHighlight(m.at[0], m.at[1], m.series));
+      further(horizontal ? m.at[0] : m.at[1]);
+    }
+    const hoverBars: HoverBar[] = barList
+      .filter((b) => b.category === c)
+      .map((b) => {
+        const anchor = horizontal
+          ? { x: r2(b.x + b.width), y: r2(b.y + b.height / 2) }
+          : { x: r2(b.x + b.width / 2), y: r2(b.y) };
+        further(horizontal ? anchor.x : anchor.y);
+        return {
+          rect: { x: r2(b.x), y: r2(b.y), width: r2(b.width), height: r2(b.height) },
+          series: b.seriesIndex,
+          anchor,
+        };
+      });
+    if (!Number.isFinite(reach)) reach = horizontal ? area.x + area.width / 2 : area.y + area.height / 2;
+    hits.push({
+      region: { kind: 'rect', ...band },
+      info: categoryInfo(chart, c),
+      anchor: horizontal ? { x: r2(reach), y: r2(centre) } : { x: r2(centre), y: r2(reach) },
+      highlight,
+      bars: hoverBars,
+      horizontal,
+    });
+  }
 
   // Category labels, thinned when they would overlap.
   if (horizontal) {
@@ -318,6 +406,7 @@ function drawCartesian(shapes: Shape[], resolved: ResolvedChart, plot: Rect): vo
 /** Bar rectangles in pixels, for {@link drawCartesian} and tests. */
 export interface BarRect {
   readonly seriesIndex: number;
+  readonly category: number;
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -342,10 +431,18 @@ export function barRects(
   const inner = bandSize * 0.7;
   const pad = (bandSize - inner) / 2;
   const bandStart = (c: number) => (horizontal ? area.y : area.x) + bandSize * c;
-  const rect = (si: number, offset: number, thickness: number, base: number, value: number): BarRect =>
+  const rect = (
+    si: number,
+    category: number,
+    offset: number,
+    thickness: number,
+    base: number,
+    value: number,
+  ): BarRect =>
     horizontal
       ? {
           seriesIndex: si,
+          category,
           x: Math.min(base, value),
           y: offset,
           width: Math.abs(value - base),
@@ -353,6 +450,7 @@ export function barRects(
         }
       : {
           seriesIndex: si,
+          category,
           x: offset,
           y: Math.min(base, value),
           width: thickness,
@@ -363,7 +461,7 @@ export function barRects(
     for (const seg of stackBars(series, indices, categories, percent)) {
       const p0 = valuePos(seg.start, min, max, area, horizontal);
       const p1 = valuePos(seg.end, min, max, area, horizontal);
-      out.push(rect(seg.seriesIndex, bandStart(seg.category) + pad, inner, p0, p1));
+      out.push(rect(seg.seriesIndex, seg.category, bandStart(seg.category) + pad, inner, p0, p1));
     }
     return out;
   }
@@ -373,7 +471,7 @@ export function barRects(
       const v = valueAt(s, c);
       if (Number.isNaN(v)) return;
       const p1 = valuePos(v, min, max, area, horizontal);
-      out.push(rect(indices[k] ?? k, bandStart(c) + pad + slot * k, slot * 0.9, zero, p1));
+      out.push(rect(indices[k] ?? k, c, bandStart(c) + pad + slot * k, slot * 0.9, zero, p1));
     });
   }
   return out;
@@ -391,19 +489,9 @@ function drawBars(
   percent: boolean,
   horizontal: boolean,
   bandSize: number,
-): void {
-  for (const b of barRects(
-    series,
-    indices,
-    area,
-    categories,
-    min,
-    max,
-    stacked,
-    percent,
-    horizontal,
-    bandSize,
-  )) {
+): BarRect[] {
+  const rects = barRects(series, indices, area, categories, min, max, stacked, percent, horizontal, bandSize);
+  for (const b of rects) {
     shapes.push({
       kind: 'rect',
       x: r2(b.x),
@@ -413,6 +501,12 @@ function drawBars(
       fill: { series: b.seriesIndex },
     });
   }
+  return rects;
+}
+
+/** A hovered data point: a larger marker ringed in the background colour. */
+function markerHighlight(x: number, y: number, series: number, r = 5): Shape {
+  return { kind: 'circle', cx: r2(x), cy: r2(y), r, fill: { series }, stroke: 'bg', strokeWidth: 2 };
 }
 
 function drawLineSeries(
@@ -559,7 +653,13 @@ function drawAxisTitles(shapes: Shape[], chart: ResolvedChart, plot: Rect, area:
 
 // ---- Pie / doughnut ---------------------------------------------------------------------------
 
-function drawPie(shapes: Shape[], chart: ResolvedChart, plot: Rect, doughnut: boolean): void {
+function drawPie(
+  shapes: Shape[],
+  hits: ChartHit[],
+  chart: ResolvedChart,
+  plot: Rect,
+  doughnut: boolean,
+): void {
   if (!chart.series[0]) return;
   const slices = pieSlices(chart);
   if (slices.length === 0) {
@@ -571,20 +671,30 @@ function drawPie(shapes: Shape[], chart: ResolvedChart, plot: Rect, doughnut: bo
   const cx = plot.x + plot.width / 2;
   const cy = plot.y + plot.height / 2;
   const inner = doughnut ? radius * 0.55 : 0;
+  const total = slices.reduce((sum, s) => sum + s.value, 0);
   for (const s of slices) {
-    shapes.push({
-      kind: 'path',
-      d: wedgePath(cx, cy, radius, inner, s.start, s.end),
-      fill: { series: s.index },
-      stroke: 'bg',
-      strokeWidth: 1,
+    const d = wedgePath(cx, cy, radius, inner, s.start, s.end);
+    shapes.push({ kind: 'path', d, fill: { series: s.index }, stroke: 'bg', strokeWidth: 1 });
+    const mid = (s.start + s.end) / 2;
+    const at = inner + (radius - inner) * 0.6;
+    hits.push({
+      region: { kind: 'wedge', cx, cy, inner, outer: radius, start: s.start, end: s.end },
+      info: sliceInfo(chart, s.index, s.value, total),
+      anchor: { x: r2(cx + at * Math.cos(mid)), y: r2(cy + at * Math.sin(mid)) },
+      highlight: [{ kind: 'path', d, fill: null, stroke: 'text', strokeWidth: 2 }],
     });
   }
 }
 
 // ---- Radar ------------------------------------------------------------------------------------
 
-function drawRadar(shapes: Shape[], chart: ResolvedChart, plot: Rect, filled: boolean): void {
+function drawRadar(
+  shapes: Shape[],
+  hits: ChartHit[],
+  chart: ResolvedChart,
+  plot: Rect,
+  filled: boolean,
+): void {
   const axes = categoryCount(chart);
   if (axes < 3) {
     centered(shapes, 'Radar needs at least 3 categories.', plot, 12);
@@ -623,8 +733,10 @@ function drawRadar(shapes: Shape[], chart: ResolvedChart, plot: Rect, filled: bo
     }
   }
 
+  const pointsBySeries: [number, number][][] = [];
   chart.series.forEach((s, si) => {
     const points: [number, number][] = [];
+    pointsBySeries.push(points);
     for (let a = 0; a < axes; a++) {
       const v = valueAt(s, a);
       const mag = Number.isNaN(v) ? 0 : Math.max(0, v) / max;
@@ -640,6 +752,35 @@ function drawRadar(shapes: Shape[], chart: ResolvedChart, plot: Rect, filled: bo
       strokeWidth: 2,
     });
   });
+
+  // Hover: the spoke nearest the pointer, out to just past its label.
+  const half = Math.PI / axes;
+  const info = { ...chart, stacking: 'none' as const };
+  for (let a = 0; a < axes; a++) {
+    const ang = angle(a);
+    const tip: [number, number] = [cx + radius * Math.cos(ang), cy + radius * Math.sin(ang)];
+    const highlight: Shape[] = [
+      { kind: 'line', x1: r2(cx), y1: r2(cy), x2: r2(tip[0]), y2: r2(tip[1]), stroke: 'muted', width: 1 },
+    ];
+    let anchor = tip;
+    let reach = -1;
+    chart.series.forEach((s, si) => {
+      if (Number.isNaN(valueAt(s, a))) return;
+      const p = pointsBySeries[si]![a]!;
+      highlight.push(markerHighlight(p[0], p[1], si, 4));
+      const d = Math.hypot(p[0] - cx, p[1] - cy);
+      if (d > reach) {
+        reach = d;
+        anchor = p;
+      }
+    });
+    hits.push({
+      region: { kind: 'wedge', cx, cy, inner: 0, outer: radius + 20, start: ang - half, end: ang + half },
+      info: categoryInfo(info, a),
+      anchor: { x: r2(anchor[0]), y: r2(anchor[1]) },
+      highlight,
+    });
+  }
 }
 
 // ---- Scatter / bubble -------------------------------------------------------------------------
@@ -651,7 +792,13 @@ function xyAt(s: ResolvedSeries, i: number): [number, number] {
   return [x, y];
 }
 
-function drawScatter(shapes: Shape[], chart: ResolvedChart, plot: Rect, bubble: boolean): void {
+function drawScatter(
+  shapes: Shape[],
+  hits: ChartHit[],
+  chart: ResolvedChart,
+  plot: Rect,
+  bubble: boolean,
+): void {
   let xMin = Infinity;
   let xMax = -Infinity;
   let yMin = Infinity;
@@ -723,6 +870,22 @@ function drawScatter(shapes: Shape[], chart: ResolvedChart, plot: Rect, bubble: 
         r: r2(r),
         fill: { series: si },
         opacity: bubble ? 0.55 : 1,
+      });
+      hits.push({
+        region: { kind: 'point', x: r2(px), y: r2(py), radius: Math.max(POINT_HIT_RADIUS, r) },
+        info: pointInfo(chart, si, x, y, bubble ? (size ?? NaN) : null),
+        anchor: { x: r2(px), y: r2(py - r) },
+        highlight: [
+          {
+            kind: 'circle',
+            cx: r2(px),
+            cy: r2(py),
+            r: r2(r + 2),
+            fill: null,
+            stroke: 'text',
+            strokeWidth: 2,
+          },
+        ],
       });
     }
   });

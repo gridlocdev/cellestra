@@ -591,6 +591,8 @@ On save the resolved plain ranges are written into the chart object as for any c
 
 Every change is one undoable chart edit, with the panel's usual preview-while-typing, commit-on-change behaviour.
 
+**Hover details.** On the chart sheet, pointing at the chart (or tapping it) highlights the mark under the pointer and shows a tooltip. Column, bar, line, area and radar charts answer for the nearest category anywhere in the plot: its label and every series' value, the hovered bar emphasised and outlined, a guide line and larger markers for lines and areas; stacked charts add the total, 100% stacked charts each value's share. A pie or doughnut slice gives its value and share of the total; a scatter or bubble point within 12 px gives its series, X and Y (named by the axis titles when set) and its size. Gaps read "—". A category that merged repeated rows notes the aggregate and the row count ("Average of 3 rows"). The hit regions and tooltip text are laid out with the chart scene, so they are pure and tested.
+
 ## 9. Non-goals (deliberately NOT in v1)
 
 Intentional exclusions, not oversights.

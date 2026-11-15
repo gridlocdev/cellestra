@@ -25,6 +25,7 @@ describe('ChartGrouping.group', () => {
     const grouped = ChartGrouping.group(labels, [sales], aggregate);
     expect(grouped.categories).toEqual(['North', 'South', 'East']);
     expect(grouped.values[0]).toEqual(expected);
+    expect(grouped.rowCounts).toEqual([2, 2, 1]);
   });
 
   it('counts text cells too, and leaves a group with no numbers a gap', () => {
@@ -77,6 +78,16 @@ describe('Grouping in the resolver', () => {
     const resolved = ChartDataResolver.resolve(book(), chart);
     expect(resolved.categories).toEqual(['North', 'South']);
     expect(resolved.series[0]!.values).toEqual([30, 20]);
+    expect(resolved.aggregate).toBe('max');
+    expect(resolved.rowCounts).toEqual([2, 1]);
+  });
+
+  it('has no row counts when no rows merged', () => {
+    const chart = createChart({
+      categoriesReference: 'Sheet1.A1:A2',
+      series: [createSeries({ valuesReference: 'Sheet1.B1:B2' })],
+    });
+    expect(ChartDataResolver.resolve(book(), chart).rowCounts).toBeNull();
   });
 
   it('never groups a scatter chart', () => {

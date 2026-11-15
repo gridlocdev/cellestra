@@ -54,6 +54,85 @@
   stroke: var(--cs-chart-grid);
 }
 
+/* Hover: highlight marks over the chart and the tooltip beside them. */
+.cs-chart-frame {
+  position: relative;
+}
+.cs-chart-highlight {
+  pointer-events: none;
+}
+.cs-chart-tip {
+  --cs-chart-bg: var(--cs-bg);
+  --cs-chart-text: var(--cs-text);
+  --cs-chart-muted: var(--cs-text-2);
+  --cs-chart-axis: var(--cs-border);
+  position: absolute;
+  z-index: 1;
+  min-width: 120px;
+  max-width: 280px;
+  padding: 6px 8px;
+  border: 1px solid var(--cs-chart-axis);
+  border-radius: 4px;
+  background: var(--cs-chart-bg);
+  color: var(--cs-chart-text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  font-family: var(--cs-font);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.cs-chart-tip.cs-chart-light {
+  --cs-chart-bg: #ffffff;
+  --cs-chart-text: #222222;
+  --cs-chart-muted: #6a6a6a;
+  --cs-chart-axis: #bbbbbb;
+}
+.cs-chart-tip.cs-chart-dark {
+  --cs-chart-bg: #1e1e1e;
+  --cs-chart-text: #e6e6e6;
+  --cs-chart-muted: #9a9a9a;
+  --cs-chart-axis: #555555;
+}
+.cs-chart-tip-title {
+  margin-bottom: 3px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cs-chart-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--cs-chart-muted);
+}
+.cs-chart-tip-row.cs-chart-tip-on {
+  color: var(--cs-chart-text);
+  font-weight: 600;
+}
+.cs-chart-tip-swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.cs-chart-tip-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cs-chart-tip-value {
+  margin-left: 12px;
+  color: var(--cs-chart-text);
+  font-variant-numeric: tabular-nums;
+}
+.cs-chart-tip-note {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--cs-chart-muted);
+}
+
 /* Chart sheet page: chart on the left, editing panel on the right. */
 .cs-chart-sheet {
   display: flex;
