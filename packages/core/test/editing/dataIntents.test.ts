@@ -4,11 +4,13 @@ import {
   CellValue,
   dataValidation,
   EditHistory,
+  EditRefusedError,
   namedRangeError,
   planCellEntry,
   SortFilterCommands,
   table as makeTable,
   TableCommands,
+  tableNameError,
   Workbook,
 } from '../../src/index.ts';
 
@@ -117,5 +119,48 @@ describe('namedRangeError', () => {
     expect(namedRangeError(workbook, '1st')).toMatch(/letter or underscore/);
     expect(namedRangeError(workbook, 'rate')).toMatch(/already exists/);
     expect(namedRangeError(workbook, 'Tax_Rate')).toBeNull();
+  });
+});
+
+describe('Table names', () => {
+  it('suggests the text above the range, then the first header cell, then TableN', () => {
+    const { workbook, sheet } = setup();
+    sheet.setValue(0, 0, CellValue.text('Monthly sales'));
+    sheet.setValue(1, 0, CellValue.text('Month'));
+    expect(TableCommands.suggestName(workbook, sheet.name, R('A2:B5'))).toBe('Monthly_sales');
+    expect(TableCommands.suggestName(workbook, sheet.name, R('A1:B5'))).toBe('Monthly_sales');
+    sheet.setValue(0, 0, CellValue.text('Q1')); // looks like a cell: the header's first cell instead
+    expect(TableCommands.suggestName(workbook, sheet.name, R('A2:B5'))).toBe('Month');
+    sheet.addTable(makeTable('Month', R('D1:D2')));
+    expect(TableCommands.suggestName(workbook, sheet.name, R('A2:B5'))).toBe('Table1');
+  });
+
+  it('rejects invalid and taken names, ignoring case, but lets a table change its own case', () => {
+    const { workbook, sheet } = setup();
+    const sales = makeTable('Sales', R('A1:B3'));
+    sheet.addTable(sales);
+    workbook.addSheet('Other').addTable(makeTable('Costs', R('A1:B3')));
+    workbook.addNamedRange({ name: 'Rate', target: R('Sheet1.D1') });
+    expect(tableNameError(workbook, '1st')).toMatch(/start with a letter/);
+    expect(tableNameError(workbook, 'My table')).toMatch(/letters, digits/);
+    expect(tableNameError(workbook, 'AB12')).toMatch(/cell reference/);
+    expect(tableNameError(workbook, 'costs')).toMatch(/already exists/);
+    expect(tableNameError(workbook, 'RATE')).toMatch(/named range/);
+    expect(tableNameError(workbook, 'SALES', sales)).toBeNull();
+    expect(tableNameError(workbook, 'Revenue_2026')).toBeNull();
+  });
+
+  it('renames a table in one undoable step and refuses a bad name', () => {
+    const { workbook, history, sheet } = setup();
+    sheet.addTable(makeTable('Sales', R('A1:B3')));
+    history.execute(TableCommands.renameTable(workbook, sheet.name, sheet.tables[0]!, ' Revenue '));
+    expect(sheet.tables.map((t) => t.name)).toEqual(['Revenue']);
+    history.undo();
+    expect(sheet.tables.map((t) => t.name)).toEqual(['Sales']);
+    history.redo();
+    expect(sheet.tables.map((t) => t.name)).toEqual(['Revenue']);
+    expect(() => TableCommands.renameTable(workbook, sheet.name, sheet.tables[0]!, 'A1')).toThrow(
+      EditRefusedError,
+    );
   });
 });

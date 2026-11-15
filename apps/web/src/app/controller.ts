@@ -13,6 +13,8 @@ import {
   planCellEntry,
   SortFilterCommands,
   TableCommands,
+  tableNameError,
+  findTableByName,
   DataScope,
   EdgeNavigator,
   FilterEngine,
@@ -1551,7 +1553,9 @@ export class AppController {
     const r = clampToUsed(this.sheet, this.regionOrSelection);
     if (!r) return this.info('Select some data to make a table.');
     // Every table gets a header row, so its columns always have filter and sort arrows.
-    const plan = TableCommands.create(this.session.workbook.peek(), this.sheetName, r, { header: 'labels' });
+    const wb = this.session.workbook.peek();
+    const name = TableCommands.suggestName(wb, this.sheetName, r);
+    const plan = TableCommands.create(wb, this.sheetName, r, { header: 'labels', name });
     if (!plan.ok) return this.info('That range overlaps an existing table.');
     this.run(plan.command);
     this.selection.select(plan.table.range.top, plan.table.range.left);
@@ -1579,6 +1583,20 @@ export class AppController {
   get activeTable(): Table | null {
     const { row, column } = this.selection.active.peek();
     return this.sheet.findTable(row, column) ?? null;
+  }
+
+  /** Rename the active table; shows why and returns false when the name can't be used. */
+  renameTable(name: string): boolean {
+    const t = this.activeTable;
+    if (!t) return false;
+    if (name.trim() === t.name) return true;
+    const error = tableNameError(this.session.workbook.peek(), name.trim(), t);
+    if (error) {
+      this.error(error);
+      return false;
+    }
+    this.run(DataEditCommands.renameTable(this.session.workbook.peek(), this.sheetName, t, name));
+    return true;
   }
 
   toggleHeaderColumn(): void {
@@ -1908,19 +1926,24 @@ export class AppController {
   }
 
   /**
-   * A named range (the sheet's own first, then the workbook's) as a `Sheet!A1:B2` reference, or
-   * null when `text` names none. Cell references win: `A1` is never looked up as a name.
+   * A named range (the sheet's own first, then the workbook's) or a table as a `Sheet!A1:B2`
+   * reference, or null when `text` names neither. Cell references win: `A1` is never looked up as a name.
    */
   #namedTarget(text: string): string | null {
     if (text.includes('!') || CellRange.tryParse(text) || CellAddress.tryParse(text)) return null;
-    const range = this.session.workbook.peek().findNamedRange(text, this.sheetName)?.target;
-    if (!range) return null;
+    const wb = this.session.workbook.peek();
+    const range = wb.findNamedRange(text, this.sheetName)?.target;
+    if (!range) {
+      const found = findTableByName(wb, text);
+      if (!found) return null;
+      return `'${found.sheet.name.replaceAll("'", "''")}'!${found.table.range.withSheet(null).toString()}`;
+    }
     const sheet = range.start.sheet ?? this.sheetName;
     const bounds = CellRange.fromBounds(range.top, range.left, range.bottom, range.right);
     return `'${sheet.replaceAll("'", "''")}'!${bounds.toString()}`;
   }
 
-  /** Name box: `B7`, `B2:D9`, `Sheet2!A1`, or a named range. False when it doesn't parse. */
+  /** Name box: `B7`, `B2:D9`, `Sheet2!A1`, a named range or a table. False when it doesn't parse. */
   goTo(reference: string): boolean {
     const text = reference.trim();
     const named = this.#namedTarget(text);

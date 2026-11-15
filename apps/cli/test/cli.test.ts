@@ -1094,6 +1094,20 @@ describe('data, structural, and layout edits', () => {
     expect(json(r.out).table).toBe('Table2');
   });
 
+  it('rename-table renames a table as a verb and as an apply op, and refuses a taken name', () => {
+    const ods = threeRowBook();
+    run('table', ods, 'A1:B3', '--name', 'Scores', '--in-place');
+    expect(run('rename-table', ods, 'Scores', 'Results', '--in-place').exit).toBe(0);
+    expect(sheet1(ods).tables.map((t) => t.name)).toEqual(['Results']);
+    const ops = path2('ops.json');
+    writeFileSync(ops, JSON.stringify([{ op: 'rename-table', table: 'B2', to: 'Marks' }]));
+    expect(run('apply', ods, ops, '--in-place').exit).toBe(0);
+    expect(sheet1(ods).tables.map((t) => t.name)).toEqual(['Marks']);
+    const bad = run('rename-table', ods, 'Marks', 'A1', '--in-place');
+    expect(bad.exit).toBe(1);
+    expect(bad.err).toMatch(/cell reference/);
+  });
+
   it('hyperlink sets and removes a link without mangling the value', () => {
     const ods = path2('link.ods');
     run('new', ods);

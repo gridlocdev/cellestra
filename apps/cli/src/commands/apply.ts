@@ -11,6 +11,7 @@ import {
   Fills,
   InputParser,
   namedRangeError,
+  tableNameError,
   planCellEntry,
   RenameSheetCommand,
   StructuralEditCommand,
@@ -423,6 +424,15 @@ function run(session: EditSession, op: Op, kind: string): void {
     }
     case 'table-options':
       return tableOptions(session, op);
+    case 'rename-table': {
+      const { sheet, table } = findTable(session, op);
+      const to = op.require('to');
+      const error = tableNameError(wb, to.trim(), table);
+      if (error !== null) throw new CliError(error);
+      session.apply(DataEditCommands.renameTable(wb, sheet.name, table, to));
+      session.field('table', to.trim());
+      return;
+    }
     case 'chart-remove': {
       const sheet = chartSheet(wb, op.require('sheet'));
       session.apply(new DeleteSheetCommand(sheet.name));

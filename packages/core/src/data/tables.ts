@@ -1,4 +1,5 @@
 import { CellRange } from '../model/cellRange.ts';
+import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import type { Table } from './types.ts';
 
@@ -10,6 +11,16 @@ export function tableHeaderLabels(table: Table, sheet: Worksheet): string[] {
     labels.push(v?.kind === 'text' ? v.value : `Column${c + 1}`);
   }
   return labels;
+}
+
+/** The table called `name` (ignoring case) and its sheet, or null. Table names are unique in a workbook. */
+export function findTableByName(workbook: Workbook, name: string): { sheet: Worksheet; table: Table } | null {
+  const lower = name.trim().toLowerCase();
+  for (const sheet of workbook.worksheets) {
+    const table = sheet.tables.find((t) => t.name.toLowerCase() === lower);
+    if (table) return { sheet, table };
+  }
+  return null;
 }
 
 /** The same table over a new range. */

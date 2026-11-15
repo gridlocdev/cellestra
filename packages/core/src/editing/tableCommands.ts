@@ -1,13 +1,20 @@
 import { DataRegion } from '../data/dataRegion.ts';
 import { TableAutoExpand } from '../data/tables.ts';
 import { table as makeTable, type Table } from '../data/types.ts';
+import { CellAddress } from '../model/cellAddress.ts';
 import { CellRange } from '../model/cellRange.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import type { CellStyle } from '../styling/cellStyle.ts';
 import { CellValue } from '../values/cellValue.ts';
 import { CellSnapshotCommand } from './cellSnapshotCommand.ts';
-import { ActionCommand, EditResult, requireSheet, type EditCommand } from './editCommand.ts';
+import {
+  ActionCommand,
+  EditRefusedError,
+  EditResult,
+  requireSheet,
+  type EditCommand,
+} from './editCommand.ts';
 import { EditCommands } from './editCommands.ts';
 import { StructuralEditCommand } from './structuralEditCommand.ts';
 
@@ -19,11 +26,33 @@ export type TablePlan =
   | { readonly ok: true; readonly command: EditCommand; readonly table: Table }
   | { readonly ok: false; readonly overlapping: readonly Table[] };
 
-/** Undoable table edits: create, restyle, resize, grow for an entry, remove. */
+/** A table name: a letter or underscore, then letters, digits and underscores (a database range's rule). */
+const TABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Why `name` can't name a table in `workbook`, or null when it can. Names start with a letter or
+ * underscore, hold only letters, digits and underscores, can't look like a cell reference, and are
+ * unique among the workbook's tables and named ranges, ignoring case. `except` is the table being
+ * renamed, so it may keep its own name in another case.
+ */
+export function tableNameError(workbook: Workbook, name: string, except: Table | null = null): string | null {
+  if (!TABLE_NAME.test(name) || CellAddress.tryParse(name))
+    return 'Table names start with a letter or underscore, use only letters, digits and underscores, and can’t look like a cell reference.';
+  const lower = name.toLowerCase();
+  const clash = workbook.worksheets.some((s) =>
+    s.tables.some((t) => t !== except && t.name.toLowerCase() === lower),
+  );
+  if (clash) return `A table called “${name}” already exists.`;
+  if (workbook.namedRanges.some((n) => n.name.toLowerCase() === lower))
+    return `“${name}” is already a named range.`;
+  return null;
+}
+
+/** Undoable table edits: create, rename, restyle, resize, grow for an entry, remove. */
 export const TableCommands = {
   /**
    * Create Table, as one undo step. The name defaults to the next free `TableN` in the workbook
-   * (tables are saved as document-wide database ranges). `header: 'labels'` gives every table a
+   * (tables are saved as document-wide database ranges); the app passes `suggestName`'s instead. `header: 'labels'` gives every table a
    * header row: a first row of text labels is it, otherwise "Column N" labels go in the blank row
    * just above, or in a row inserted there. A range that overlaps a table is refused unless
    * `replace` is set, which removes those tables in the same step.
@@ -64,6 +93,34 @@ export const TableCommands = {
   nextName(workbook: Workbook): string {
     const taken = new Set(workbook.worksheets.flatMap((s) => s.tables).map((t) => t.name.toLowerCase()));
     for (let n = 1; ; n++) if (!taken.has(`table${n}`)) return `Table${n}`;
+  },
+
+  /**
+   * A name for a new table over `range`: the text just above it, else its first header cell, when
+   * that text makes a free, valid table name (spaces become underscores); otherwise `nextName`.
+   */
+  suggestName(workbook: Workbook, sheet: string, range: CellRange): string {
+    const ws = workbook.findSheet(sheet);
+    const candidates = ws
+      ? [range.top > 0 ? ws.getValue(range.top - 1, range.left) : null, ws.getValue(range.top, range.left)]
+      : [];
+    for (const value of candidates) {
+      if (value?.kind !== 'text') continue;
+      const name = value.value.trim().replace(/\s+/g, '_');
+      if (name !== '' && tableNameError(workbook, name) === null) return name;
+    }
+    return TableCommands.nextName(workbook);
+  },
+
+  /**
+   * Rename `table` on `sheet`. Throws `EditRefusedError` when the name is invalid or taken (see
+   * `tableNameError`).
+   */
+  renameTable(workbook: Workbook, sheet: string, table: Table, name: string): EditCommand {
+    const next = name.trim();
+    const error = tableNameError(workbook, next, table);
+    if (error) throw new EditRefusedError(error);
+    return swapTable('Rename Table', sheet, table, { ...table, name: next });
   },
 
   createTable: (sheet: string, table: Table): EditCommand =>

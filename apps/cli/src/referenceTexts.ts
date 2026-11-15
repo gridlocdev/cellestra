@@ -65,7 +65,7 @@ Data
   {"op":"split", "range":"A1:A100", "delimiter":";"}   text to columns (default delimiter ,)
   {"op":"table", "range":"A1:D20", "name":"Sales", "header":true, "replace":true}   replace: redefine a table already on the range
   {"op":"table-options", "table":"Sales", "bandedRows":true, "headerColumn":true, "range":"A1:D30"}   table: a name or a cell in it
-  {"op":"table-remove", "table":"Sales"}
+  {"op":"table-remove", "table":"Sales"}   {"op":"rename-table", "table":"Sales", "to":"Revenue"}
   {"op":"validation", "range":"C2:C50", "list":["Red","Green"]}  or  "source":"Lists.A1:A8"
   {"op":"validation", "range":"B2:B50", "kind":"whole|decimal|date|text-length", "operator":"between|not-between|equal|not-equal|greater|less|greater-or-equal|less-or-equal",
                       "value1":1, "value2":100, "response":"stop|warning|information|none", "inputMessage":"…", "errorMessage":"…"}   a date bound may be "2026-01-31"

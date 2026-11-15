@@ -38,7 +38,7 @@ Number formats (general, number, currency, percent, date, time, scientific and t
 
 - **Sort Ascending**, **Sort Descending** and **Custom Sort…** sort a range by one or more columns, and **Sort & Filter…** chains sorts and filters in one dialog.
 - **AutoFilter** adds a filter dropdown to each column. Filtered-out rows are hidden, not deleted.
-- **Create Table** turns a range into a named table with a header band and filter buttons.
+- **Create Table** turns a range into a named table with a header band and filter buttons. The name comes from the text just above the range or its first header cell when that makes a valid name (`Monthly sales` becomes `Monthly_sales`), otherwise `Table1`, `Table2`… The **Name** box in the Data tab's Table group shows the table the cursor is in and renames it, and typing a table's name in the Name Box selects the table.
 - **Data Validation…** limits what a cell accepts, for example a dropdown list or a number range.
 - **Remove Duplicates** and **Text to Columns…** tidy imported data.
 

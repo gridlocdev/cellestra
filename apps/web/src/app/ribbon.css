@@ -606,3 +606,13 @@
   outline: 2px solid var(--rb-accent);
   outline-offset: 1px;
 }
+
+.rb-table-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.rb-table-name input {
+  width: 110px;
+}

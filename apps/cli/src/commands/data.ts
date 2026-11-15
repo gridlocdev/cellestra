@@ -204,6 +204,18 @@ export const table: CommandSpec = {
   },
 };
 
+export const renameTable: CommandSpec = {
+  name: 'rename-table',
+  description: 'Rename a table',
+  args: [
+    fileArg(),
+    { name: 'table', description: 'The table: its name or a cell in it' },
+    { name: 'new', description: 'New table name (letters, digits and _; unique in the workbook)' },
+  ],
+  options: [inPlaceOpt, outputOpt, jsonOpt],
+  run: (p, con) => dispatch(p, con, 'rename-table', { table: p.arg('table'), to: p.arg('new') }),
+};
+
 export const dataValidation: CommandSpec = {
   name: 'data-validation',
   description: 'Restrict a range: a list of allowed values, or a number/date/text-length rule',

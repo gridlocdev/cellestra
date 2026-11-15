@@ -52,7 +52,7 @@ export {
   type StructuralOperation,
 } from './structuralEditCommand.ts';
 export { SwapCellsCommand } from './swapCellsCommand.ts';
-export { TableCommands, type TableHeaderChoice, type TablePlan } from './tableCommands.ts';
+export { TableCommands, type TableHeaderChoice, tableNameError, type TablePlan } from './tableCommands.ts';
 export { ValidationCommands } from './validationCommands.ts';
 export {
   captureReferences,

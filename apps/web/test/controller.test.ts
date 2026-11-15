@@ -1,4 +1,12 @@
-import { CellRange, CellValue, EditCommands, OdsWriter, SheetDimensions, Workbook } from '@cellestra/core';
+import {
+  CellRange,
+  CellValue,
+  EditCommands,
+  OdsWriter,
+  SheetDimensions,
+  table,
+  Workbook,
+} from '@cellestra/core';
 import { effect } from '@preact/signals';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
@@ -622,6 +630,22 @@ describe('createTable', () => {
     expect(sheet.getValue(0, 0)).toEqual(CellValue.number(1));
   });
 
+  it('names the table after its header and renames it from the ribbon box', async () => {
+    const { app, sheet, table } = await tableFrom([
+      ['Region', 'Sales'],
+      ['North', 4],
+    ]);
+    expect(table.name).toBe('Region');
+    const errors: unknown[] = [];
+    app.error = (e: unknown) => void errors.push(e);
+    expect(app.renameTable('Regional sales')).toBe(false);
+    expect(errors).toHaveLength(1);
+    expect(app.renameTable('Revenue')).toBe(true);
+    expect(sheet.tables[0]!.name).toBe('Revenue');
+    app.session.undo();
+    expect(sheet.tables[0]!.name).toBe('Region');
+  });
+
   it('uses the blank row above the data for the labels', async () => {
     const { sheet, table } = await tableFrom([[1, 2]], 3);
     expect(table.range.toString()).toBe('A3:B4');
@@ -834,6 +858,18 @@ describe('name box', () => {
     expect(app.sheetName).toBe(other);
     expect(app.range.toString()).toBe('B2:C4');
     expect(app.goTo('Nope')).toBe(false);
+  });
+
+  it('selects a table by its name, on its own sheet', async () => {
+    const app = await makeApp();
+    app.session.addSheet();
+    const wb = app.session.workbook.peek();
+    const other = wb.worksheets[wb.worksheets.length - 1]!;
+    other.addTable(table('Sales', CellRange.parse('B2:D5')));
+    app.session.setActiveSheet(0);
+    expect(app.goTo('sales')).toBe(true);
+    expect(app.sheetName).toBe(other.name);
+    expect(app.range.toString()).toBe('B2:D5');
   });
 });
 

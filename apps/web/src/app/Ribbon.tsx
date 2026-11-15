@@ -467,6 +467,7 @@ function DataTab(ctx: Ctx) {
         <div class="rb-row">
           <Big {...ctx} id="data.createTable" label="Table" />
           <Col>
+            <TableNameBox app={ctx.app} />
             <Small {...ctx} id="data.bandedRows" label="Banded rows" />
             <Small {...ctx} id="data.headerColumn" label="Header column" />
             <Small {...ctx} id="data.removeTable" label="Remove table" />
@@ -916,6 +917,46 @@ function FontSizeBox({ app, style, disabled }: BoxProps) {
         ))}
       </div>
     </Popover>
+  );
+}
+
+/**
+ * The active table's name: type a new one and press Enter (or leave the box) to rename it; Escape
+ * puts the name back. Blank and disabled when the cursor isn't in a table.
+ */
+function TableNameBox({ app }: { readonly app: AppController }) {
+  const table = app.sheet.isChartSheet ? null : app.activeTable;
+  const name = table?.name ?? '';
+  const [text, setText] = useState(name);
+  useEffect(() => setText(name), [name]);
+  const commit = () => {
+    if (table && text.trim() !== name && !app.renameTable(text)) setText(name);
+  };
+  return (
+    <label class="rb-table-name" title="The table’s name. Charts and the Name Box find the table by it.">
+      <span>Name</span>
+      <input
+        class="rb-dd"
+        aria-label="Table name"
+        disabled={!table}
+        placeholder={table ? '' : 'No table'}
+        value={text}
+        onInput={(e) => setText(e.currentTarget.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+            refocus(app);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setText(name);
+            refocus(app);
+          }
+        }}
+      />
+    </label>
   );
 }
 

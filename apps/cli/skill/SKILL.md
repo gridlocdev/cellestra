@@ -119,14 +119,14 @@ conditions or allowed values; `clear` to show all), `add-sheet` (`at`, `ifMissin
 `delete-sheet`/`duplicate-sheet`/`move-sheet`, `settings` (locale, calc, activeSheet),
 `insert-rows`/`delete-rows`/`insert-cols`/`delete-cols`, `sort`, `remove-duplicates`, `split`
 (text to columns), `table` (`replace`)/
-`table-options` (banded rows, header column, resize)/`table-remove`, `validation` (list, or
+`table-options` (banded rows, header column, resize)/`table-remove`/`rename-table`, `validation` (list, or
 whole/decimal/date/text-length with an operator and bounds; `remove`), `name`/`unname`,
 `hyperlink`, `chart`/`chart-update`/`chart-remove`. Re-running a batch is safe when you use
 `ifMissing`/`replace`. `--dry-run` applies in memory and returns the same report (changed cells,
 errors) without writing — use it to test a batch of formulas against a real file.
 
 Every op also exists as a verb for one-off use (`style`, `width`, `height`, `freeze`, `clear`,
-`copy`, `move`, `fill`, `paint`, `filter`, `settings`, `duplicate-sheet`, `move-sheet`, `table …`,
+`copy`, `move`, `fill`, `paint`, `filter`, `settings`, `duplicate-sheet`, `move-sheet`, `table …`, `rename-table`,
 `data-validation …`, `charts update|remove`, `conditional`, `page-setup`); `cellestra man` lists
 them all with their options.
 
