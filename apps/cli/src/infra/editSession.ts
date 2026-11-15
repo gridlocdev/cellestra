@@ -6,6 +6,7 @@ import { address, cellReportAt, errorReports, writeReport } from './report.ts';
 import {
   load,
   recalculate,
+  recalculateAfterEdits,
   saveOds,
   saveText,
   type LoadedWorkbook,
@@ -16,7 +17,7 @@ const JSON_TO_STDOUT =
   "--json writes the report to stdout, so the workbook can't go there too — give -o <file> or --in-place.";
 
 /**
- * One load → edit → recalculate → atomic save, with the report every writing verb prints: the
+ * One load → edit → recalculate (as the workbook's calculation mode says) → atomic save, with the report every writing verb prints: the
  * cells it changed, every error cell now in the workbook, and any notes and extra fields.
  */
 export class EditSession {
@@ -26,6 +27,7 @@ export class EditSession {
   readonly #changed: CellRef[] = [];
   readonly #notes: string[] = [];
   readonly #fields = new Map<string, unknown>();
+  #recalculateAll = false;
 
   private constructor(con: Console, loaded: LoadedWorkbook, locale: string) {
     this.con = con;
@@ -45,6 +47,11 @@ export class EditSession {
 
   touched(sheet: string, row: number, column: number): void {
     this.#changed.push(CellRef.of(sheet, row, column));
+  }
+
+  /** Recompute every formula before saving, even in manual calculation (the `recalc` command). */
+  recalculateAll(): void {
+    this.#recalculateAll = true;
   }
 
   note(message: string): void {
@@ -101,7 +108,7 @@ export class EditSession {
   }
 
   #finish(target: string, json: boolean, dryRun: boolean): number {
-    const result = recalculate(this.workbook);
+    const result = this.#recalculateAll ? recalculate(this.workbook) : recalculateAfterEdits(this.workbook);
     if (!dryRun) this.#save(target);
     if (!json) {
       for (const note of this.#notes) this.con.errLine(note);

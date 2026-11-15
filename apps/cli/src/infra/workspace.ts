@@ -106,10 +106,20 @@ export function load(
   return { workbook: book, package: null };
 }
 
+/** Recompute every formula, whatever the calculation mode: what the app's Recalculate (F9) does. */
 export function recalculate(workbook: Workbook): RecalculationResult {
   const engine = new RecalculationEngine(workbook);
   engine.rebuildGraph();
   return engine.recalculateAll();
+}
+
+/**
+ * Bring results up to date after a command's edits, as the app does after an edit: everything in
+ * automatic calculation, nothing in manual (results wait for `recalc`). The command's edits count
+ * as one structural change, so the engine works out the whole graph again.
+ */
+export function recalculateAfterEdits(workbook: Workbook): RecalculationResult {
+  return new RecalculationEngine(workbook).apply({ changedCells: [], changedRows: [], structural: true });
 }
 
 export function saveOds(con: Console, workbook: Workbook, pkg: OdsPackage | null, path: string): void {

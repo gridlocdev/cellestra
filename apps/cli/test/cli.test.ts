@@ -1122,6 +1122,22 @@ describe('data, structural, and layout edits', () => {
     expect(sheet1(ods).findMerge(0, 0)).toBeUndefined();
   });
 
+  it('an edit leaves results alone in manual calculation, and recalc brings them up to date', () => {
+    const ods = path2('manual.ods');
+    run('new', ods);
+    run('set', ods, 'A1', '1', '--in-place');
+    run('set', ods, 'B1', '=A1*2', '--in-place');
+    expect(sheet1(ods, 'Sheet1').getValue(0, 1)).toEqual(CellValue.number(2));
+    expect(run('settings', ods, '--calc', 'manual', '--in-place').exit).toBe(0);
+    expect(run('set', ods, 'A1', '5', '--in-place').exit).toBe(0);
+    expect(sheet1(ods, 'Sheet1').getValue(0, 1)).toEqual(CellValue.number(2));
+    expect(run('recalc', ods, '--in-place').exit).toBe(0);
+    expect(sheet1(ods, 'Sheet1').getValue(0, 1)).toEqual(CellValue.number(10));
+    expect(run('settings', ods, '--calc', 'automatic', '--in-place').exit).toBe(0);
+    expect(run('set', ods, 'A1', '7', '--in-place').exit).toBe(0);
+    expect(sheet1(ods, 'Sheet1').getValue(0, 1)).toEqual(CellValue.number(14));
+  });
+
   it('reports an edit the engine refuses in one line, with no stack trace', () => {
     const ods = path2('refused.ods');
     run('new', ods);

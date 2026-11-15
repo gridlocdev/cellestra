@@ -267,6 +267,7 @@ export const recalc: CommandSpec = {
       resolveLocale(p.str('--locale')),
       p.flag('--json'),
       (session) => {
+        session.recalculateAll();
         let formulas = 0;
         for (const sheet of session.workbook.worksheets) {
           for (const [, , cell] of sheet.enumerateCells()) if (cell.formula !== null) formulas++;

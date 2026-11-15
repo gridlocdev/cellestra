@@ -71,7 +71,7 @@ Cellestra is one TypeScript code base with three hosts and a command line. The b
 ## CLI (`apps/cli`)
 
 - `cellestra` reads and edits `.ods` and CSV files from the command line, for scripts, CI and agents. It runs from source with Node's type stripping and depends on `packages/core` only.
-- Edits go through core's edit commands, and saving follows the server's rules (atomic replace, hard links written in place, read-only files refused).
+- Edits go through core's edit commands. Results are brought up to date through `RecalculationEngine.apply`, so a workbook in manual calculation keeps its old results until `cellestra recalc`. Saving follows the server's rules (atomic replace, hard links written in place, read-only files refused).
 - A mistake the user can fix prints one `cellestra: <message>` line and exits 1 (2 for a bad command line). Anything else is a bug and keeps its stack trace.
 
 ## Server (`apps/server`)
