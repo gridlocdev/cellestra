@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Workbook } from '../../src/model/workbook.ts';
 import { CsvOptions, parseCsv, readCsv, writeCsv } from '../../src/serialization/index.ts';
+import { CellStyles, NumberFormats } from '../../src/styling/cellStyle.ts';
 import { CellValue } from '../../src/values/cellValue.ts';
 
 const INVARIANT = { ...CsvOptions.default, locale: 'en-US' };
@@ -141,5 +142,18 @@ describe('Csv', () => {
     expect(parseCsv('a,b')).toEqual([['a', 'b']]);
     expect(parseCsv('"x"')).toEqual([['x']]);
     expect(parseCsv('')).toEqual([]);
+  });
+});
+
+describe('CSV export of a row or column format', () => {
+  it('writes a number under a date column format as the date the grid shows', () => {
+    const workbook = Workbook.createNew();
+    const sheet = workbook.activeSheet;
+    sheet.getOrCreateColumn(0).styleId = workbook.styles.intern({
+      ...CellStyles.default,
+      numberFormat: NumberFormats.of('yyyy-mm-dd'),
+    });
+    sheet.setValue(0, 0, CellValue.number(46082));
+    expect(writeCsv(workbook, sheet)).toBe('2026-03-01\n');
   });
 });

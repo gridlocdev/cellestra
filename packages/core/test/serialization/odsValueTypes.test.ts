@@ -66,3 +66,31 @@ describe('ODS value types', () => {
     expect(value.kind === 'error' && value.error.code).toBe('notAvailable');
   });
 });
+
+describe('ODS value types from a row or column format', () => {
+  function formattedLine(line: 'row' | 'column', code: string): Workbook {
+    const workbook = Workbook.createNew();
+    const sheet = workbook.activeSheet;
+    const styleId = workbook.styles.intern({ ...CellStyles.default, numberFormat: NumberFormats.of(code) });
+    if (line === 'column') sheet.getOrCreateColumn(0).styleId = styleId;
+    else sheet.getOrCreateRow(0).styleId = styleId;
+    sheet.setValue(0, 0, CellValue.number(46082));
+    return workbook;
+  }
+
+  it('writes a number under a date column format as a date, as LibreOffice does', () => {
+    const workbook = formattedLine('column', 'yyyy-mm-dd');
+    expect(workbook.activeSheet.find(0, 0)!.styleId).toBe(0);
+    const cell = firstCell(workbook);
+    expect(cell).toContain('office:value-type="date"');
+    expect(cell).toContain('office:date-value="2026-03-01"');
+    expect(readEntry(writeOds(workbook), 'content.xml')).toContain('<text:p>2026-03-01</text:p>');
+    const value = roundTrip(workbook).activeSheet.getValue(0, 0);
+    expect(value.kind === 'number' && value.value).toBe(46082);
+  });
+
+  it('writes a number under a percent row format as a percentage', () => {
+    const cell = firstCell(formattedLine('row', '0.00%'));
+    expect(cell).toContain('office:value-type="percentage"');
+  });
+});

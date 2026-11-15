@@ -48,11 +48,9 @@ const EXPECTED_CHANGES: readonly RegExp[] = [
  * Changes one fixture may show that would hide a loss in another.
  * - The sample's rows and columns all say `fo:break-before="auto"`, the default; the outline
  *   fixture's manual breaks must still come back.
- * - The sample's dates sit in a column whose default style is a date format and have no style of
- *   their own; Cellestra saves them as numbers, which LibreOffice still shows as dates.
  */
 const EXPECTED_IN: Readonly<Record<string, readonly RegExp[]>> = {
-  'libreoffice-sample.ods': [/@fo:break-before$/, /@office:date-value$/],
+  'libreoffice-sample.ods': [/@fo:break-before$/],
 };
 
 /** Every element path and `path@attribute` in a part, with prefixes taken from namespace URIs. */

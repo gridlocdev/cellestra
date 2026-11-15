@@ -550,19 +550,22 @@ function writeCell(
     for (const child of preserved?.before ?? []) element.add(child.clone());
     const checkbox = covered ? undefined : w.checkboxes.get(cellKey(row, column));
     if (checkbox !== undefined) element.add(checkboxControl(w.sheet, row, column, checkbox));
-    writeCellContent(element, cell, w.registry);
+    // A cell without a style of its own shows its row's or column's number format, so its value is
+    // typed by that format too: a date under a date column is an office:date-value, as LibreOffice
+    // writes it, not a float whose text is the serial.
+    writeCellContent(element, cell, w.registry, w.sheet.effectiveStyleId(row, column));
     for (const child of preserved?.after ?? []) element.add(child.clone());
   }
   return element;
 }
 
-function writeCellContent(element: XmlElement, cell: Cell, registry: StyleRegistry): void {
+function writeCellContent(element: XmlElement, cell: Cell, registry: StyleRegistry, styleId: number): void {
   if (cell.formula !== null) {
     element.setAttr(Table('formula'), OpenFormulaTranslator.toOpenFormula(cell.formula, cell.formulaSource));
   }
 
   const value = cell.value;
-  const format = registry.styles.get(cell.styleId).numberFormat;
+  const format = registry.styles.get(styleId).numberFormat;
   const kind = NumberFormats.kind(format);
   const isTime = kind === 'time';
   const isDate = kind === 'date' || kind === 'dateTime';

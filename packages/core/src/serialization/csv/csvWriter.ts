@@ -43,7 +43,9 @@ export function writeCsv(
     let line = '';
     let at = 0;
     for (const [column, cell] of cells) {
-      line += delimiter.repeat(column - at) + quote(displayValue(workbook, cell, locale), delimiter);
+      line +=
+        delimiter.repeat(column - at) +
+        quote(displayValue(workbook, sheet, row, column, cell, locale), delimiter);
       at = column;
     }
     parts.push(line + delimiter.repeat(used.right - at) + '\n'); // LF on export
@@ -51,8 +53,16 @@ export function writeCsv(
   return parts.join('');
 }
 
-function displayValue(workbook: Workbook, cell: Cell, locale: string): string {
-  const code = workbook.styles.get(cell.styleId).numberFormat.code;
+/** The text the grid shows: a cell without a style of its own takes its row's or column's format. */
+function displayValue(
+  workbook: Workbook,
+  sheet: Worksheet,
+  row: number,
+  column: number,
+  cell: Cell,
+  locale: string,
+): string {
+  const code = workbook.styles.get(sheet.effectiveStyleId(row, column)).numberFormat.code;
   const value = cell.value;
   if (value.kind === 'text') return NumberFormatter.format(value, code, locale);
   if (
