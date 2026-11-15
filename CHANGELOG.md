@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.3
+
+### Improvements
+
+- **More of a LibreOffice file survives a save.** Row and column groups (and whether they're collapsed), rows and columns repeated on every printed page, manual page breaks, workbook structure protection, and macros bound to document events are all kept. Groups, breaks and print titles move with their rows and columns when you insert or delete.
+- **Filtered rows and rows you hid are kept apart.** Clearing a filter no longer shows rows you hid by hand, **Unhide** shows only the rows you hid, and a save tells LibreOffice which is which. SUBTOTAL 1–11 skips filtered rows, and 101–111 also skips rows you hid, as in Calc.
+- **Editing is faster on big sheets.** An edit re-measures only the rows it changed, where it used to re-measure the whole sheet. On a sheet of 50,000 rows of wrapped text, that's under a millisecond instead of about 50.
+- **Moving around is smoother in the desktop app.** The menu bar is no longer rebuilt on every arrow key, and it no longer closes an open menu when nothing in it changed.
+
+### Bugs fixed
+
+- Dates in a column formatted as dates are saved as dates, not as plain numbers, and CSV export writes them as the grid shows them.
+- ROUND keeps large whole numbers exact, and INT gives the same result as Calc for sums like `INT((0.7+0.1)*10)`.
+- `VALUE` with an impossible date, such as `9999-12-40`, gives #VALUE! instead of stopping the recalculation.
+
 ## 0.2.2
 
 ### Improvements
