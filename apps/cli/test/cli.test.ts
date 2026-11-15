@@ -1309,6 +1309,33 @@ describe('chart sheets', () => {
     expect(run('charts', 'list', ods, '--json').out.trim()).toBe('[]');
   });
 
+  it('a chart from a table name is bound to the table and follows it as it grows', () => {
+    const ods = chartDataBook();
+    run('table', ods, 'Sheet1.A1:C3', '--name', 'Sales', '--in-place');
+    expect(
+      run('chart', ods, '--type', 'column', '--from', 'sales', '--aggregate', 'max', '--in-place').exit,
+    ).toBe(0);
+    let doc = json(run('charts', 'show', ods, 'Chart1').out);
+    expect(doc.table).toEqual({ name: 'Sales', categories: 'Region', columns: ['Q1', 'Q2'] });
+    expect(doc.aggregate).toBe('max');
+    expect(doc.categories).toBe('Sheet1.A2:A3');
+
+    run('set', ods, 'A4', 'East', '--in-place');
+    run('set', ods, 'B4', '30', '--in-place');
+    run('table', ods, 'Sales', '--resize', 'Sheet1.A1:C4', '--in-place');
+    run('rename-table', ods, 'Sales', 'Revenue', '--in-place');
+    run('charts', 'update', ods, 'Chart1', '--title', 'Grown', '--in-place'); // saves the chart again
+    doc = json(run('charts', 'show', ods, 'Chart1').out);
+    expect(doc.table).toMatchObject({ name: 'Revenue' });
+    expect(doc.series[0].values).toBe('Sheet1.B2:B4');
+
+    expect(
+      run('charts', 'update', ods, 'Chart1', '--type', 'scatter', '--aggregate', 'average', '--in-place')
+        .exit,
+    ).toBe(1);
+    expect(run('chart', ods, '--type', 'bubble', '--from', 'Revenue', '--in-place').exit).toBe(1);
+  });
+
   it('a chart with explicit fields round-trips', () => {
     const ods = chartDataBook();
     expect(

@@ -122,7 +122,9 @@ conditions or allowed values; `clear` to show all), `add-sheet` (`at`, `ifMissin
 `table-options` (banded rows, header column, resize)/`table-remove`/`rename-table` (charts bound to the
 table follow), `validation` (list, or
 whole/decimal/date/text-length with an operator and bounds; `remove`), `name`/`unname`,
-`hyperlink`, `chart`/`chart-update`/`chart-remove`. Re-running a batch is safe when you use
+`hyperlink`, `chart`/`chart-update`/`chart-remove` (`from` takes a range or a table name; a table
+binds the chart, so it follows the table as rows are added; `aggregate` sum/average/count/min/max
+combines rows that repeat a category). Re-running a batch is safe when you use
 `ifMissing`/`replace`. `--dry-run` applies in memory and returns the same report (changed cells,
 errors) without writing — use it to test a batch of formulas against a real file.
 
@@ -151,7 +153,8 @@ workbook if absent). `cellestra convert a.csv b.ods` / `convert b.ods c.csv` con
   median, stdev, min, max: run it on a column _before_ writing formulas over it.
 - `trace book.ods Budget.D5 --depth 0` — the formula's inputs as a tree (a range is one node);
   `--dependents` for what would break if you changed the cell.
-- `charts list|show book.ods` — every chart's type, title, and series references as JSON.
+- `charts list|show book.ods` — every chart's type, title, and series references as JSON (a chart
+  bound to a table shows the table and its columns under `table`).
 - `functions SUMIFS --json` (signature and arguments); `eval "=ROUND(355/113, 4)" --json` — try a
   formula with no file at all; `cat --both` prints `=A1*2 → 20` so source and result read together.
 

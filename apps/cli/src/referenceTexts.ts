@@ -73,7 +73,8 @@ Data
   {"op":"name", "name":"TaxRate", "range":"Config.B1"}   {"op":"unname", "name":"TaxRate"}
   {"op":"hyperlink", "cell":"A2", "url":"https://…", "tooltip":"…"}   "url": null removes it
   {"op":"chart", "type":"column", "title":"Sales", "from":"A1:C13",          or "values":["B2:B13"], "names":["Q1"], "categories":"A2:A13",
-                 "stacking":"none", "legend":true, "xTitle":"Month", "yTitle":"USD"}   scatter: "xValues"; bubble: + "bubbleSizes"
+                 "stacking":"none", "aggregate":"sum", "legend":true, "xTitle":"Month", "yTitle":"USD"}   scatter: "xValues"; bubble: + "bubbleSizes"
+                 "from" may name a table: the chart is bound to it and follows it as it grows; "aggregate" (sum|average|count|min|max) combines rows that repeat a category
   {"op":"chart-update", "sheet":"Chart1", "title":"…", "type":"line", …}   only the keys given change; data keys rebuild the series
   {"op":"chart-remove", "sheet":"Chart1"}
 

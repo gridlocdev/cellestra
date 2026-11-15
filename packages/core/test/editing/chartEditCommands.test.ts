@@ -81,20 +81,37 @@ describe('ChartEditCommands.chartFromRange', () => {
     expect(chart.categoriesReference).toBeNull();
   });
 
-  it("the sheet's single table wins over the selection", () => {
+  it('a selection in a table binds the chart to it: text column as categories, number columns as series', () => {
+    const wb = data();
+    wb.activeSheet.addTable({ name: 'Sales', range: R('A1:C4'), hasHeader: true });
+    wb.activeSheet.addTable({ name: 'Other', range: R('F1:G3'), hasHeader: true });
+    const chart = ChartEditCommands.chartFromRange(wb, 'Sheet1', R('B3'));
+    expect(chart.source).toEqual({
+      table: 'Sales',
+      categoryColumn: 'Month',
+      series: [
+        { column: 'Sales', type: null, sizeColumn: null },
+        { column: 'Cost', type: null, sizeColumn: null },
+      ],
+    });
+    expect(chart.categoriesReference).toBe('Sheet1.A2:A4');
+    expect(chart.series.map((s) => [s.valuesReference, s.nameReference])).toEqual([
+      ['Sheet1.B2:B4', 'Sheet1.B1'],
+      ['Sheet1.C2:C4', 'Sheet1.C1'],
+    ]);
+  });
+
+  it("the sheet's single table wins over a selection outside it", () => {
     const wb = data();
     wb.activeSheet.addTable({ name: 'T', range: R('A1:C4'), hasHeader: true });
-    const chart = ChartEditCommands.chartFromRange(wb, 'Sheet1', R('D9'));
-    expect(chart.categoriesReference).toBe('Sheet1.A2:A4');
-    expect(chart.series).toEqual([
-      createSeries({ valuesReference: 'Sheet1.B2:B4', nameReference: 'Sheet1.B1' }),
-    ]);
+    expect(ChartEditCommands.chartFromRange(wb, 'Sheet1', R('D9')).source?.table).toBe('T');
   });
 
   it('a table with no numeric column falls back to the selection', () => {
     const wb = data();
     wb.activeSheet.addTable({ name: 'T', range: R('A1:A4'), hasHeader: true });
     const chart = ChartEditCommands.chartFromRange(wb, 'Sheet1', R('B2:B4'));
+    expect(chart.source).toBeNull();
     expect(chart.categoriesReference).toBeNull();
     expect(chart.series).toEqual([createSeries({ valuesReference: 'Sheet1.B2:B4' })]);
   });

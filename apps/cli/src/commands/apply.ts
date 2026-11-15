@@ -477,6 +477,7 @@ const chartLook = (op: Op) => ({
   xTitle: op.string('xTitle'),
   yTitle: op.string('yTitle'),
   stacking: op.string('stacking'),
+  aggregate: op.string('aggregate'),
 });
 
 const chartData = (op: Op) => ({

@@ -1,13 +1,21 @@
 import {
+  ChartAggregates,
   ChartTypes,
-  cloneChart,
   createChart,
   createSeries,
+  type ChartAggregate,
   type ChartDefinition,
   type ChartStacking,
   type ChartType,
 } from '@cellestra/charts';
-import { CellRange, seedChartFromRange, type Workbook, type Worksheet } from '@cellestra/core';
+import {
+  CellRange,
+  ChartTableBinding,
+  findTableByName,
+  seedChartFromRange,
+  type Workbook,
+  type Worksheet,
+} from '@cellestra/core';
 import { pickSheet, resolveRange } from '../infra/cells.ts';
 import type { EditSession } from '../infra/editSession.ts';
 import { CliError } from '../infra/errors.ts';
@@ -15,7 +23,8 @@ import { CliError } from '../infra/errors.ts';
 /**
  * Chart sheets from the command line — the headless face of Insert ▸ Chart Sheet. A chart is seeded
  * from a tabular range (`from`) or wired field by field (`values`, `categories`, `xValues`,
- * `bubbleSizes`, `names`); each type accepts only the fields it can plot, checked up front.
+ * `bubbleSizes`, `names`); each type accepts only the fields it can plot, checked up front. A
+ * `from` that names a table binds the chart to it, so it follows the table as it grows.
  */
 
 export interface ChartData {
@@ -32,6 +41,7 @@ export interface ChartLook {
   readonly xTitle: string | null;
   readonly yTitle: string | null;
   readonly stacking: string | null;
+  readonly aggregate: string | null;
 }
 
 /** A chart type as the CLI prints it, all lowercase: `filledRadar` → `filledradar`. */
@@ -82,6 +92,7 @@ export function updateChart(
         xTitle: look.xTitle ?? current.xAxisTitle,
         yTitle: look.yTitle ?? current.yAxisTitle,
         stacking: look.stacking ?? current.stacking,
+        aggregate: look.aggregate ?? keptAggregate(current, chartType),
       },
       legend === false || (legend === null && !current.showLegend),
       {
@@ -94,13 +105,16 @@ export function updateChart(
       },
     );
   } else {
-    next = cloneChart(current);
-    next.type = chartType;
+    // A bound chart keeps its columns where the new type can plot them; a typed range replaces
+    // the binding with plain ranges.
+    next = ChartTableBinding.retype(session.workbook, current, chartType);
+    if (data.categories !== null && next.source) next = ChartTableBinding.toRanges(session.workbook, next);
     next.title = look.title ?? current.title;
     next.showLegend = legend ?? current.showLegend;
     next.xAxisTitle = look.xTitle ?? current.xAxisTitle;
     next.yAxisTitle = look.yTitle ?? current.yAxisTitle;
     next.stacking = parseStacking(look.stacking ?? current.stacking, chartType);
+    next.aggregate = parseAggregate(look.aggregate ?? keptAggregate(current, chartType), chartType);
     if (data.categories !== null) next.categoriesReference = requireRange(data.categories, '--categories');
     validate(next, chartType);
   }
@@ -127,9 +141,16 @@ export function describeChart(sheet: Worksheet): Record<string, unknown> {
     type: spellType(c.type),
     title: c.title,
     stacking: c.stacking === 'none' ? null : c.stacking,
+    aggregate: c.aggregate === 'sum' ? null : c.aggregate,
     legend: c.showLegend,
     xTitle: c.xAxisTitle,
     yTitle: c.yAxisTitle,
+    table: c.source && {
+      name: c.source.table,
+      categories: c.source.categoryColumn,
+      columns: c.source.series.map((s) => s.column),
+      sizeColumns: c.type === 'bubble' ? c.source.series.map((s) => s.sizeColumn) : undefined,
+    },
     categories: c.categoriesReference,
     series: c.series.map((s) => ({
       name: s.name,
@@ -159,13 +180,15 @@ function buildDefinition(
     xAxisTitle: look.xTitle,
     yAxisTitle: look.yTitle,
     stacking: parseStacking(look.stacking, chartType),
+    aggregate: parseAggregate(look.aggregate, chartType),
   });
+  let built = definition;
   if (data.values.length > 0) buildExplicit(definition, chartType, data);
   else if (data.from !== null && data.from.length > 0)
-    buildFromRange(definition, chartType, workbook, data.from);
-  else throw new CliError('Give the data to plot with --from <range> or one or more --values <range>.');
-  validate(definition, chartType);
-  return definition;
+    built = buildFrom(definition, chartType, workbook, data.from);
+  else throw new CliError('Give the data to plot with --from <range|table> or one or more --values <range>.');
+  validate(built, chartType);
+  return built;
 }
 
 const isBlank = (s: string | null): boolean => s === null || s.trim().length === 0;
@@ -192,23 +215,41 @@ function buildExplicit(definition: ChartDefinition, type: ChartType, data: Chart
   });
 }
 
-/** Seed the chart from a tabular range, the way Insert ▸ Chart Sheet seeds it from a selection. */
-function buildFromRange(
+/**
+ * Seed the chart from `from`, the way Insert ▸ Chart Sheet seeds it from a selection: a table name
+ * binds the chart to the table (text column as categories, number columns as series); a range is
+ * read as a tabular block.
+ */
+function buildFrom(
   definition: ChartDefinition,
   type: ChartType,
   workbook: Workbook,
-  fromRange: string,
-): void {
+  from: string,
+): ChartDefinition {
+  const table = findTableByName(workbook, from.trim());
+  if (table) {
+    const source = ChartTableBinding.seed(workbook, table.table.name, type)!;
+    if (source.series.length === 0 || (source.categoryColumn === null && ChartTypes.isXY(type)))
+      throw new CliError(
+        `The table '${table.table.name}' has too few number columns for a ${spellType(type)} chart.`,
+      );
+    if (type === 'bubble' && source.series[0]!.sizeColumn === null)
+      throw new CliError(
+        `A bubble chart needs three number columns (X, Y and size); '${table.table.name}' has fewer.`,
+      );
+    return ChartTableBinding.bind(workbook, definition, source);
+  }
   if (type === 'bubble') {
     throw new CliError(
-      'A bubble chart needs three ranges per series; build it with --values, --x-values, and --bubble-sizes instead of --from.',
+      'A bubble chart needs three ranges per series; build it with --values, --x-values, and --bubble-sizes, or --from a table.',
     );
   }
-  const { sheet, range } = resolveRange(workbook, fromRange);
+  const { sheet, range } = resolveRange(workbook, from);
   if (range.rowCount < 2) {
     throw new CliError('--from needs at least two rows (a header or first data point plus values).');
   }
   seedChartFromRange(definition, sheet, range);
+  return definition;
 }
 
 function validate(definition: ChartDefinition, type: ChartType): void {
@@ -272,6 +313,19 @@ function parseStacking(text: string | null, type: ChartType): ChartStacking {
     throw new CliError(`--stacking applies only to column, bar, and area charts, not ${spellType(type)}.`);
   }
   return stacking;
+}
+
+/** The chart's aggregate, kept across a type change when the new type still groups categories. */
+const keptAggregate = (current: ChartDefinition, type: ChartType): ChartAggregate =>
+  ChartTypes.groupsCategories(type) ? current.aggregate : 'sum';
+
+function parseAggregate(text: string | null, type: ChartType): ChartAggregate {
+  if (text === null || text.trim().length === 0) return 'sum';
+  const aggregate = ChartAggregates.find((a) => a === text.trim().toLowerCase());
+  if (!aggregate) throw new CliError(`Unknown aggregate '${text}'. Use sum, average, count, min, or max.`);
+  if (aggregate !== 'sum' && !ChartTypes.groupsCategories(type))
+    throw new CliError(`--aggregate applies only to charts with categories, not ${spellType(type)}.`);
+  return aggregate;
 }
 
 /** Check a chart data reference parses as a range, and return it verbatim for storage. */

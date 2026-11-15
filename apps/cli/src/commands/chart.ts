@@ -31,7 +31,7 @@ export const chart: CommandSpec = {
     {
       name: '--from',
       description:
-        'Seed from a tabular range: 1st column = categories (or X for scatter/bubble), the rest = series; a text header row names them',
+        'Seed from a tabular range: 1st column = categories (or X for scatter/bubble), the rest = series; a text header row names them. A table name binds the chart to the table: 1st text column = categories, number columns = series, and the chart follows the table as it grows',
     },
     { name: '--categories', description: 'Category-label range (category & pie families)' },
     greedy('--values', "A series' value range; repeat for multiple series"),
@@ -39,6 +39,11 @@ export const chart: CommandSpec = {
     { name: '--x-values', description: 'Shared X-value range (scatter & bubble)' },
     { name: '--bubble-sizes', description: 'Shared bubble-size range (bubble only)' },
     { name: '--stacking', description: 'none|stacked|percent (column/bar/area only)' },
+    {
+      name: '--aggregate',
+      description:
+        'sum|average|count|min|max: how rows that repeat a category combine (default sum; not scatter/bubble)',
+    },
     { name: '--no-legend', description: 'Hide the legend', kind: 'flag' },
     { name: '--x-title', description: 'Category/X axis title' },
     { name: '--y-title', description: 'Value/Y axis title' },
@@ -58,6 +63,7 @@ export const chart: CommandSpec = {
           xTitle: p.str('--x-title'),
           yTitle: p.str('--y-title'),
           stacking: p.str('--stacking'),
+          aggregate: p.str('--aggregate'),
         },
         p.flag('--no-legend'),
         {
@@ -120,13 +126,17 @@ export const charts: CommandSpec = {
       options: [
         { name: '--type', description: TYPES },
         { name: '--title', description: 'Chart title' },
-        { name: '--from', description: 'Rebuild the series from a tabular range' },
+        {
+          name: '--from',
+          description: 'Rebuild the series from a tabular range, or bind the chart to a table',
+        },
         { name: '--categories', description: 'Category-label range' },
         greedy('--values', 'Rebuild the series: a value range per series'),
         greedy('--names', 'Series names, paired with --values'),
         { name: '--x-values', description: 'Shared X-value range (scatter & bubble)' },
         { name: '--bubble-sizes', description: 'Shared bubble-size range (bubble only)' },
         { name: '--stacking', description: 'none|stacked|percent' },
+        { name: '--aggregate', description: 'sum|average|count|min|max' },
         { ...onOff('--legend'), description: 'true | false' },
         { name: '--x-title', description: 'Category/X axis title' },
         { name: '--y-title', description: 'Value/Y axis title' },
@@ -148,6 +158,7 @@ export const charts: CommandSpec = {
           xValues: p.str('--x-values'),
           bubbleSizes: p.str('--bubble-sizes'),
           stacking: p.str('--stacking'),
+          aggregate: p.str('--aggregate'),
           legend: p.onOff('--legend'),
           xTitle: p.str('--x-title'),
           yTitle: p.str('--y-title'),

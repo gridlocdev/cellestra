@@ -44,7 +44,7 @@ Number formats (general, number, currency, percent, date, time, scientific and t
 
 ## Charts
 
-**Chart Sheet** adds a sheet with a chart of the selected data. Charts are saved in the `.ods` file, so LibreOffice opens them too.
+**Chart Sheet** adds a sheet with a chart of the selected data. With the selection in a table, the chart plots the table: its first text column labels the categories and its number columns are the series. Charts are saved in the `.ods` file, so LibreOffice opens them too.
 
 A chart can plot a table by its column names instead of cell ranges. It then follows the table: rows added at the bottom show up in the chart, and renaming the table or a column header doesn't break it. Removing the table leaves the chart on the cells it last plotted.
 
