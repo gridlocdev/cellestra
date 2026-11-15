@@ -421,7 +421,7 @@ describe('a file changed on disk (desktop)', () => {
     try {
       const app = await makeApp();
       opened(app);
-      const reload = vi.spyOn(app, 'reloadFromStore');
+      const reload = vi.spyOn(app.lifecycle, 'reloadFromStore');
       app.dialog.value = { kind: 'about' };
       await app.externalChange();
       await app.externalChange(); // a second event folds into the first
@@ -1013,7 +1013,7 @@ describe('slow opens', () => {
   it('asks again before replacing edits made while the file downloaded', async () => {
     const app = await makeApp();
     const { release } = gated(app);
-    const asked = vi.spyOn(app, 'confirmDiscard');
+    const asked = vi.spyOn(app.lifecycle, 'confirmDiscard');
     const opening = app.openRecent({
       ref: { store: 'nas', id: 'root:/slow.ods', name: 'slow.ods' },
     } as never);
