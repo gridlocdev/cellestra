@@ -1,26 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { effect, type ReadonlySignal } from '@preact/signals';
-import {
-  Defaults,
-  type CellStyle,
-  type CellValue,
-  type FunctionMetadata,
-  type StylePool,
-  type Worksheet,
-} from '@cellestra/core';
+import { Defaults, type CellStyle, type CellValue, type StylePool, type Worksheet } from '@cellestra/core';
 import { chromeButtons, hitChrome, type ChromeButton } from './chrome.ts';
-import {
-  columnCompletion,
-  fillDownTarget,
-  fillTarget,
-  formulaReferences,
-  functionPrefix,
-  functionSuggestions,
-  isReferenceExpected,
-  referenceText,
-  signatureHint,
-  type SignaturePart,
-} from './formulaEdit.ts';
+import { fillDownTarget, fillTarget } from './formulaEdit.ts';
+import { InlineEdit, type CellAt, type FormulaAssist as Assist, type InlineEditDeps } from './inlineEdit.ts';
 import {
   checkboxRect,
   fillHandleRect,
@@ -152,13 +135,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   const spacerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [editing, setEditingState] = useState<{ row: number; column: number } | null>(null);
-  // The ref is the source of truth for handlers (blur can fire after a commit, before re-render).
-  const editingRef = useRef<{ row: number; column: number } | null>(null);
-  const setEditing = (v: { row: number; column: number } | null) => {
-    editingRef.current = v;
-    setEditingState(v);
-  };
+  const [editing, setEditing] = useState<CellAt | null>(null);
   const state = useRef({
     scrollX: 0,
     scrollY: 0,
@@ -180,12 +157,6 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     contentStamp: -1,
     /** A fill-handle drag's target, outlined while dragging. */
     fill: null as GridRange | null,
-    /** The references of the formula being typed, outlined in colour. */
-    references: [] as { range: GridRange; color: string }[],
-    /** Pointing while typing a formula: the reference the last click or arrow put in the text. */
-    point: null as Point | null,
-    /** The editor was opened by a dead key or IME and has not received a character yet. */
-    composing: false,
     /** Marching-ants dash offset. */
     phase: 0,
     /** The last pointer position over the grid (for the cursor when ⌘ goes down or up). */
@@ -197,14 +168,32 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   });
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
   /** The formula aids under the editor: function names matching what is typed, or the argument hint. */
-  const [assist, setAssist] = useState<{
-    suggestions: readonly FunctionMetadata[];
-    index: number;
-    hint: readonly SignaturePart[] | null;
-  } | null>(null);
-  const assistRef = useRef(assist);
+  const [assist, setAssist] = useState<Assist | null>(null);
   const clickCounter = useRef<ClickCounter | null>(null);
-  assistRef.current = assist;
+  // The functions the edit calls are declared below; it only calls them from handlers.
+  const editDeps: InlineEditDeps = {
+    host: {
+      get sheet() {
+        return host.sheet.value;
+      },
+      editText: (row, column) => host.editText(row, column),
+      commit: (row, column, text) => host.commit(row, column, text),
+      draft: (text) => host.draft?.(text),
+    },
+    get editor() {
+      return editorRef.current;
+    },
+    view: {
+      editingChanged: setEditing,
+      assistChanged: setAssist,
+      refit: () => refitEditor(),
+      redraw: () => draw(),
+      reveal: (row, column) => reveal(row, column),
+    },
+  };
+  const editRef = useRef<InlineEdit | null>(null);
+  const edit = (editRef.current ??= new InlineEdit(editDeps));
+  edit.connect(editDeps);
 
   // --- layout -----------------------------------------------------------------------------------
   useLayoutEffect(() => {
@@ -293,8 +282,8 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const preview = host.stylePreview?.value;
     const overlay: GridOverlay = {
       fill: s.fill,
-      references: s.references,
-      point: s.point?.range ?? null,
+      references: edit.references,
+      point: edit.point?.range ?? null,
       marquee:
         marquee && marquee.sheet === host.sheet.value.name
           ? { range: marquee.range, cut: marquee.cut, phase: s.phase }
@@ -413,39 +402,25 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   // --- editing -----------------------------------------------------------------------------------
   const beginEdit = (initial?: string) => {
     const { row, column } = selection.active.value;
-    const editor = editorRef.current!;
-    editor.value = initial ?? host.editText(row, column);
-    setEditing({ row, column });
-    host.clearMarquee?.();
-    hideTip();
-    host.draft?.(editor.value);
-    // Show and focus synchronously, inside the key event: the next keystrokes (and an IME
-    // composition) must land in the editor, not the grid.
-    reveal(row, column);
-    placeEditor(state.current.viewport ?? viewport());
-    editor.focus();
-    const end = editor.value.length;
-    editor.setSelectionRange(end, end);
-    refreshFormulaAids();
+    edit.begin({ row, column }, initial, () => {
+      host.clearMarquee?.();
+      hideTip();
+      // Show and focus synchronously, inside the key event: the next keystrokes (and an IME
+      // composition) must land in the editor, not the grid.
+      reveal(row, column);
+      placeEditor(state.current.viewport ?? viewport());
+      editorRef.current!.focus();
+    });
   };
 
   /** False when the host rejected the value (a stop validation rule); the editor stays open. */
-  const endEdit = (commit: boolean, move: [number, number] = [0, 0], refocus = true): boolean => {
-    const at = editingRef.current;
-    if (!at) return true;
-    const text = editorRef.current!.value;
-    // An edit a dead key or IME opened that never produced a character leaves the cell as it was.
-    if (state.current.composing && text === '') commit = false;
-    state.current.composing = false;
-    if (commit && host.commit(at.row, at.column, text) === false) {
+  const endEdit = (commit: boolean, move: readonly [number, number] = [0, 0], refocus = true): boolean => {
+    const result = edit.end(commit);
+    if (result === 'refused') {
       if (refocus) editorRef.current!.select();
       return false;
     }
-    setEditing(null);
-    host.draft?.(null);
-    state.current.point = null;
-    state.current.references = [];
-    setAssist(null);
+    if (result === 'none') return true;
     if (refocus) rootRef.current?.focus();
     if (move[0] || move[1]) moveActive(move[0], move[1], false, true);
     return true;
@@ -454,7 +429,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   const placeEditor = (v: Viewport) => {
     const editor = editorRef.current;
     if (!editor) return;
-    const editing = editingRef.current;
+    const editing = edit.at;
     if (!editing) {
       editor.style.display = 'none';
       return;
@@ -508,87 +483,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   /** Re-fit the editor after its text changed. */
   const refitEditor = () => {
     const v = state.current.viewport;
-    if (v && editingRef.current) placeEditor(v);
-  };
-
-  // --- formula aids ------------------------------------------------------------------------------
-  /** Reference outlines, function suggestions and the argument hint, for the editor's text and caret. */
-  const refreshFormulaAids = () => {
-    const editor = editorRef.current;
-    if (!editor || !editingRef.current) return;
-    const text = editor.value;
-    const caret = editor.selectionStart;
-    const formula = text.startsWith('=');
-    state.current.references = formula ? formulaReferences(text, host.sheet.value.name) : [];
-    const prefix = formula && editor.selectionEnd === caret ? functionPrefix(text, caret) : null;
-    const suggestions = prefix ? functionSuggestions(prefix.prefix) : [];
-    const hint = formula ? (signatureHint(text, caret)?.parts ?? null) : null;
-    const prev = assistRef.current;
-    if (suggestions.length === 0 && !hint) setAssist(null);
-    else
-      setAssist({
-        suggestions,
-        // Keep the highlighted name while it still matches.
-        index: Math.max(
-          0,
-          suggestions.findIndex((m) => m.name === prev?.suggestions[prev.index]?.name),
-        ),
-        hint,
-      });
-    draw();
-  };
-
-  /** Put the highlighted function name (and its opening parenthesis) in place of what was typed. */
-  const acceptSuggestion = (index = assistRef.current?.index ?? 0) => {
-    const editor = editorRef.current!;
-    const meta = assistRef.current?.suggestions[index];
-    const prefix = functionPrefix(editor.value, editor.selectionStart);
-    if (!meta || !prefix) return;
-    const insert = `${meta.name}(`;
-    editor.setRangeText(insert, prefix.start, editor.selectionStart, 'end');
-    host.draft?.(editor.value);
-    refitEditor();
-    state.current.point = null;
-    refreshFormulaAids();
-  };
-
-  /** Whether the caret sits right after the reference the last click or arrow put in. */
-  const isPointing = (): boolean => {
-    const p = state.current.point;
-    const editor = editorRef.current;
-    return (
-      !!p &&
-      !!editor &&
-      editor.selectionStart === p.start + p.length &&
-      editor.selectionEnd === editor.selectionStart
-    );
-  };
-
-  /** Whether a click or an arrow should put a cell reference in the formula being typed. */
-  const canPoint = (): boolean => {
-    const editor = editorRef.current;
-    if (!editor || !editingRef.current || !editor.value.startsWith('=')) return false;
-    if (editor.selectionStart !== editor.selectionEnd) return false;
-    return isPointing() || isReferenceExpected(editor.value, editor.selectionStart);
-  };
-
-  /**
-   * Point at a range: insert its reference at the caret, or replace the one just pointed at, so
-   * consecutive pokes move the reference rather than piling them up.
-   */
-  const pointAt = (anchor: { row: number; column: number }, to: { row: number; column: number }) => {
-    const editor = editorRef.current!;
-    const range = rangeOf(anchor.row, anchor.column, to.row, to.column);
-    const text = referenceText(range);
-    const p = isPointing() ? state.current.point! : null;
-    const start = p ? p.start : editor.selectionStart;
-    const end = p ? p.start + p.length : editor.selectionEnd;
-    editor.setRangeText(text, start, end, 'end');
-    state.current.point = { anchor, cursor: to, range, start, length: text.length };
-    host.draft?.(editor.value);
-    refitEditor();
-    reveal(to.row, to.column);
-    refreshFormulaAids();
+    if (v && edit.at) placeEditor(v);
   };
 
   // --- navigation --------------------------------------------------------------------------------
@@ -636,13 +531,13 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (editingRef.current) return;
+    if (edit.at) return;
     // A dead key or an IME: its character arrives later as input, and a grid that can't take text
     // would lose it. Open the editor now, inside this key event and without preventing it, so the
     // composition lands there. The key itself is not a command.
     if (startsComposition(e)) {
       beginEdit('');
-      state.current.composing = true;
+      edit.composing = true;
       return;
     }
     const mod = e.metaKey || e.ctrlKey;
@@ -699,9 +594,9 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
 
   // IME: composition starts in the grid → hand it to the editor so the candidate window works.
   const onCompositionStart = () => {
-    if (editingRef.current) return;
+    if (edit.at) return;
     beginEdit('');
-    state.current.composing = true;
+    edit.composing = true;
   };
 
   const onEditorKeyDown = (e: KeyboardEvent) => {
@@ -712,85 +607,12 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       e.preventDefault();
       return;
     }
-    const plain = !e.altKey && !e.metaKey && !e.ctrlKey;
-    // The function-name list takes ↑/↓ to choose, Tab to accept, and Escape to close.
-    const list = assistRef.current?.suggestions ?? [];
-    if (list.length > 0 && plain) {
-      const at = assistRef.current!.index;
-      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.shiftKey) {
-        e.preventDefault();
-        const step = e.key === 'ArrowDown' ? 1 : -1;
-        setAssist({ ...assistRef.current!, index: (at + step + list.length) % list.length });
-        return;
-      }
-      if (e.key === 'Tab' && !e.shiftKey) {
-        e.preventDefault();
-        acceptSuggestion(at);
-        return;
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setAssist(
-          assistRef.current!.hint ? { suggestions: [], index: 0, hint: assistRef.current!.hint } : null,
-        );
-        return;
-      }
-    }
-    // Pointing: in a formula where a reference can go, the arrows move a reference instead of
-    // the caret (⇧ stretches it to a range).
-    const arrows: Record<string, [number, number]> = {
-      ArrowUp: [-1, 0],
-      ArrowDown: [1, 0],
-      ArrowLeft: [0, -1],
-      ArrowRight: [0, 1],
-    };
-    const arrow = arrows[e.key];
-    if (arrow && plain && canPoint()) {
-      e.preventDefault();
-      const at = editingRef.current!;
-      const p = isPointing() ? state.current.point! : null;
-      const from = p ? p.cursor : at;
-      const v = state.current.viewport ?? viewport();
-      const to = {
-        row: arrow[0] ? v.rows.step(from.row, arrow[0]) : from.row,
-        column: arrow[1] ? v.columns.step(from.column, arrow[1]) : from.column,
-      };
-      pointAt(e.shiftKey && p ? p.anchor : to, to);
-      return;
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      endEdit(false);
-    } else if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
-      e.preventDefault();
-      endEdit(true, [1, 0]);
-    } else if (e.key === 'Enter' && (e.altKey || e.shiftKey)) {
-      // ⌥↩ / ⇧↩ start a new line in the cell. Inserted here rather than left to the textarea:
-      // macOS doesn't reliably insert one for ⌥↩.
-      e.preventDefault();
-      insertLineBreak(e.currentTarget as HTMLTextAreaElement);
-    } else if (e.key === 'Tab') {
-      e.preventDefault();
-      endEdit(true, [0, e.shiftKey ? -1 : 1]);
-    } else if (
-      (e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
-      !e.shiftKey &&
-      !e.altKey &&
-      !e.metaKey &&
-      !e.ctrlKey
-    ) {
-      // ↑/↓ commit and move a cell, like Enter. In multi-line text they move between lines
-      // first, and only leave the cell from the first or last line.
-      const editor = e.currentTarget as HTMLTextAreaElement;
-      const up = e.key === 'ArrowUp';
-      const caret = editor.selectionStart;
-      const onEdgeLine = up
-        ? !editor.value.slice(0, caret).includes('\n')
-        : !editor.value.slice(caret).includes('\n');
-      if (!onEdgeLine) return;
-      e.preventDefault();
-      endEdit(true, [up ? -1 : 1, 0]);
-    }
+    const action = edit.key(e, () => state.current.viewport ?? viewport());
+    if (!action) return;
+    e.preventDefault();
+    if (action.kind === 'end') endEdit(action.commit, action.move);
+    // Inserted here rather than left to the textarea: macOS doesn't reliably insert one for ⌥↩.
+    else if (action.kind === 'newline') insertLineBreak(e.currentTarget as HTMLTextAreaElement);
   };
 
   // --- pointer -----------------------------------------------------------------------------------
@@ -817,7 +639,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
 
   const handleAt = (x: number, y: number): boolean => {
     const v = state.current.viewport;
-    if (!v || editingRef.current) return false;
+    if (!v || edit.at) return false;
     const h = fillHandleRect(v, selection.state.value);
     return (
       !!h &&
@@ -893,7 +715,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   const hoverTip = (x: number, y: number, clientX: number, clientY: number) => {
     const s = state.current;
     const v = s.viewport;
-    if (!v || !host.hoverTip || editingRef.current) return hideTip();
+    if (!v || !host.hoverTip || edit.at) return hideTip();
     const hit = v.hitTest(x, y);
     if (hit.zone !== 'cell') return hideTip();
     const cell = host.sheet.value.selectionRangeAt(hit.row, hit.column);
@@ -917,21 +739,21 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const v = state.current.viewport;
     if (!v) return;
     // Typing a formula where a reference can go: a click points at the cell instead of leaving.
-    if (editingRef.current && editorRef.current!.value.startsWith('=')) {
+    if (edit.at && editorRef.current!.value.startsWith('=')) {
       const hit = v.hitTest(x, y);
-      if (hit.zone === 'cell' && (canPoint() || e.shiftKey)) {
+      if (hit.zone === 'cell' && (edit.canPoint() || e.shiftKey)) {
         e.preventDefault();
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-        const p = isPointing() ? state.current.point : null;
+        const p = edit.activePoint;
         const to = { row: hit.row, column: hit.column };
-        if (e.shiftKey && p) pointAt(p.anchor, to);
-        else if (canPoint()) pointAt(to, to);
+        if (e.shiftKey && p) edit.pointAt(p.anchor, to);
+        else if (edit.canPoint()) edit.pointAt(to, to);
         state.current.drag = { kind: 'point', index: 0, origin: 0, start: 0 };
         editorRef.current!.focus();
         return;
       }
     }
-    if (editingRef.current && !endEdit(true)) {
+    if (edit.at && !endEdit(true)) {
       // Rejected: stay in the editor on the same cell rather than moving the selection under it.
       e.preventDefault();
       editorRef.current?.focus();
@@ -1073,10 +895,10 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         return;
       }
       case 'point': {
-        const p = state.current.point;
+        const p = edit.point;
         if (!p) return;
         const to = { row: v.rowAt(y), column: v.columnAt(x) };
-        if (to.row !== p.cursor.row || to.column !== p.cursor.column) pointAt(p.anchor, to);
+        if (to.row !== p.cursor.row || to.column !== p.cursor.column) edit.pointAt(p.anchor, to);
         return;
       }
     }
@@ -1119,7 +941,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     e.preventDefault();
     hideTip();
     if (!host.contextMenu) return;
-    if (editingRef.current && !endEdit(true)) return;
+    if (edit.at && !endEdit(true)) return;
     const r = canvasRef.current!.getBoundingClientRect();
     const v = state.current.viewport;
     if (!v) return;
@@ -1151,33 +973,13 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     host.contextMenu(hit.zone, { x: e.clientX, y: e.clientY });
   };
 
-  const onEditorInput = (e: Event) => {
-    const editor = e.currentTarget as HTMLTextAreaElement;
-    const typed = (e as InputEvent).inputType === 'insertText';
-    // Typing ends pointing: the next click or arrow inserts a new reference.
-    state.current.point = null;
-    if (editor.value !== '') state.current.composing = false;
-    // Type-ahead: appending to plain text offers the nearest entry above that starts with it,
-    // selected, so the next keystroke replaces it and Enter keeps it.
-    const at = editingRef.current;
-    const text = editor.value;
-    if (typed && at && !text.startsWith('=') && editor.selectionStart === text.length) {
-      const match = columnCompletion(host.sheet.value, at.row, at.column, text);
-      if (match) {
-        editor.value = match;
-        editor.setSelectionRange(text.length, match.length);
-      }
-    }
-    host.draft?.(editor.value);
-    refitEditor();
-    refreshFormulaAids();
-  };
+  const onEditorInput = (e: Event) => edit.input((e as InputEvent).inputType === 'insertText');
 
   if (controller)
     controller.current = {
       focus: () => rootRef.current?.focus(),
       beginEdit,
-      isEditing: () => editingRef.current !== null,
+      isEditing: () => edit.at !== null,
       revealActive: () => {
         const { row, column } = selection.active.peek();
         reveal(row, column);
@@ -1222,9 +1024,9 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         onKeyDown={onEditorKeyDown}
         onKeyUp={(e) => {
           // The caret moved: the argument it is in may have changed.
-          if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') refreshFormulaAids();
+          if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') edit.refreshAids();
         }}
-        onClick={refreshFormulaAids}
+        onClick={() => edit.refreshAids()}
         onInput={onEditorInput}
         onBlur={(e) => {
           // Grid clicks are handled (and any rejection reported) by onPointerDown.
@@ -1236,7 +1038,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         }}
       />
       {editing && assist && (
-        <FormulaAssist assist={assist} editor={editorRef.current} onPick={acceptSuggestion} />
+        <FormulaAssist assist={assist} editor={editorRef.current} onPick={(i) => edit.acceptSuggestion(i)} />
       )}
       {tip && (
         <div class="cs-grid-tip" role="tooltip" style={{ left: `${tip.x}px`, top: `${tip.y}px` }}>
@@ -1249,7 +1051,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
 
 /** Function names matching what is typed, or the argument hint, just under the inline editor. */
 function FormulaAssist(props: {
-  assist: { suggestions: readonly FunctionMetadata[]; index: number; hint: readonly SignaturePart[] | null };
+  assist: Assist;
   editor: HTMLTextAreaElement | null;
   onPick(index: number): void;
 }) {
@@ -1295,15 +1097,6 @@ function FormulaAssist(props: {
       {assist.hint.map((p, i) => (p.active ? <b key={i}>{p.text}</b> : <span key={i}>{p.text}</span>))}
     </div>
   );
-}
-
-/** Pointing while typing a formula: where the reference went in the text, and what it covers. */
-interface Point {
-  readonly anchor: { row: number; column: number };
-  readonly cursor: { row: number; column: number };
-  readonly range: GridRange;
-  readonly start: number;
-  readonly length: number;
 }
 
 interface Drag {
