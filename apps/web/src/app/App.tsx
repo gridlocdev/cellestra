@@ -105,7 +105,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       editText: (row, column) => s.editText(row, column),
       draft: (text) => (draft.value = text),
       commit: (row, column, text) => app.commit(row, column, text),
-      clearSelection: () => app.clearContents(),
+      clearSelection: () => void app.clearContents(),
       edge: (row, column, dr, dc) => app.edge(row, column, dr, dc),
       shortcut: (e, inText) => {
         // Copy/cut/paste use the native clipboard events below (no permission prompt).
@@ -567,7 +567,7 @@ function Footer({ app }: { readonly app: AppController }) {
             setMenu(null);
             if (action === 'rename') void app.renameSheet(menu.index);
             else if (action === 'duplicate') s.duplicateSheet(menu.index);
-            else app.deleteSheet(menu.index);
+            else void app.deleteSheet(menu.index);
           }}
         />
       )}
@@ -838,6 +838,25 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
       )}
       {d?.kind === 'prompt' && (
         <PromptDialog title={d.title} label={d.label} value={d.value} onDone={d.resolve} />
+      )}
+      {d?.kind === 'confirm' && (
+        <Dialog
+          title={d.title}
+          onClose={() => d.resolve(false)}
+          actions={
+            <>
+              <button type="button" class="cs-btn" onClick={() => d.resolve(false)}>
+                Cancel
+              </button>
+              <button type="submit" class="cs-btn primary" autofocus>
+                {d.ok}
+              </button>
+            </>
+          }
+          onSubmit={() => d.resolve(true)}
+        >
+          <p>{d.message}</p>
+        </Dialog>
       )}
       {d?.kind === 'recovery' && (
         <Dialog

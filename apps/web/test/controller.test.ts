@@ -1,4 +1,5 @@
 import { CellRange, CellValue, EditCommands, OdsWriter, SheetDimensions, Workbook } from '@cellestra/core';
+import { effect } from '@preact/signals';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   CELL_PAD_X,
@@ -705,48 +706,66 @@ describe('replace all', () => {
   });
 });
 
+/**
+ * Answer every yes-or-no question the app asks in its own dialog with `answer()`, recording what it
+ * asked. Questions are answered as they open.
+ */
+function answerConfirms(app: Controller) {
+  const asked: string[] = [];
+  let answer = false;
+  const stop = effect(() => {
+    const d = app.dialog.value;
+    if (d?.kind !== 'confirm') return;
+    asked.push(`${d.title} ${d.message}`);
+    queueMicrotask(() => d.resolve(answer));
+  });
+  return { asked, answer: (v: boolean) => (answer = v), stop };
+}
+
 describe('large removals', () => {
   async function filled(rows: number) {
     const app = await makeApp();
     const sheet = app.session.activeSheet.peek();
     for (let r = 0; r < rows; r++) sheet.setValue(r, 0, CellValue.number(r));
-    const asked: string[] = [];
-    let answer = false;
-    vi.stubGlobal('window', {
-      confirm: (text: string) => {
-        asked.push(text);
-        return answer;
-      },
-    });
-    return { app, sheet, asked, answer: (v: boolean) => (answer = v) };
+    return { app, sheet, ...answerConfirms(app) };
   }
 
   it('clears 100 filled cells without asking', async () => {
     const { app, sheet, asked } = await filled(100);
     app.selection.selectRange({ top: 0, left: 0, bottom: 999, right: 5 });
-    app.clearContents();
+    await app.clearContents();
     expect(asked).toHaveLength(0);
     expect(sheet.getValue(5, 0)).toEqual(CellValue.empty);
   });
 
-  it('asks before clearing or deleting more than 100 filled cells', async () => {
+  it('asks in its own dialog before clearing or deleting more than 100 filled cells', async () => {
     const { app, sheet, asked, answer } = await filled(101);
     app.selection.selectRange({ top: 0, left: 0, bottom: 200, right: 0 });
-    app.clearContents();
-    app.clearAll();
-    app.deleteRows();
-    app.deleteColumns();
+    await app.clearContents();
+    await app.clearAll();
+    await app.deleteRows();
+    await app.deleteColumns();
     expect(asked).toHaveLength(4);
     expect(asked[0]).toMatch(/101 cells/);
     expect(sheet.getValue(5, 0)).toEqual(CellValue.number(5));
 
     answer(true);
     app.selection.selectRange({ top: 0, left: 1, bottom: 0, right: 1 }); // B1: its column is empty
-    app.deleteColumns();
+    await app.deleteColumns();
     expect(asked).toHaveLength(4);
     app.selection.selectRange({ top: 0, left: 0, bottom: 0, right: 0 });
-    app.deleteColumns();
+    await app.deleteColumns();
     expect(asked).toHaveLength(5);
+    expect(sheet.getValue(5, 0)).toEqual(CellValue.empty);
+  });
+
+  it('asks before resetting a sheet with more than 100 cells', async () => {
+    const { app, sheet, asked, answer } = await filled(101);
+    await app.resetSheetData();
+    expect(asked).toHaveLength(1);
+    expect(sheet.getValue(5, 0)).toEqual(CellValue.number(5));
+    answer(true);
+    await app.resetSheetData();
     expect(sheet.getValue(5, 0)).toEqual(CellValue.empty);
   });
 });
@@ -1024,21 +1043,13 @@ describe('slow opens', () => {
 });
 
 describe('deleting a sheet', () => {
-  const withConfirm = (answer: boolean) => {
-    const confirm = vi.fn((_: string) => answer);
-    const g = globalThis as { window?: unknown };
-    const before = g.window;
-    g.window = { confirm };
-    return { confirm, restore: () => (g.window = before) };
-  };
-
   it('deletes an empty, unused sheet without asking', async () => {
     const app = await makeApp();
     app.session.addSheet();
-    const { confirm, restore } = withConfirm(false);
-    app.deleteSheet(1);
-    restore();
-    expect(confirm).not.toHaveBeenCalled();
+    const { asked, stop } = answerConfirms(app);
+    await app.deleteSheet(1);
+    stop();
+    expect(asked).toHaveLength(0);
     expect(app.session.sheetNames.peek()).toEqual(['Sheet1']);
   });
 
@@ -1046,14 +1057,14 @@ describe('deleting a sheet', () => {
     const app = await makeApp();
     app.session.addSheet();
     app.session.workbook.peek().worksheets[1]!.setValue(0, 0, CellValue.number(1));
-    const { confirm, restore } = withConfirm(false);
-    app.deleteSheet(1);
-    expect(confirm).toHaveBeenCalledOnce();
-    expect(confirm.mock.calls[0]![0]).not.toMatch(/#REF!/);
+    const { asked, answer, stop } = answerConfirms(app);
+    await app.deleteSheet(1);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).not.toMatch(/#REF!/);
     expect(app.session.sheetNames.peek()).toEqual(['Sheet1', 'Sheet2']);
-    confirm.mockReturnValue(true);
-    app.deleteSheet(1);
-    restore();
+    answer(true);
+    await app.deleteSheet(1);
+    stop();
     expect(app.session.sheetNames.peek()).toEqual(['Sheet1']);
   });
 
@@ -1061,10 +1072,10 @@ describe('deleting a sheet', () => {
     const app = await makeApp();
     app.session.addSheet();
     app.session.workbook.peek().worksheets[0]!.setFormula(0, 0, 'Sheet2.A1');
-    const { confirm, restore } = withConfirm(false);
-    app.deleteSheet(1);
-    restore();
-    expect(confirm.mock.calls[0]![0]).toMatch(/1 formula on another sheet .*#REF!/);
+    const { asked, stop } = answerConfirms(app);
+    await app.deleteSheet(1);
+    stop();
+    expect(asked[0]).toMatch(/1 formula on another sheet .*#REF!/);
   });
 });
 

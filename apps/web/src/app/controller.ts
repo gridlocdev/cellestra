@@ -114,6 +114,14 @@ export type DialogState =
       readonly value: string;
       readonly resolve: (v: string | null) => void;
     }
+  | {
+      readonly kind: 'confirm';
+      readonly title: string;
+      readonly message: string;
+      /** The label of the button that says yes. */
+      readonly ok: string;
+      readonly resolve: (ok: boolean) => void;
+    }
   | { readonly kind: 'find' }
   | { readonly kind: 'recovery'; readonly name: string; readonly resolve: (restore: boolean) => void }
   | { readonly kind: 'outside-change'; readonly name: string; readonly resolve: (reload: boolean) => void }
@@ -984,6 +992,13 @@ export class AppController {
     });
   }
 
+  /** Ask a yes-or-no question in the app's own dialog. Closing it answers no; either way the grid gets focus back. */
+  async confirm(title: string, message: string, ok: string): Promise<boolean> {
+    const answer = await this.ask(false, (resolve) => ({ kind: 'confirm', title, message, ok, resolve }));
+    this.grid.current?.focus();
+    return answer;
+  }
+
   /**
    * Commit the cell edit that is open, if any, so what was typed counts as a change before the
    * document is saved, replaced or closed. False when the value was refused (the editor stays open).
@@ -1306,20 +1321,21 @@ export class AppController {
 
   /**
    * PRD §8.7: removing data from more than 100 non-empty cells asks first; fewer just happen
-   * (undo covers them). True when the removal may go ahead.
+   * (undo covers them). Null when the removal may go ahead at once; otherwise the question to ask.
    */
-  confirmLargeRemoval(ranges: readonly CellRange[], what: string): boolean {
+  #largeRemoval(ranges: readonly CellRange[], what: string, ok: string): Promise<boolean> | null {
     const count = filledCellCount(this.sheet, ranges);
-    if (count <= LARGE_REMOVAL_CELLS) return true;
-    const ok = window.confirm(
-      `${what}? This removes data from ${count.toLocaleString()} cells. You can undo it.`,
+    if (count <= LARGE_REMOVAL_CELLS) return null;
+    return this.confirm(
+      `${what}?`,
+      `This removes data from ${count.toLocaleString()} cells. You can undo it.`,
+      ok,
     );
-    this.grid.current?.focus();
-    return ok;
   }
 
-  clearContents(): void {
-    if (!this.confirmLargeRemoval(this.ranges, 'Clear the contents')) return;
+  async clearContents(): Promise<void> {
+    const asking = this.#largeRemoval(this.ranges, 'Clear the contents', 'Clear');
+    if (asking && !(await asking)) return;
     this.run(
       each(
         'Clear Contents',
@@ -1328,8 +1344,9 @@ export class AppController {
     );
   }
 
-  clearAll(): void {
-    if (!this.confirmLargeRemoval(this.ranges, 'Clear everything in the selection')) return;
+  async clearAll(): Promise<void> {
+    const asking = this.#largeRemoval(this.ranges, 'Clear everything in the selection', 'Clear');
+    if (asking && !(await asking)) return;
     this.run(
       each(
         'Clear All',
@@ -1502,14 +1519,15 @@ export class AppController {
     this.run(new StructuralEditCommand(this.sheetName, 'column', 'insert', r.left, r.columnCount));
   }
 
-  deleteRows(): void {
+  async deleteRows(): Promise<void> {
     const r = this.range;
     const rows = new CellRange(
       new CellAddress(0, r.top),
       new CellAddress(SheetDimensions.maxColumns - 1, r.bottom),
     );
-    if (!this.confirmLargeRemoval([rows], r.rowCount === 1 ? 'Delete this row' : `Delete ${r.rowCount} rows`))
-      return;
+    const what = r.rowCount === 1 ? 'Delete this row' : `Delete ${r.rowCount} rows`;
+    const asking = this.#largeRemoval([rows], what, 'Delete');
+    if (asking && !(await asking)) return;
     this.run(
       new StructuralEditCommand(
         this.sheetName,
@@ -1521,14 +1539,15 @@ export class AppController {
     );
   }
 
-  deleteColumns(): void {
+  async deleteColumns(): Promise<void> {
     const r = this.range;
     const columns = new CellRange(
       new CellAddress(r.left, 0),
       new CellAddress(r.right, SheetDimensions.maxRows - 1),
     );
     const what = r.columnCount === 1 ? 'Delete this column' : `Delete ${r.columnCount} columns`;
-    if (!this.confirmLargeRemoval([columns], what)) return;
+    const asking = this.#largeRemoval([columns], what, 'Delete');
+    if (asking && !(await asking)) return;
     this.run(new StructuralEditCommand(this.sheetName, 'column', 'delete', r.left, r.columnCount));
   }
 
@@ -1953,16 +1972,13 @@ export class AppController {
    * Clear every cell and reset the layout (line styles and hidden flags, filters, tables, validation,
    * merges, frozen panes) in one step. Asks first when that would discard more than 100 cells.
    */
-  resetSheetData(): void {
+  async resetSheetData(): Promise<void> {
     const sheet = this.sheet;
     const used = sheet.getUsedRange();
     if (!used) return this.info('The sheet is already empty.');
-    if (sheet.cellCount > 100) {
-      const ok = window.confirm(
-        `Reset “${this.sheetName}”? This clears ${sheet.cellCount.toLocaleString()} cells and the sheet’s layout. You can undo it.`,
-      );
-      this.grid.current?.focus();
-      if (!ok) return;
+    if (sheet.cellCount > LARGE_REMOVAL_CELLS) {
+      const message = `This clears ${sheet.cellCount.toLocaleString()} cells and the sheet’s layout. You can undo it.`;
+      if (!(await this.confirm(`Reset “${this.sheetName}”?`, message, 'Reset'))) return;
     }
     this.run(
       new CompositeEditCommand('Reset Sheet Data', [
@@ -2239,7 +2255,7 @@ export class AppController {
     if (err) this.error(err);
   }
 
-  deleteSheet(index = this.session.activeIndex.peek()): void {
+  async deleteSheet(index = this.session.activeIndex.peek()): Promise<void> {
     const names = this.session.sheetNames.peek();
     if (names.length <= 1) return this.info('A workbook needs at least one sheet.');
     const name = names[index];
@@ -2247,11 +2263,7 @@ export class AppController {
     // PRD §8.7: ask only when something would be lost or broken; an empty, unused sheet just goes
     // (undo still brings it back).
     const message = deleteSheetMessage(name, sheetDeletionImpact(this.session.workbook.peek(), name));
-    if (message !== null) {
-      const ok = window.confirm(message);
-      this.grid.current?.focus();
-      if (!ok) return;
-    }
+    if (message !== null && !(await this.confirm('Delete sheet?', message, 'Delete'))) return;
     this.session.deleteSheet(index);
   }
 }
