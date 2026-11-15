@@ -1,5 +1,4 @@
 import {
-  ActionCommand,
   Argb,
   BorderEdges,
   Borders,
@@ -9,7 +8,6 @@ import {
   DataEditCommands,
   DeleteSheetCommand,
   EditCommands,
-  EditResult,
   Fills,
   InputParser,
   RenameSheetCommand,
@@ -860,14 +858,12 @@ function validation(session: EditSession, op: Op): void {
   const existing = sheet.validations.filter((v) => v.target.intersects(range));
   if (op.bool('remove') === true) {
     if (existing.length === 0) throw new CliError(`no validation rule covers ${range.toString()}.`);
-    session.apply(removeValidations(sheet.name, existing));
+    session.apply(DataEditCommands.replaceValidation(sheet.name, range, null));
     session.field('removed', existing.length);
     return;
   }
-  const rule = buildValidation(session, op, range);
-  // One rule per range: setting a new rule on cells that already have one replaces it, as the app does.
-  if (existing.length > 0) session.apply(removeValidations(sheet.name, existing));
-  session.apply(DataEditCommands.setValidation(sheet.name, rule));
+  // One rule per cell: the new rule replaces the old ones over the range, which keep their other cells.
+  session.apply(DataEditCommands.replaceValidation(sheet.name, range, buildValidation(session, op, range)));
 }
 
 function buildValidation(session: EditSession, op: Op, range: CellRange): DataValidation {
@@ -998,27 +994,6 @@ function bound(session: EditSession, op: Op, field: string, kind: ValidationKind
     throw new CliError(`"${field}" is not a date: '${raw}'.`);
   }
   return op.number(field);
-}
-
-function removeValidations(sheet: string, rules: readonly DataValidation[]): EditCommand {
-  const find = (wb: { findSheet(name: string): Worksheet | undefined | null }): Worksheet => {
-    const ws = wb.findSheet(sheet);
-    if (!ws) throw new Error(`Sheet '${sheet}' not found.`);
-    return ws;
-  };
-  return new ActionCommand(
-    'Remove Data Validation',
-    (wb) => {
-      const ws = find(wb);
-      for (const rule of rules) ws.removeValidation(rule);
-      return EditResult.none;
-    },
-    (wb) => {
-      const ws = find(wb);
-      for (const rule of rules) ws.addValidation(rule);
-      return EditResult.none;
-    },
-  );
 }
 
 function findTable(session: EditSession, op: Op): { sheet: Worksheet; table: Table } {

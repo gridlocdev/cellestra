@@ -986,6 +986,18 @@ describe('data, structural, and layout edits', () => {
     expect(rules[0]!.listValues).toEqual(['Red', 'Green', 'Blue']);
   });
 
+  it('data-validation over part of a rule keeps the rest of it, as the app does', () => {
+    const ods = path2('dvp.ods');
+    run('new', ods);
+    run('data-validation', ods, 'A1:A10', '--list', 'Red,Green', '--in-place');
+    expect(run('data-validation', ods, 'A4:A5', '--list', 'Blue', '--in-place').exit).toBe(0);
+    const rules = sheet1(ods).validations.map((v) => `${v.target.toString()}=${v.listValues!.join()}`);
+    expect(rules.sort()).toEqual(['A1:A3=Red,Green', 'A4:A5=Blue', 'A6:A10=Red,Green']);
+
+    expect(run('data-validation', ods, 'A1:A5', '--remove', '--in-place').exit).toBe(0);
+    expect(sheet1(ods).validations.map((v) => v.target.toString())).toEqual(['A6:A10']);
+  });
+
   it('data-validation persists a range-source rule', () => {
     const ods = path2('dvr.ods');
     run('new', ods);

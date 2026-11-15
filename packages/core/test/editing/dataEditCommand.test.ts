@@ -379,4 +379,22 @@ describe('DataEditCommands', () => {
     history.undo();
     expect(sheet.findValidation(0, 0)).toBeFalsy();
   });
+
+  it('replace validation keeps the parts of old rules outside the range and undoes', () => {
+    const { history, sheet } = setup();
+    const old = dataValidation('list', R('A1:A10'), { listValues: ['a'] });
+    history.execute(DataEditCommands.setValidation(sheet.name, old));
+
+    const rule = dataValidation('list', R('A4:A5'), { listValues: ['b'] });
+    history.execute(DataEditCommands.replaceValidation(sheet.name, R('A4:A5'), rule));
+    const ranges = sheet.validations.map((v) => `${v.target.toString()}=${v.listValues!.join()}`);
+    expect(ranges.sort()).toEqual(['A1:A3=a', 'A4:A5=b', 'A6:A10=a']);
+
+    history.execute(DataEditCommands.replaceValidation(sheet.name, R('A1:A10'), null));
+    expect(sheet.validations).toEqual([]);
+
+    history.undo();
+    history.undo();
+    expect(sheet.validations).toEqual([old]);
+  });
 });

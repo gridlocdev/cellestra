@@ -2009,28 +2009,7 @@ export class AppController {
 
   /** Replace the rules over the range with `rule` (null removes them). */
   setValidation(range: CellRange, rule: DataValidation | null): void {
-    const name = this.sheetName;
-    const old = this.sheet.validations.filter((v) => v.target.intersects(range));
-    // Rules that reach outside the range keep those parts.
-    const kept = old.flatMap((v) => subtractRange(v.target, range).map((target) => ({ ...v, target })));
-    const remove = new ActionCommand(
-      'Data Validation',
-      (wb) => {
-        const ws = wb.findSheet(name)!;
-        for (const v of old) ws.removeValidation(v);
-        for (const v of kept) ws.addValidation(v);
-        return EditResult.none;
-      },
-      (wb) => {
-        const ws = wb.findSheet(name)!;
-        for (const v of kept) ws.removeValidation(v);
-        for (const v of old) ws.addValidation(v);
-        return EditResult.none;
-      },
-    );
-    const steps: EditCommand[] = old.length > 0 ? [remove] : [];
-    if (rule) steps.push(DataEditCommands.setValidation(name, rule));
-    this.run(each('Data Validation', steps));
+    this.run(DataEditCommands.replaceValidation(this.sheetName, range, rule));
   }
 
   /** Items for a list rule's dropdown. */
@@ -2472,19 +2451,6 @@ function normalize(text: string): string {
 
 export function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
-}
-
-/** The parts of `a` outside `b`, as up to four rectangles (above, below, left, right). */
-function subtractRange(a: CellRange, b: CellRange): CellRange[] {
-  if (!a.intersects(b)) return [a];
-  const out: CellRange[] = [];
-  const top = Math.max(a.top, b.top);
-  const bottom = Math.min(a.bottom, b.bottom);
-  if (a.top < b.top) out.push(CellRange.fromBounds(a.top, a.left, b.top - 1, a.right));
-  if (a.bottom > b.bottom) out.push(CellRange.fromBounds(b.bottom + 1, a.left, a.bottom, a.right));
-  if (a.left < b.left) out.push(CellRange.fromBounds(top, a.left, bottom, b.left - 1));
-  if (a.right > b.right) out.push(CellRange.fromBounds(top, b.right + 1, bottom, a.right));
-  return out;
 }
 
 /** The file is gone (not just unreadable right now): browser NotFoundError, NAS 404, native ENOENT. */

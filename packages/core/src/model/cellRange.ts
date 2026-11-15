@@ -78,6 +78,20 @@ export class CellRange {
     );
   }
 
+  /** The parts of this range outside `other`, as up to four rectangles (above, below, left, right). */
+  subtract(other: CellRange): CellRange[] {
+    if (!this.intersects(other)) return [this];
+    const out: CellRange[] = [];
+    const top = Math.max(this.top, other.top);
+    const bottom = Math.min(this.bottom, other.bottom);
+    if (this.top < other.top) out.push(CellRange.fromBounds(this.top, this.left, other.top - 1, this.right));
+    if (this.bottom > other.bottom)
+      out.push(CellRange.fromBounds(other.bottom + 1, this.left, this.bottom, this.right));
+    if (this.left < other.left) out.push(CellRange.fromBounds(top, this.left, bottom, other.left - 1));
+    if (this.right > other.right) out.push(CellRange.fromBounds(top, other.right + 1, bottom, this.right));
+    return out;
+  }
+
   /** Same bounds and sheet, ignoring `$` flags. */
   sameBounds(other: CellRange): boolean {
     return (
