@@ -302,6 +302,7 @@ export {
   type ChangedCell,
   type ChangedLines,
   ChartEditCommands,
+  seedChartFromRange,
   clampToUsed,
   ClipboardBlock,
   type ClipboardCell,

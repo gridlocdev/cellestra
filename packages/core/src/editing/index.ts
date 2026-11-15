@@ -2,7 +2,7 @@ export { AutoSumPlanner, type AutoSumProposal } from './autoSumPlanner.ts';
 export { type CellEntryPlan, planCellEntry } from './cellEntry.ts';
 export { CellSnapshotCommand } from './cellSnapshotCommand.ts';
 export { CellSnapshots } from './cellSnapshots.ts';
-export { ChartEditCommands } from './chartEditCommands.ts';
+export { ChartEditCommands, seedChartFromRange } from './chartEditCommands.ts';
 export { ClipboardBlock, type ClipboardCell } from './clipboardBlock.ts';
 export { DataEditCommands } from './dataEditCommands.ts';
 export { DataToolCommands } from './dataToolCommands.ts';

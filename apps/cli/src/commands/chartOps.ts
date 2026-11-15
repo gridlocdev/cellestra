@@ -7,7 +7,7 @@ import {
   type ChartStacking,
   type ChartType,
 } from '@cellestra/charts';
-import { CellRange, SheetDimensions, type Workbook, type Worksheet } from '@cellestra/core';
+import { CellRange, seedChartFromRange, type Workbook, type Worksheet } from '@cellestra/core';
 import { pickSheet, resolveRange } from '../infra/cells.ts';
 import type { EditSession } from '../infra/editSession.ts';
 import { CliError } from '../infra/errors.ts';
@@ -192,6 +192,7 @@ function buildExplicit(definition: ChartDefinition, type: ChartType, data: Chart
   });
 }
 
+/** Seed the chart from a tabular range, the way Insert ▸ Chart Sheet seeds it from a selection. */
 function buildFromRange(
   definition: ChartDefinition,
   type: ChartType,
@@ -207,32 +208,7 @@ function buildFromRange(
   if (range.rowCount < 2) {
     throw new CliError('--from needs at least two rows (a header or first data point plus values).');
   }
-  const xy = ChartTypes.isXY(type);
-  const { top, bottom, left, right } = range;
-  const headerRow = sheet.getValue(top, left).kind === 'text';
-  const dataTop = headerRow && bottom > top ? top + 1 : top;
-  const letters = (c: number): string => SheetDimensions.columnToLetters(c);
-  const ref = (column: number, fromRow: number, toRow: number): string =>
-    `${sheet.name}.${letters(column)}${fromRow + 1}:${letters(column)}${toRow + 1}`;
-
-  // The first column is the shared axis: category labels for the category/pie families, or the X
-  // values for scatter. Every remaining column becomes a value series; a header row names it.
-  if (right > left) {
-    const firstColumn = ref(left, dataTop, bottom);
-    if (!xy) definition.categoriesReference = firstColumn;
-    for (let column = left + 1; column <= right; column++) {
-      definition.series.push(
-        createSeries({
-          valuesReference: ref(column, dataTop, bottom),
-          xValuesReference: xy ? firstColumn : null,
-          nameReference: headerRow ? `${sheet.name}.${letters(column)}${top + 1}` : null,
-        }),
-      );
-    }
-  } else {
-    // A single column charts as one series with no category/X axis.
-    definition.series.push(createSeries({ valuesReference: ref(left, dataTop, bottom) }));
-  }
+  seedChartFromRange(definition, sheet, range);
 }
 
 function validate(definition: ChartDefinition, type: ChartType): void {

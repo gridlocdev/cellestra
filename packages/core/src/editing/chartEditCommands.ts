@@ -1,5 +1,5 @@
 import type { ChartDefinition, ChartSeries } from '@cellestra/charts';
-import { createChart, createSeries } from '@cellestra/charts';
+import { ChartTypes, createChart, createSeries } from '@cellestra/charts';
 import type { Table } from '../data/types.ts';
 import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
 import type { CellRange } from '../model/cellRange.ts';
@@ -49,12 +49,14 @@ function seriesFromTable(
 }
 
 /**
- * Seed from a selection that looks tabular: the first column labels the categories and each other
- * column becomes a series, named from a text header row when present. A single column becomes one
- * unnamed series with no categories. Nothing when fewer than two rows are selected.
+ * Seed `definition` from a range that looks tabular: the first column labels the categories (the X
+ * values, for a scatter or bubble chart) and each other column becomes a series, named from a text
+ * header row when present. A single column becomes one unnamed series with no categories. Nothing
+ * when fewer than two rows are given. Insert ▸ Chart Sheet and the CLI's `chart --from` share it.
  */
-function seedFromSelection(definition: ChartDefinition, sheet: Worksheet, range: CellRange): void {
+export function seedChartFromRange(definition: ChartDefinition, sheet: Worksheet, range: CellRange): void {
   if (range.rowCount < 2) return;
+  const xy = ChartTypes.isXY(definition.type);
   const { top, bottom, left, right } = range;
   // A header row has a text label over the value columns (the top-left corner is often blank).
   let headerRow = false;
@@ -62,9 +64,13 @@ function seedFromSelection(definition: ChartDefinition, sheet: Worksheet, range:
     headerRow = sheet.getValue(top, column).kind === 'text';
   const dataTop = headerRow && bottom > top ? top + 1 : top;
   if (right > left) {
-    definition.categoriesReference = columnRef(sheet.name, left, dataTop, bottom);
+    const firstColumn = columnRef(sheet.name, left, dataTop, bottom);
+    if (!xy) definition.categoriesReference = firstColumn;
     for (let column = left + 1; column <= right; column++) {
-      const series = createSeries({ valuesReference: columnRef(sheet.name, column, dataTop, bottom) });
+      const series = createSeries({
+        valuesReference: columnRef(sheet.name, column, dataTop, bottom),
+        xValuesReference: xy ? firstColumn : null,
+      });
       if (headerRow) series.nameReference = `${quoteSheetIfNeeded(sheet.name)}.${letters(column)}${top + 1}`;
       definition.series.push(series);
     }
@@ -107,7 +113,7 @@ export const ChartEditCommands = {
       definition.categoriesReference = fromTable.categories;
       definition.series.push(...fromTable.series);
     } else {
-      seedFromSelection(definition, sheet, range);
+      seedChartFromRange(definition, sheet, range);
     }
     return definition;
   },

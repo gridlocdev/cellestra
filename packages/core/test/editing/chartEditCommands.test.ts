@@ -1,6 +1,6 @@
 import { createChart, createSeries } from '@cellestra/charts';
 import { describe, expect, it } from 'vitest';
-import { ChartEditCommands } from '../../src/editing/chartEditCommands.ts';
+import { ChartEditCommands, seedChartFromRange } from '../../src/editing/chartEditCommands.ts';
 import { EditHistory } from '../../src/editing/editHistory.ts';
 import { CellRange } from '../../src/model/cellRange.ts';
 import { Workbook } from '../../src/model/workbook.ts';
@@ -104,5 +104,19 @@ describe('ChartEditCommands.chartFromRange', () => {
     const chartSheet = wb.addChartSheet(createChart());
     expect(ChartEditCommands.chartFromRange(wb, chartSheet.name, R('A1:C4')).series).toEqual([]);
     expect(ChartEditCommands.chartFromRange(wb, 'Nope', R('A1:C4')).series).toEqual([]);
+  });
+});
+
+describe('seedChartFromRange', () => {
+  it('uses the first column as the X values of a scatter chart, and quotes the sheet name', () => {
+    const wb = data();
+    wb.activeSheet.name = 'Q 1';
+    const chart = createChart({ type: 'scatter', series: [] });
+    seedChartFromRange(chart, wb.activeSheet, R('A1:C4'));
+    expect(chart.categoriesReference).toBeNull();
+    expect(chart.series.map((s) => [s.xValuesReference, s.valuesReference, s.nameReference])).toEqual([
+      ["'Q 1'.A2:A4", "'Q 1'.B2:B4", "'Q 1'.B1"],
+      ["'Q 1'.A2:A4", "'Q 1'.C2:C4", "'Q 1'.C1"],
+    ]);
   });
 });

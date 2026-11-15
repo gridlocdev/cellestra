@@ -1174,6 +1174,25 @@ describe('chart sheets', () => {
     expect(chart.series[0]!.nameReference).toBe('Sheet1.B1');
   });
 
+  it('a chart from a range on a sheet whose name needs quotes keeps the quotes in its references', () => {
+    const ods = chartDataBook();
+    expect(run('rename-sheet', ods, 'Sheet1', 'Q Sales', '--in-place').exit).toBe(0);
+    expect(run('chart', ods, '--type', 'column', '--from', "'Q Sales'.A1:C3", '--in-place').exit).toBe(0);
+    const chart = sheet1(ods, 'Chart1').chart!;
+    expect(chart.categoriesReference).toBe("'Q Sales'.A2:A3");
+    expect(chart.series[0]!.valuesReference).toBe("'Q Sales'.B2:B3");
+    expect(chart.series[0]!.nameReference).toBe("'Q Sales'.B1");
+  });
+
+  it('a chart from a range finds the header row by the labels over the values, as the app does', () => {
+    const ods = chartDataBook();
+    expect(run('clear', ods, 'A1', '--in-place').exit).toBe(0);
+    expect(run('chart', ods, '--type', 'column', '--from', 'Sheet1.A1:C3', '--in-place').exit).toBe(0);
+    const chart = sheet1(ods, 'Chart1').chart!;
+    expect(chart.categoriesReference).toBe('Sheet1.A2:A3');
+    expect(chart.series[1]!.nameReference).toBe('Sheet1.C1');
+  });
+
   it('charts can be listed, shown, updated, and removed', () => {
     const ods = chartDataBook();
     run('chart', ods, '--type', 'column', '--title', 'Sales', '--from', 'Sheet1.A1:C3', '--in-place');
