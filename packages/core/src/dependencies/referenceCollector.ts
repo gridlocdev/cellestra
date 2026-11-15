@@ -1,5 +1,4 @@
-import { CellRange } from '../model/cellRange.ts';
-import { SheetDimensions } from '../model/sheetDimensions.ts';
+import type { CellRange } from '../model/cellRange.ts';
 import type { Expr } from '../formulas/ast/expr.ts';
 import { FunctionRegistry } from '../formulas/functions/functionRegistry.ts';
 import { CellRef, type RangeRef } from './cellRef.ts';
@@ -33,35 +32,6 @@ function expand(
   for (let r = range.top; r <= range.bottom; r++) for (let c = range.left; c <= range.right; c++) add(r, c);
 }
 
-/** The cells an argument names, as a range: a reference, a range or a named range. */
-function asRange(expr: Expr, resolveName: (name: string) => CellRange | null): CellRange | null {
-  if (expr.kind === 'reference') {
-    const { row, column, sheet } = expr.address;
-    return CellRange.fromBounds(row, column, row, column, sheet);
-  }
-  if (expr.kind === 'range') return expr.range;
-  if (expr.kind === 'name') return resolveName(expr.name);
-  return null;
-}
-
-/**
- * SUMIF reads its sum range from its top-left, sized like the criteria range (Excel/Calc), so
- * `SUMIF(A1:A3, "x", B1)` reads B1:B3. Returns that reshaped range, or null for any other call.
- */
-function reshapedSumRange(
-  name: string,
-  args: readonly Expr[],
-  resolveName: (name: string) => CellRange | null,
-): CellRange | null {
-  if (name.toUpperCase() !== 'SUMIF' || args.length < 3) return null;
-  const criteria = asRange(args[0]!, resolveName);
-  const sum = asRange(args[2]!, resolveName);
-  if (!criteria || !sum) return null;
-  const bottom = Math.min(sum.top + criteria.rowCount, SheetDimensions.maxRows) - 1;
-  const right = Math.min(sum.left + criteria.columnCount, SheetDimensions.maxColumns) - 1;
-  return CellRange.fromBounds(sum.top, sum.left, bottom, right, sum.sheet);
-}
-
 /**
  * Walks a formula AST to find the cells it reads (its precedents) and whether it is volatile.
  * Ranges and named ranges are expanded to their member cells.
@@ -81,9 +51,18 @@ export const ReferenceCollector = {
     destination: Map<string, CellRef>,
     largeRanges?: RangeRef[],
     sheetsBetween?: (first: string, last: string) => readonly string[] | null,
+    functions: FunctionRegistry = FunctionRegistry.standard,
   ): void {
     const recurse = (e: Expr): void =>
-      ReferenceCollector.collect(e, homeSheet, resolveName, destination, largeRanges, sheetsBetween);
+      ReferenceCollector.collect(
+        e,
+        homeSheet,
+        resolveName,
+        destination,
+        largeRanges,
+        sheetsBetween,
+        functions,
+      );
     switch (expr.kind) {
       case 'reference': {
         const ref = CellRef.of(expr.address.sheet ?? homeSheet, expr.address.row, expr.address.column);
@@ -114,8 +93,8 @@ export const ReferenceCollector = {
         break;
       case 'call': {
         for (const a of expr.args) recurse(a);
-        const reshaped = reshapedSumRange(expr.name, expr.args, resolveName);
-        if (reshaped) expand(reshaped, homeSheet, destination, largeRanges);
+        const extra = functions.get(expr.name)?.extraReads?.(expr.args, resolveName) ?? [];
+        for (const range of extra) expand(range, homeSheet, destination, largeRanges);
         break;
       }
       default:
@@ -123,14 +102,16 @@ export const ReferenceCollector = {
     }
   },
 
-  isVolatile(expr: Expr): boolean {
+  /** Whether `expr` calls a volatile function anywhere (TODAY, NOW, SUBTOTAL). */
+  isVolatile(expr: Expr, functions: FunctionRegistry = FunctionRegistry.standard): boolean {
+    const volatile = (e: Expr): boolean => ReferenceCollector.isVolatile(e, functions);
     switch (expr.kind) {
       case 'call':
-        return FunctionRegistry.isVolatile(expr.name) || expr.args.some(ReferenceCollector.isVolatile);
+        return functions.get(expr.name)?.volatile === true || expr.args.some(volatile);
       case 'unary':
-        return ReferenceCollector.isVolatile(expr.operand);
+        return volatile(expr.operand);
       case 'binary':
-        return ReferenceCollector.isVolatile(expr.left) || ReferenceCollector.isVolatile(expr.right);
+        return volatile(expr.left) || volatile(expr.right);
       default:
         return false;
     }

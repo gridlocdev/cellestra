@@ -1,13 +1,11 @@
 import {
   CellAddress,
   Defaults,
-  Evaluator,
-  FunctionRegistry,
+  evaluateFormula,
   NumberFormatter,
   parseErrorToString,
   Parser,
   Workbook,
-  WorkbookEvaluationContext,
   writeCsv,
   type CellRange,
   type Worksheet,
@@ -359,9 +357,7 @@ export const evalCommand: CommandSpec = {
       throw new CliError(`Parse error: ${message}`);
     }
     workbook.settings.locale = locale;
-    const context = new WorkbookEvaluationContext(workbook, workbook.activeSheet.name, locale);
-    const evaluator = new Evaluator(context, FunctionRegistry.createDefault());
-    const value = evaluator.evaluate(parsed.expr);
+    const value = evaluateFormula(parsed.expr, { workbook, sheet: workbook.activeSheet.name, locale });
     const shown =
       value.kind === 'error' ? value.error.token : NumberFormatter.format(value, 'General', locale);
     if (asJson) {

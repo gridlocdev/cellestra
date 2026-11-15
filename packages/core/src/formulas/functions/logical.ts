@@ -2,7 +2,12 @@ import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import type { Expr } from '../ast/expr.ts';
 import { Coercion } from '../evaluation/coercion.ts';
-import { defineFunction, type FormulaFunction, type FunctionEvaluator } from './formulaFunction.ts';
+import {
+  defineFunction,
+  withTraits,
+  type FormulaFunction,
+  type FunctionEvaluator,
+} from './formulaFunction.ts';
 import { Arg, createMetadata } from './functionMetadata.ts';
 import { isFailure, readBoolean } from './helpers.ts';
 
@@ -49,20 +54,23 @@ export function logicalFunctions(): FormulaFunction[] {
         return args.length > 2 ? ev.evaluate(args[2]!) : CellValue.boolean(false);
       },
     ),
-    defineFunction(
-      createMetadata(
-        'IFERROR',
-        'logical',
-        'Returns a fallback value when an expression is an error.',
-        'any',
-        'IFERROR(A1/B1, 0)',
-        Arg.any('value'),
-        Arg.any('value_if_error'),
+    withTraits(
+      defineFunction(
+        createMetadata(
+          'IFERROR',
+          'logical',
+          'Returns a fallback value when an expression is an error.',
+          'any',
+          'IFERROR(A1/B1, 0)',
+          Arg.any('value'),
+          Arg.any('value_if_error'),
+        ),
+        (args, ev) => {
+          const value = ev.evaluate(args[0]!);
+          return value.kind === 'error' ? ev.evaluate(args[1]!) : value;
+        },
       ),
-      (args, ev) => {
-        const value = ev.evaluate(args[0]!);
-        return value.kind === 'error' ? ev.evaluate(args[1]!) : value;
-      },
+      { trapsErrors: true },
     ),
     defineFunction(
       createMetadata(

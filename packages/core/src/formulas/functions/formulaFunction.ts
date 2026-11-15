@@ -46,13 +46,39 @@ export interface FormulaFunction {
    * gives instead. A range-taking argument such as SUM's reads the range through this.
    */
   readonly reference?: (args: readonly Expr[], evaluator: FunctionEvaluator) => CellRange | CellValue;
+  /**
+   * Recomputed every recalculation pass, whatever its arguments: TODAY and NOW, and SUBTOTAL, whose
+   * result moves when rows are hidden or filtered without any cell it reads changing.
+   */
+  readonly volatile?: boolean;
+  /**
+   * Takes error arguments as values to inspect (IFERROR), so an argument on a deleted sheet is
+   * passed in rather than turned into the call's #REF!.
+   */
+  readonly trapsErrors?: boolean;
+  /**
+   * Cells the function reads beyond the ones its arguments name, for the dependency graph: SUMIF's
+   * sum range, read from its top-left at the size of the criteria range.
+   */
+  readonly extraReads?: (
+    args: readonly Expr[],
+    resolveName: (name: string) => CellRange | null,
+  ) => readonly CellRange[];
 }
+
+/** What a function does beyond computing a value from its arguments. */
+export type FunctionTraits = Pick<FormulaFunction, 'volatile' | 'trapsErrors' | 'extraReads'>;
 
 export type FunctionBody = (args: readonly Expr[], evaluator: FunctionEvaluator) => CellValue;
 
 /** A function built from metadata plus a body. */
 export function defineFunction(metadata: FunctionMetadata, body: FunctionBody): FormulaFunction {
   return Object.freeze({ metadata, invoke: body });
+}
+
+/** The same function with `traits` added. */
+export function withTraits(fn: FormulaFunction, traits: FunctionTraits): FormulaFunction {
+  return Object.freeze({ ...fn, ...traits });
 }
 
 /** A function that returns a reference, plus the body that gives its value in a single-value place. */

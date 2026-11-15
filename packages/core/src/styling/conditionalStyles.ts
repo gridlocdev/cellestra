@@ -123,8 +123,6 @@ function baseCell(map: CellStyleMap): { sheet: string | null; row: number; colum
     : null;
 }
 
-let functions: FunctionRegistry | null = null;
-
 /** Text compares only with text (an empty operand takes the cell's kind; errors fail elsewhere). */
 const mismatched = (cell: CellValue, operand: CellValue): boolean =>
   operand.kind !== 'empty' &&
@@ -218,7 +216,6 @@ export class ConditionalStyles {
       context = new WorkbookEvaluationContext(this.#workbook, sheet);
       this.#contexts.set(sheet, context);
     }
-    functions ??= FunctionRegistry.createDefault();
-    return new Evaluator(context, functions);
+    return new Evaluator(context, FunctionRegistry.standard);
   }
 }

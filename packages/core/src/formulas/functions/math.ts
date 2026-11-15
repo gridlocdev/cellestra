@@ -1,10 +1,17 @@
+import { CellRange } from '../../model/cellRange.ts';
+import { SheetDimensions } from '../../model/sheetDimensions.ts';
 import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import type { Expr } from '../ast/expr.ts';
 import { Coercion } from '../evaluation/coercion.ts';
 import { approxFloor, approxSub } from '../evaluation/valueComparer.ts';
 import { CriteriaMatcher } from './criteriaMatcher.ts';
-import { defineFunction, type FormulaFunction, type FunctionEvaluator } from './formulaFunction.ts';
+import {
+  defineFunction,
+  withTraits,
+  type FormulaFunction,
+  type FunctionEvaluator,
+} from './formulaFunction.ts';
 import { Arg, createMetadata, type FunctionCategory } from './functionMetadata.ts';
 import { KahanSum } from './kahanSum.ts';
 import { collectNumbers, isFailure, readInt, readNumber, roundHalfAway, roundScaled } from './helpers.ts';
@@ -143,6 +150,34 @@ function reshapedCell(sumRange: RangeValues, r: number, c: number, ev: FunctionE
   if (!sumRange.isArray)
     return ev.context.getCell(sumRange.range.sheet, sumRange.range.top + r, sumRange.range.left + c);
   return r < sumRange.rowCount && c < sumRange.columnCount ? sumRange.get(r, c) : CellValue.empty;
+}
+
+/** The cells an argument names, as a range: a reference, a range or a named range. */
+function asRange(expr: Expr, resolveName: (name: string) => CellRange | null): CellRange | null {
+  if (expr.kind === 'reference') {
+    const { row, column, sheet } = expr.address;
+    return CellRange.fromBounds(row, column, row, column, sheet);
+  }
+  if (expr.kind === 'range') return expr.range;
+  if (expr.kind === 'name') return resolveName(expr.name);
+  return null;
+}
+
+/**
+ * SUMIF reads its sum range from its top-left, sized like the criteria range (Excel/Calc), so
+ * `SUMIF(A1:A3, "x", B1)` reads B1:B3: the dependency graph must know about all of it.
+ */
+function sumIfReads(
+  args: readonly Expr[],
+  resolveName: (name: string) => CellRange | null,
+): readonly CellRange[] {
+  if (args.length < 3) return [];
+  const criteria = asRange(args[0]!, resolveName);
+  const sum = asRange(args[2]!, resolveName);
+  if (!criteria || !sum) return [];
+  const bottom = Math.min(sum.top + criteria.rowCount, SheetDimensions.maxRows) - 1;
+  const right = Math.min(sum.left + criteria.columnCount, SheetDimensions.maxColumns) - 1;
+  return [CellRange.fromBounds(sum.top, sum.left, bottom, right, sum.sheet)];
 }
 
 function sumOrCountIf(args: readonly Expr[], ev: FunctionEvaluator, sum: boolean): CellValue {
@@ -401,18 +436,21 @@ export function mathFunctions(): FormulaFunction[] {
       ),
       sumProduct,
     ),
-    defineFunction(
-      createMetadata(
-        'SUMIF',
-        'math',
-        'Adds the cells that meet a criteria.',
-        'number',
-        'SUMIF(A1:A10, ">5")',
-        Arg.range('range'),
-        Arg.any('criteria'),
-        Arg.range('sum_range', { optional: true }),
+    withTraits(
+      defineFunction(
+        createMetadata(
+          'SUMIF',
+          'math',
+          'Adds the cells that meet a criteria.',
+          'number',
+          'SUMIF(A1:A10, ">5")',
+          Arg.range('range'),
+          Arg.any('criteria'),
+          Arg.range('sum_range', { optional: true }),
+        ),
+        (args, ev) => sumOrCountIf(args, ev, true),
       ),
-      (args, ev) => sumOrCountIf(args, ev, true),
+      { extraReads: sumIfReads },
     ),
     defineFunction(
       createMetadata(

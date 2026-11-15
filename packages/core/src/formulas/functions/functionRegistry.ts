@@ -7,11 +7,7 @@ import { mathFunctions } from './math.ts';
 import { subtotalFunctions } from './subtotal.ts';
 import { textFunctions } from './text.ts';
 
-/**
- * Names of functions that recompute every recalculation pass. Upper-case. SUBTOTAL is here because
- * hiding or filtering rows changes its result without changing any cell it reads.
- */
-const VOLATILE: ReadonlySet<string> = new Set(['TODAY', 'NOW', 'SUBTOTAL']);
+let standard: FunctionRegistry | null = null;
 
 /**
  * The one catalog of functions: evaluation, autocomplete, the function picker, and the Function
@@ -20,11 +16,9 @@ const VOLATILE: ReadonlySet<string> = new Set(['TODAY', 'NOW', 'SUBTOTAL']);
 export class FunctionRegistry {
   readonly #functions = new Map<string, FormulaFunction>();
 
-  /** Functions that recompute every recalculation pass (TODAY, NOW, SUBTOTAL), upper-case. */
-  static readonly volatileFunctions: ReadonlySet<string> = VOLATILE;
-
-  static isVolatile(name: string): boolean {
-    return VOLATILE.has(name.toUpperCase());
+  /** The complete library, built once and shared. Don't register into it: use `createDefault`. */
+  static get standard(): FunctionRegistry {
+    return (standard ??= FunctionRegistry.createDefault());
   }
 
   register(fn: FormulaFunction): void {

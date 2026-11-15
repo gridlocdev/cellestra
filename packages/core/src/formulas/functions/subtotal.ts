@@ -1,7 +1,12 @@
 import type { Expr } from '../ast/expr.ts';
 import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
-import { defineFunction, type FormulaFunction, type FunctionEvaluator } from './formulaFunction.ts';
+import {
+  defineFunction,
+  withTraits,
+  type FormulaFunction,
+  type FunctionEvaluator,
+} from './formulaFunction.ts';
 import { Arg, createMetadata } from './functionMetadata.ts';
 import { collectNumbers, isFailure, readInt } from './helpers.ts';
 import { KahanSum } from './kahanSum.ts';
@@ -88,17 +93,21 @@ function subtotal(args: readonly Expr[], ev: FunctionEvaluator): CellValue {
 /** SUBTOTAL. */
 export function subtotalFunctions(): FormulaFunction[] {
   return [
-    defineFunction(
-      createMetadata(
-        'SUBTOTAL',
-        'math',
-        'Totals a range with one of 11 functions (9 is SUM), leaving out filtered rows and other subtotals; 101–111 also leave out hidden rows.',
-        'number',
-        'SUBTOTAL(9, A2:A20)',
-        Arg.number('function'),
-        Arg.any('reference', { repeatable: true }),
+    withTraits(
+      defineFunction(
+        createMetadata(
+          'SUBTOTAL',
+          'math',
+          'Totals a range with one of 11 functions (9 is SUM), leaving out filtered rows and other subtotals; 101–111 also leave out hidden rows.',
+          'number',
+          'SUBTOTAL(9, A2:A20)',
+          Arg.number('function'),
+          Arg.any('reference', { repeatable: true }),
+        ),
+        subtotal,
       ),
-      subtotal,
+      // Hiding or filtering rows changes the result without changing any cell it reads.
+      { volatile: true },
     ),
   ];
 }

@@ -5,8 +5,7 @@ import { CellError } from '../values/cellError.ts';
 import { CellValue } from '../values/cellValue.ts';
 import type { Expr } from '../formulas/ast/expr.ts';
 import { systemClock, type CivilDateTime } from '../formulas/evaluation/dateConversion.ts';
-import { Evaluator } from '../formulas/evaluation/evaluator.ts';
-import { WorkbookEvaluationContext } from '../formulas/evaluation/workbookEvaluationContext.ts';
+import { evaluateFormula } from '../formulas/evaluation/evaluateFormula.ts';
 import { FunctionRegistry } from '../formulas/functions/functionRegistry.ts';
 import { Parser } from '../formulas/parsing/parser.ts';
 import { CellRef, type RangeRef } from './cellRef.ts';
@@ -194,10 +193,18 @@ export class RecalculationEngine {
     const precedents = new Map<string, CellRef>();
     const largeRanges: RangeRef[] = [];
     const resolve = (n: string): CellRange | null => this.#resolveName(n, cell.sheet);
-    ReferenceCollector.collect(ast, cell.sheet, resolve, precedents, largeRanges, this.#sheetsBetween);
+    ReferenceCollector.collect(
+      ast,
+      cell.sheet,
+      resolve,
+      precedents,
+      largeRanges,
+      this.#sheetsBetween,
+      this.#functions,
+    );
     this.#graph.setPrecedents(cell, precedents.values());
     this.#setLargeRanges(key, largeRanges);
-    if (ReferenceCollector.isVolatile(ast)) this.#volatile.set(key, cell);
+    if (ReferenceCollector.isVolatile(ast, this.#functions)) this.#volatile.set(key, cell);
     else this.#volatile.delete(key);
   }
 
@@ -321,14 +328,14 @@ export class RecalculationEngine {
         return;
       }
     }
-    const context = new WorkbookEvaluationContext(
-      this.#workbook,
-      entry.ref.sheet,
-      this.#workbook.settings.effectiveLocale,
-      this.#clock,
-      { row: entry.ref.row, column: entry.ref.column },
-    );
-    this.#writeResult(entry.ref, new Evaluator(context, this.#functions).evaluate(entry.ast));
+    const value = evaluateFormula(entry.ast, {
+      workbook: this.#workbook,
+      sheet: entry.ref.sheet,
+      cell: { row: entry.ref.row, column: entry.ref.column },
+      clock: this.#clock,
+      functions: this.#functions,
+    });
+    this.#writeResult(entry.ref, value);
   }
 
   #writeResult(cell: CellRef, value: CellValue): void {

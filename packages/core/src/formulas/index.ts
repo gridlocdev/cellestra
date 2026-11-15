@@ -3,6 +3,7 @@ export * from './evaluation/coercion.ts';
 export * from './evaluation/dateConversion.ts';
 export * from './evaluation/decimalDigits.ts';
 export * from './evaluation/evaluationContext.ts';
+export * from './evaluation/evaluateFormula.ts';
 export * from './evaluation/evaluator.ts';
 export * from './evaluation/localeInfo.ts';
 export * from './evaluation/valueComparer.ts';

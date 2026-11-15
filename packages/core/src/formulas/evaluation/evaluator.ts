@@ -17,9 +17,6 @@ function finite(value: number): CellValue {
     : CellValue.error(CellError.number('The result is not a finite number.'));
 }
 
-/** Functions that receive error arguments as values to inspect, rather than failing on them. */
-const TRAPS_ERRORS = new Set(['IFERROR']);
-
 /** Both operands as numbers, or the error value to return. */
 function numbers(left: CellValue, right: CellValue): [number, number] | CellValue {
   if (left.kind === 'error') return left;
@@ -252,7 +249,7 @@ export class Evaluator implements FunctionEvaluator {
       );
     }
     // A range on a sheet that no longer exists is one #REF!, not a million empty cells to scan.
-    if (!TRAPS_ERRORS.has(node.name)) {
+    if (!fn.trapsErrors) {
       for (const arg of node.args) {
         const missing = this.#missingSheet(arg);
         if (missing) return missing;

@@ -1,7 +1,7 @@
 import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import { DateConversion, type CivilDateTime } from '../evaluation/dateConversion.ts';
-import { defineFunction, type FormulaFunction } from './formulaFunction.ts';
+import { defineFunction, withTraits, type FormulaFunction } from './formulaFunction.ts';
 import { Arg, createMetadata } from './functionMetadata.ts';
 import { isFailure, readInt, readNumber } from './helpers.ts';
 
@@ -28,16 +28,22 @@ function component(
 /** The date & time functions. TODAY/NOW are volatile (recomputed each pass). */
 export function dateTimeFunctions(): FormulaFunction[] {
   return [
-    defineFunction(
-      createMetadata('TODAY', 'dateTime', "Returns today's date.", 'number', 'TODAY()'),
-      (_, ev) => {
-        const now = ev.context.now();
-        return CellValue.number(Math.floor(DateConversion.dateToSerial(now.year, now.month, now.day)));
-      },
+    withTraits(
+      defineFunction(
+        createMetadata('TODAY', 'dateTime', "Returns today's date.", 'number', 'TODAY()'),
+        (_, ev) => {
+          const now = ev.context.now();
+          return CellValue.number(Math.floor(DateConversion.dateToSerial(now.year, now.month, now.day)));
+        },
+      ),
+      { volatile: true },
     ),
-    defineFunction(
-      createMetadata('NOW', 'dateTime', 'Returns the current date and time.', 'number', 'NOW()'),
-      (_, ev) => CellValue.number(DateConversion.toSerial(ev.context.now())),
+    withTraits(
+      defineFunction(
+        createMetadata('NOW', 'dateTime', 'Returns the current date and time.', 'number', 'NOW()'),
+        (_, ev) => CellValue.number(DateConversion.toSerial(ev.context.now())),
+      ),
+      { volatile: true },
     ),
     defineFunction(
       createMetadata(
