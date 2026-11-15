@@ -279,3 +279,57 @@ describe('RecalculationEngine', () => {
     expect(numberAt(sheet, 0, 3)).toBe(11);
   });
 });
+
+describe('RecalculationEngine.apply', () => {
+  const cells = (sheet: Worksheet, ...at: [number, number][]) => ({
+    changedCells: at.map(([r, c]) => CellRef.of(sheet.name, r, c)),
+    changedRows: [],
+    structural: false,
+  });
+
+  it('recomputes what an edited cell feeds, and says it calculated', () => {
+    const { workbook, sheet } = newBook();
+    sheet.setFormula(0, 1, 'A1*2');
+    const engine = engineFor(workbook);
+    engine.recalculateAll();
+    sheet.setValue(0, 0, CellValue.number(4));
+
+    const recalc = engine.apply(cells(sheet, [0, 0]));
+
+    expect(recalc.calculated).toBe(true);
+    expect(numberAt(sheet, 0, 1)).toBe(8);
+  });
+
+  it('evaluates nothing in manual mode but keeps the graph, so F9 sees the edit', () => {
+    const { workbook, sheet } = newBook();
+    const engine = engineFor(workbook);
+    workbook.settings.calculationMode = 'manual';
+    sheet.setValue(0, 0, CellValue.number(3));
+    sheet.setFormula(0, 1, 'A1+1');
+
+    const recalc = engine.apply(cells(sheet, [0, 1]));
+
+    expect(recalc.calculated).toBe(false);
+    expect(recalc.evaluated).toBe(0);
+    engine.recalculateAll();
+    expect(numberAt(sheet, 0, 1)).toBe(4);
+  });
+
+  it('rebuilds the graph after a structural edit and reports a cycle it finds', () => {
+    const { workbook, sheet } = newBook();
+    const engine = engineFor(workbook);
+    sheet.setFormula(0, 0, 'B1');
+    sheet.setFormula(0, 1, 'A1');
+
+    const recalc = engine.apply({ changedCells: [], changedRows: [], structural: true });
+
+    expect(recalc.calculated).toBe(true);
+    expect(recalc.hasCircularReference).toBe(true);
+  });
+
+  it('calculates nothing for an edit that changed no cells or rows', () => {
+    const { workbook } = newBook();
+    const recalc = engineFor(workbook).apply({ changedCells: [], changedRows: [], structural: false });
+    expect(recalc.calculated).toBe(false);
+  });
+});

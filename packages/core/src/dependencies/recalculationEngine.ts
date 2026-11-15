@@ -1,4 +1,5 @@
 import type { CellRange } from '../model/cellRange.ts';
+import type { EditResult } from '../editing/editCommand.ts';
 import type { Workbook } from '../model/workbook.ts';
 import { CellError } from '../values/cellError.ts';
 import { CellValue } from '../values/cellValue.ts';
@@ -20,6 +21,15 @@ export interface RecalculationResult {
   readonly hasCircularReference: boolean;
   /** The formula cells this pass wrote a result to (circular ones included). */
   readonly evaluatedCells: readonly CellRef[];
+}
+
+/**
+ * The outcome of recalculating after an edit. `calculated` is false when nothing was evaluated
+ * (manual calculation, or an edit that changed nothing a formula reads): the circular-reference
+ * state from the last pass still stands.
+ */
+export interface EditRecalculation extends RecalculationResult {
+  readonly calculated: boolean;
 }
 
 /** The parse cache is dropped when it grows past this many distinct formula texts. */
@@ -88,6 +98,20 @@ export class RecalculationEngine {
         if (cell.isFormula) this.#registerFormula(CellRef.of(sheet.name, row, column), cell.formula!);
       }
     }
+  }
+
+  /**
+   * Bring results up to date after an edit, the one way an editor should call the engine. A
+   * structural edit rebuilds the graph; changed cells are re-planned and their dependents
+   * recomputed; rows hidden, shown or filtered recompute the volatile cells (SUBTOTAL reads row
+   * visibility). Manual calculation keeps the graph current and evaluates nothing until F9.
+   */
+  apply(edit: Pick<EditResult, 'changedCells' | 'changedRows' | 'structural'>): EditRecalculation {
+    const calculated = this.#workbook.settings.calculationMode !== 'manual';
+    if (edit.structural) return { ...this.recordStructuralChange(), calculated };
+    if (edit.changedCells.length > 0) return { ...this.recordEdits(edit.changedCells), calculated };
+    if (edit.changedRows.length > 0 && calculated) return { ...this.recalculateVolatile(), calculated };
+    return { ...result(0, []), calculated: false };
   }
 
   /** Recompute every formula cell in dependency order. */

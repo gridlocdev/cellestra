@@ -14,12 +14,11 @@ import {
   Workbook,
   readCsv,
   writeCsv,
-  type CellRef,
   type CellStyle,
   type CalculationMode,
   type CellValue,
   type EditCommand,
-  type EditResult,
+  EditResult,
   type OdsPackage,
   type Worksheet,
 } from '@cellestra/core';
@@ -327,8 +326,8 @@ export class WorkbookSession {
    * document modified. Manual calculation leaves the results for F9.
    */
   namesChanged(): void {
-    const recalc = this.#engine.recordStructuralChange();
-    if (this.#isAutomatic()) this.#circular.value = recalc.hasCircularReference;
+    const recalc = this.#engine.apply(EditResult.structuralChange);
+    if (recalc.calculated) this.#circular.value = recalc.hasCircularReference;
     this.touch();
   }
 
@@ -343,22 +342,10 @@ export class WorkbookSession {
   }
 
   #apply(result: EditResult): void {
-    let circular = this.#circular.peek();
-    let evaluated: readonly CellRef[] = [];
-    if (result.structural) {
-      const recalc = this.#engine.recordStructuralChange();
-      // Manual calculation evaluates nothing, so it can't say whether a cycle is still there.
-      if (this.#isAutomatic()) circular = recalc.hasCircularReference;
-    } else if (result.changedCells.length > 0) {
-      const recalc = this.#engine.recordEdits(result.changedCells);
-      if (this.#isAutomatic()) circular = recalc.hasCircularReference;
-      evaluated = recalc.evaluatedCells;
-    } else if (result.changedRows.length > 0 && this.#isAutomatic()) {
-      // Hiding, showing or filtering rows changes what SUBTOTAL reads without changing any cell.
-      const recalc = this.#engine.recalculateVolatile();
-      circular = recalc.hasCircularReference;
-      evaluated = recalc.evaluatedCells;
-    }
+    const recalc = this.#engine.apply(result);
+    // Manual calculation evaluates nothing, so it can't say whether a cycle is still there.
+    const circular = recalc.calculated ? recalc.hasCircularReference : this.#circular.peek();
+    const evaluated = result.structural ? [] : recalc.evaluatedCells;
     // An edit that reports neither cells nor lines changed something unknown here: logged as such.
     // Logged before the version moves, because a view redraws as soon as it does.
     const lines = result.changedRows.length + result.changedColumns.length > 0;
@@ -376,10 +363,6 @@ export class WorkbookSession {
       if (result.structural) this.#structure.value++;
       this.#version.value++;
     });
-  }
-
-  #isAutomatic(): boolean {
-    return this.#workbook.peek().settings.calculationMode === 'automatic';
   }
 
   /**
@@ -542,8 +525,8 @@ export class WorkbookSession {
     this.#history.clear();
     this.#undoSelections.length = 0;
     this.#redoSelections.length = 0;
-    const recalc = this.#engine.recordStructuralChange();
-    const circular = this.#isAutomatic() ? recalc.hasCircularReference : this.#circular.peek();
+    const recalc = this.#engine.apply(EditResult.structuralChange);
+    const circular = recalc.calculated ? recalc.hasCircularReference : this.#circular.peek();
     batch(() => {
       this.#circular.value = circular;
       this.#modified.value = true;
