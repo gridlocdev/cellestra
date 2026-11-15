@@ -38,6 +38,7 @@ export { FillCommand } from './fillCommand.ts';
 export { FormatBlock } from './formatBlock.ts';
 export { rewriteFormula } from './formulaRewrite.ts';
 export { HiddenLines, type LineRun } from './hiddenLines.ts';
+export { ImportCsvCommand } from './importCsvCommand.ts';
 export { InputParser, type ParsedInput } from './inputParser.ts';
 export { SetPageSetupCommand } from './pageSetupCommand.ts';
 export { PasteBlockCommand, type PasteMode, type ProjectedWrite } from './pasteBlockCommand.ts';

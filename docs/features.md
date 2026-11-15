@@ -14,7 +14,7 @@ See [Getting started](getting-started.md) for each one.
 
 ## Files
 
-Cellestra reads and writes `.ods` and keeps anything it doesn't understand intact, so LibreOffice files survive a round trip. **Import CSV…** and **Export Sheet as CSV…** bring in and write out CSV and TSV, and **Export Sheet as PDF…** and **Print…** print a sheet with the settings in **Page Setup…**. **Open Recent…** lists the files you used last. **Close** (`⌘W`) asks about unsaved changes, then closes the window in the desktop app or starts a blank workbook in the browser.
+Cellestra reads and writes `.ods` and keeps anything it doesn't understand intact, so LibreOffice files survive a round trip. **Import CSV…** replaces the active sheet with a CSV or TSV file's data (one undo brings the sheet back), **Export Sheet as CSV…** writes the sheet out as CSV, and **Export Sheet as PDF…** and **Print…** print a sheet with the settings in **Page Setup…**. **Open Recent…** lists the files you used last. **Close** (`⌘W`) asks about unsaved changes, then closes the window in the desktop app or starts a blank workbook in the browser.
 
 When LibreOffice has a file open, it keeps a `.~lock.<name>#` file beside it. Opening that file in the desktop app or from the NAS reads the lock and warns who opened it and when, for example “Opened by Ada on 14.11.2026 10:22 in LibreOffice – your changes may conflict.” The file still opens, and Cellestra never writes or removes lock files. A plain browser can't see the folder around a file, so it can't warn.
 

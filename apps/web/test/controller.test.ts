@@ -770,6 +770,47 @@ describe('large removals', () => {
   });
 });
 
+describe('Import CSV', () => {
+  async function withOds(cells: number) {
+    const app = await makeApp();
+    const wb = Workbook.createNew();
+    wb.worksheets[0]!.setValue(0, 0, CellValue.text('kept'));
+    for (let r = 1; r < cells; r++) wb.worksheets[0]!.setValue(r, 0, CellValue.number(r));
+    app.session.load(OdsWriter.write(wb, null), ref('book.ods'));
+    const picked: OpenedDocument = {
+      ref: { store: 'browser', name: 'data.tsv', id: 'data.tsv', version: null },
+      bytes: new TextEncoder().encode('name\tamount\nx\t2\n'),
+    };
+    app.browser.pick = async () => picked;
+    return { app, sheet: () => app.session.activeSheet.peek(), ...answerConfirms(app) };
+  }
+
+  it('fills the active sheet of the open document, which stays open, and one undo brings the sheet back', async () => {
+    const { app, sheet, asked } = await withOds(1);
+    await app.importCsv();
+    expect(asked).toHaveLength(0);
+    expect(app.session.document.peek()?.name).toBe('book.ods');
+    expect(app.session.title.peek()).toBe('book.ods');
+    expect(app.session.format.peek()).toBe('ods');
+    expect(app.session.modified.peek()).toBe(true);
+    expect(sheet().getValue(0, 1)).toEqual(CellValue.text('amount'));
+    expect(sheet().getValue(1, 1)).toEqual(CellValue.number(2));
+    app.session.undo();
+    expect(sheet().getValue(0, 0)).toEqual(CellValue.text('kept'));
+    expect(sheet().getValue(0, 1)).toEqual(CellValue.empty);
+  });
+
+  it('asks before replacing more than 100 filled cells', async () => {
+    const { app, sheet, asked, answer } = await withOds(101);
+    await app.importCsv();
+    expect(asked).toHaveLength(1);
+    expect(sheet().getValue(0, 0)).toEqual(CellValue.text('kept'));
+    answer(true);
+    await app.importCsv();
+    expect(sheet().getValue(0, 0)).toEqual(CellValue.text('name'));
+  });
+});
+
 describe('name box', () => {
   it('jumps to a named range, on its own sheet', async () => {
     const app = await makeApp();

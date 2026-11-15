@@ -142,7 +142,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     {
       id: 'file.importCsv',
       title: 'Import CSV…',
-      description: 'Open a CSV or TSV file',
+      description: 'Replace the active sheet with a CSV or TSV file’s data',
       group: 'File',
       run: () => app.importCsv(),
     },

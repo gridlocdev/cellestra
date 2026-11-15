@@ -322,6 +322,7 @@ export {
   FillCommand,
   FormatBlock,
   HiddenLines,
+  ImportCsvCommand,
   InputParser,
   type LineRun,
   lineStyleCommand,

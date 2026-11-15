@@ -25,7 +25,7 @@ import {
   RecalculationEngine,
   Workbook,
   writeOds,
-  type CsvOptions,
+  CsvOptions,
   type OdsPackage,
   type RecalculationResult,
 } from '@cellestra/core';
@@ -75,8 +75,7 @@ export function detectFormat(path: string, explicit: WorkbookFormat | null): Wor
 
 /** The delimiter for a CSV path: an explicit --delimiter wins, else tab for .tsv, else comma. */
 export function csvDelimiter(path: string, csv: CsvOptions | null): string {
-  if (csv) return csv.delimiter;
-  return extname(path).toLowerCase() === '.tsv' ? '\t' : ',';
+  return (csv ?? CsvOptions.forFileName(path)).delimiter;
 }
 
 export function load(

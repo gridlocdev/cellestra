@@ -8,7 +8,7 @@ import {
   EditCommands,
   FunctionRegistry,
   Workbook,
-  fillFromCsv,
+  ImportCsvCommand,
   parseCsv,
   writeCsv,
   type FunctionMetadata,
@@ -103,10 +103,10 @@ export const importCommand: CommandSpec = {
       : { workbook: Workbook.createNew(), package: null };
     return EditSession.runLoaded(con, loaded, target, locale, p.flag('--json'), (session) => {
       const workbook = session.workbook;
-      let worksheet = workbook.findSheet(sheetName);
-      if (!worksheet) worksheet = workbook.addSheet(sheetName);
-      else worksheet.clear();
-      fillFromCsv(workbook, worksheet, text, { delimiter: csvDelimiter(p.arg('csv'), csv), locale });
+      const worksheet = workbook.findSheet(sheetName) ?? workbook.addSheet(sheetName);
+      session.apply(
+        new ImportCsvCommand(worksheet.name, text, { delimiter: csvDelimiter(p.arg('csv'), csv), locale }),
+      );
       session.field('sheet', worksheet.name);
       session.field('range', worksheet.getUsedRange()?.toString() ?? null);
       session.note(`Imported ${worksheet.cellCount} cell(s) into '${worksheet.name}'.`);

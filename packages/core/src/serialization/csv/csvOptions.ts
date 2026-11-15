@@ -17,4 +17,8 @@ export const CsvOptions = {
   comma: Object.freeze({ delimiter: ',' }) as CsvOptions,
   semicolon: Object.freeze({ delimiter: ';' }) as CsvOptions,
   tab: Object.freeze({ delimiter: '\t' }) as CsvOptions,
+  /** The delimiter a file's name implies: tab for a .tsv, comma for anything else. */
+  forFileName(name: string): CsvOptions {
+    return /\.tsv$/i.test(name) ? CsvOptions.tab : CsvOptions.comma;
+  },
 } as const;

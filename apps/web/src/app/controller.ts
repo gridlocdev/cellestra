@@ -45,6 +45,8 @@ import {
   printHtml,
   printableRange,
   type PageSetup,
+  CsvOptions,
+  ImportCsvCommand,
 } from '@cellestra/core';
 import type { ConflictError } from '@cellestra/ui';
 import {
@@ -568,8 +570,30 @@ export class AppController {
     }
   }
 
-  importCsv(): Promise<void> {
-    return this.lifecycle.open(() => this.browser.pick());
+  /**
+   * Import CSV (PRD §8.4): pick a .csv or .tsv and put its data in the active sheet, replacing what
+   * is there, in one undoable step. The open document stays the open document. Asks first when
+   * more than 100 filled cells would go.
+   */
+  async importCsv(): Promise<void> {
+    if (!this.commitOpenEdit()) return;
+    let picked: OpenedDocument | null;
+    try {
+      picked = await this.browser.pick();
+    } catch (e) {
+      return this.error(e);
+    }
+    if (!picked) return;
+    const name = picked.ref.name;
+    if (!/\.(csv|tsv|txt)$/i.test(name))
+      return this.error(`Import CSV takes a .csv or .tsv file, not ${name}.`);
+    const sheet = this.sheet;
+    if (sheet.cellCount > LARGE_REMOVAL_CELLS) {
+      const message = `This replaces ${sheet.cellCount.toLocaleString()} cells on “${this.sheetName}” with the data in ${name}. You can undo it.`;
+      if (!(await this.confirm('Import CSV?', message, 'Import'))) return;
+    }
+    const text = new TextDecoder().decode(picked.bytes);
+    this.run(new ImportCsvCommand(this.sheetName, text, CsvOptions.forFileName(name)));
   }
 
   /** Re-read the document from its store; `onlyIfClean` gives up when edits landed meanwhile. */
