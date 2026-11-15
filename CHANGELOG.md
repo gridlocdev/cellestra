@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.3.0
+
+### Before you update
+
+- **If you use the CLI on a workbook set to manual calculation,** commands that change cells now leave formula results alone, as the app does. Run `cellestra recalc` to update them.
+
+### What's new
+
+- **Charts can work from a table.** A chart sheet's panel has a **Table** / **Range** switch. In **Table** mode you pick the table, the column for the categories and the columns to plot from lists of column names, with no typing. The chart grows when the table grows, and keeps working when you rename the table or a column. **Insert Chart Sheet** with the cursor in a table starts a chart that plots its number columns.
+- **Pick a range on the sheet.** In **Range** mode, the ⌖ button next to each range opens the data sheet so you can drag over the cells, then **Enter** brings you back to the chart.
+- **Repeated categories are combined.** Column, bar, line, area, pie and radar charts show a label that appears on several rows once, adding up its values. The **Aggregate** list switches to Average, Count, Smallest or Largest. LibreOffice still shows every row.
+- **Hover over a chart to read it.** A tooltip shows the category, slice or point under the pointer with its values, the total and share where they apply, and how many rows a combined category holds.
+- **Tables have names you can see and change.** A new table is named after the text above it or its first header. Rename it in the **Name** field on the table's ribbon tab, or type a table's name in the Name Box to select it.
+- **Opening a CSV fits the columns** to their contents (up to 400 pixels wide), without marking the file as changed.
+- **CLI:** `rename-table`, a table name in `chart --from`, `--aggregate` for charts, and `remove-duplicates` and `split` in `apply` files.
+
+### Improvements
+
+- **Autofit matches what the grid shows,** using the grid's own font and padding, so fitted columns are no longer a little too wide.
+- **Large clears and sheet deletes ask in Cellestra's own dialog** instead of the browser's box.
+- **The desktop menu stays in step** with the layout, the collapsed ribbon, the format painter and the find text.
+- **Charts leave out empty rows,** and blank labels share one "(blank)" category. Series without a name are called "Series 1", "Series 2" and so on.
+- **List dropdowns skip blank items** and show each item once.
+- **The CLI reports a refused edit in one line** instead of a stack trace.
+
+### Bugs fixed
+
+- **Import CSV** fills the current sheet again, as one step you can undo, instead of replacing the open workbook. It asks first when the sheet holds more than 100 cells.
+- Duplicating a chart sheet no longer makes the copy overwrite the original's chart when you save.
+- Date and time formats that carry a locale tag, such as `[$-409]h:mm AM/PM`, are no longer treated as currency.
+- `cellestra open` opens the installed app instead of a blank Electron window.
+- `cellestra rename-sheet` updates the formulas that name the sheet.
+- Replacing a validation rule from the CLI keeps the old rule on the cells outside the new range.
+- `cellestra import` into an existing sheet clears its old column widths, merges and other layout.
+- `cellestra chart --from` works with sheet names that contain spaces.
+- A CLI save over a hard-linked file no longer empties it first, and a read-only file is refused.
+
 ## 0.2.3
 
 ### Improvements
