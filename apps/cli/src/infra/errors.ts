@@ -27,7 +27,8 @@ export class UsageError extends CliError {
 /**
  * Whether an exception is the user's to fix rather than a bug. The engine reports bad input
  * (duplicate sheet, invalid name, overlapping merge, malformed color) with plain `Error`,
- * `RangeError`, or `SyntaxError`; file-system failures carry an errno `code` (`ENOENT`, `EACCES`).
+ * `RangeError`, or `SyntaxError`, and an edit it won't make (sorting over a merge) with
+ * `EditRefusedError`; file-system failures carry an errno `code` (`ENOENT`, `EACCES`).
  * A `TypeError`, a Node internal error (`ERR_*` codes), and the runtime's own `RangeError`s (stack
  * overflow, invalid array length) are bugs and keep their stack trace.
  */
@@ -40,7 +41,7 @@ export function isExpectedError(e: unknown): e is Error {
   return (
     e.constructor === Error ||
     e instanceof SyntaxError ||
-    /^(FormulaParseException|Ods\w*TooLargeError|XmlParseError)$/.test(e.name)
+    /^(EditRefusedError|FormulaParseException|Ods\w*TooLargeError|XmlParseError)$/.test(e.name)
   );
 }
 

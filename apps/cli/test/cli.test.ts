@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   CellValue,
+  EditRefusedError,
   OdsPackage,
   readOds,
   readOdsWithPackage,
@@ -1094,6 +1095,23 @@ describe('data, structural, and layout edits', () => {
     expect(sheet1(ods).findMerge(0, 0)).toBeDefined();
     expect(run('unmerge', ods, 'A1', '--in-place').exit).toBe(0);
     expect(sheet1(ods).findMerge(0, 0)).toBeUndefined();
+  });
+
+  it('reports an edit the engine refuses in one line, with no stack trace', () => {
+    const ods = path2('refused.ods');
+    run('new', ods);
+    for (const [cell, value] of [
+      ['A1', '3'],
+      ['A2', '1'],
+      ['A3', '2'],
+    ])
+      run('set', ods, cell!, value!, '--in-place');
+    run('merge', ods, 'A2:B2', '--in-place');
+    const r = run('sort', ods, 'A1:B3', '--by', 'A', '--in-place');
+    expect(r.exit).toBe(1);
+    expect(r.err.trim().split('\n')).toHaveLength(1);
+    expect(r.err).toContain("Merged cells can't be sorted.");
+    expect(isExpectedError(new EditRefusedError('No.'))).toBe(true);
   });
 
   it('data edits refuse to overwrite without --in-place or --output', () => {
