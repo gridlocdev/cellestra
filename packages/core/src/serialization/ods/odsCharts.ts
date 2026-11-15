@@ -34,7 +34,11 @@ export const OdsCharts = {
     const dirs: string[] = [];
     const used = new Set<string>();
     for (const sheet of workbook.worksheets) {
-      if (sheet.chart && sheet.chart.objectName.length > 0) used.add(sheet.chart.objectName);
+      const chart = sheet.chart;
+      if (!chart || chart.objectName.length === 0) continue;
+      // Two charts can't share one object (a duplicated sheet copies the name): the first keeps it.
+      if (used.has(chart.objectName)) chart.objectName = '';
+      else used.add(chart.objectName);
     }
 
     let counter = 1;

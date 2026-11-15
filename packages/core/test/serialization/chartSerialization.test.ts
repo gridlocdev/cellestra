@@ -1,7 +1,7 @@
 import { createChart, createSeries } from '@cellestra/charts';
 import { describe, expect, it } from 'vitest';
 import { Workbook } from '../../src/model/workbook.ts';
-import { writeOds } from '../../src/serialization/index.ts';
+import { readOds, writeOds } from '../../src/serialization/index.ts';
 import { CellValue } from '../../src/values/cellValue.ts';
 import { entryNames, readEntry, roundTripWithPackage } from './helpers.ts';
 
@@ -76,6 +76,27 @@ describe('ChartSerialization', () => {
 
     // The manifest declares the object with the chart media type.
     expect(readEntry(bytes, 'META-INF/manifest.xml')).toContain('application/vnd.oasis.opendocument.chart');
+  });
+
+  it('a duplicated chart sheet saves its own chart object', () => {
+    const { workbook, package: pkg } = roundTripWithPackage(buildWithChart());
+    const copy = workbook.duplicateSheet(workbook.findSheet('Chart1')!);
+    copy.chart!.title = 'Copy';
+
+    const reopened = readOds(writeOds(workbook, pkg));
+    expect(reopened.findSheet('Chart1')!.chart!.title).toBe('Quarterly');
+    expect(reopened.findSheet(copy.name)!.chart!.title).toBe('Copy');
+  });
+
+  it('two chart sheets that claim the same object are saved to separate objects', () => {
+    const workbook = buildWithChart();
+    const first = workbook.findSheet('Chart1')!.chart!;
+    first.objectName = 'Object 1';
+    workbook.addChartSheet(createChart({ title: 'Other', objectName: 'Object 1' }));
+
+    const reopened = readOds(writeOds(workbook));
+    const titles = reopened.worksheets.filter((s) => s.isChartSheet).map((s) => s.chart!.title);
+    expect(titles).toEqual(['Quarterly', 'Other']);
   });
 
   it('data sheet without a chart stays a plain sheet', () => {

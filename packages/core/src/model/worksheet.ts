@@ -412,7 +412,8 @@ export class Worksheet {
     copy.activeSort = this.activeSort;
     copy.pageSetup = this.pageSetup;
     copy.outline = this.outline;
-    copy.chart = this.chart ? cloneChart(this.chart) : null;
+    // The copy is a new embedded object; the writer gives it a directory of its own.
+    copy.chart = this.chart ? { ...cloneChart(this.chart), objectName: '' } : null;
     return copy;
   }
 
