@@ -2,6 +2,7 @@ import { FilterEngine } from '../data/filterEngine.ts';
 import { SortEngine } from '../data/sortEngine.ts';
 import type { FilterSpec, SortSpec, Table } from '../data/types.ts';
 import type { CellRange } from '../model/cellRange.ts';
+import type { Worksheet } from '../model/worksheet.ts';
 import { CellSnapshotCommand } from './cellSnapshotCommand.ts';
 import { filteredRowsCommand, inDocumentLocale, rowVisibilityCommand } from './dataCommandSupport.ts';
 import {
@@ -94,6 +95,66 @@ export const SortFilterCommands = {
       if (sort && sort.levels.length > 0) steps.push(SortFilterCommands.sort(sheet, range, sort, loc));
       return EditCommands.composite('Sort & Filter', steps);
     });
+  },
+
+  /** Undoable switch of the sheet's AutoFilter range (keeps its filter and sort only when the range stays). */
+  setAutoFilter(sheet: string, range: CellRange | null): EditCommand {
+    let before: [CellRange | null, FilterSpec | null, SortSpec | null] = [null, null, null];
+    return new ActionCommand(
+      range ? 'AutoFilter' : 'Remove AutoFilter',
+      (wb) => {
+        const ws = requireSheet(wb, sheet);
+        before = [ws.activeFilter, ws.activeFilterSpec, ws.activeSort];
+        const same = range && ws.activeFilter?.equals(range);
+        ws.activeFilter = range;
+        if (!same) {
+          ws.activeFilterSpec = null;
+          ws.activeSort = null;
+        }
+        return EditResult.none;
+      },
+      (wb) => {
+        const ws = requireSheet(wb, sheet);
+        [ws.activeFilter, ws.activeFilterSpec, ws.activeSort] = before;
+        return EditResult.none;
+      },
+    );
+  },
+
+  /** Turn the sheet's AutoFilter off: its rows show again and its filter and sort go, in one step. */
+  removeAutoFilter(worksheet: Worksheet, locale?: string): EditCommand | null {
+    const range = worksheet.activeFilter;
+    if (!range) return null;
+    return EditCommands.composite('Remove AutoFilter', [
+      SortFilterCommands.applySortAndFilter(worksheet.name, range, null, null, locale),
+      SortFilterCommands.setAutoFilter(worksheet.name, null),
+    ]);
+  },
+
+  /**
+   * Sort & Filter over a table or a plain range, as one undo step. A plain AutoFilter left with no
+   * filter or sort would vanish, so it is put back in the same step (keeping its buttons).
+   */
+  sortAndFilter(
+    worksheet: Worksheet,
+    target: { readonly range: CellRange; readonly table: Table | null },
+    sort: SortSpec | null,
+    filter: FilterSpec | null,
+    locale?: string,
+  ): EditCommand {
+    const sheet = worksheet.name;
+    const auto = worksheet.activeFilter;
+    const steps: EditCommand[] = [];
+    if (target.table) {
+      if (auto && auto.equals(target.table.range))
+        steps.push(SortFilterCommands.applySortAndFilter(sheet, auto, null, null, locale));
+      steps.push(SortFilterCommands.applyTableSortAndFilter(sheet, target.table, sort, filter, locale));
+    } else {
+      steps.push(SortFilterCommands.applySortAndFilter(sheet, target.range, sort, filter, locale));
+      if (!filter && !sort && auto?.equals(target.range))
+        steps.push(SortFilterCommands.setAutoFilter(sheet, target.range));
+    }
+    return steps.length === 1 ? steps[0]! : new CompositeEditCommand('Sort & Filter', steps);
   },
 } as const;
 

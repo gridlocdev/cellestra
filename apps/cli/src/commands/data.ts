@@ -2,11 +2,9 @@ import {
   CleanUp,
   DataEditCommands,
   EditCommands,
-  StructuralEditCommand,
   cleanUpNoteText,
   type EditCommand,
   type StructuralAxis,
-  type StructuralOperation,
   type Workbook,
 } from '@cellestra/core';
 import { pickSheet, resolveCell, resolveRange } from '../infra/cells.ts';
@@ -19,15 +17,7 @@ import { load } from '../infra/workspace.ts';
 import type { CommandSpec, OptionSpec, Parsed } from '../spec.ts';
 import { dispatch } from './apply.ts';
 import { editTarget, fileArg, inPlaceOpt, jsonOpt, localeOpt, outputOpt, sheetOpt } from './options.ts';
-import {
-  checkStructuralEdit,
-  parseColumn,
-  parseColumnSpan,
-  parseRow,
-  parseRowSpan,
-  parseSortLevels,
-  splitList,
-} from './parsers.ts';
+import { parseColumn, splitList } from './parsers.ts';
 
 /**
  * Data verbs: sort, remove-duplicates, clean-up, split, table, data-validation, named ranges,
@@ -71,13 +61,13 @@ export const sort: CommandSpec = {
     jsonOpt,
   ],
   run: (p, con) =>
-    runEdit(p, con, resolveLocale(p.str('--locale')), (wb, locale) => {
-      const { sheet, range } = resolveRange(wb, p.arg('range'));
-      const levels = parseSortLevels(p.str('--by')!);
-      return [
-        DataEditCommands.sort(sheet.name, range, { levels, hasHeader: !p.flag('--no-header') }, locale),
-      ];
-    }),
+    dispatch(
+      p,
+      con,
+      'sort',
+      { range: p.arg('range'), by: p.str('--by'), header: p.flag('--no-header') ? false : null },
+      resolveLocale(p.str('--locale')),
+    ),
 };
 
 export const removeDuplicates: CommandSpec = {
@@ -327,25 +317,14 @@ export const name: CommandSpec = {
         { name: 'range', description: 'Range it points to, e.g. Sheet1.B1:B10' },
       ],
       options: [inPlaceOpt, outputOpt, jsonOpt],
-      run: (p, con) =>
-        runEdit(p, con, null, (wb) => {
-          const { sheet, range } = resolveRange(wb, p.arg('range'));
-          // Store fully sheet-qualified so the name resolves regardless of the active sheet.
-          wb.addNamedRange({ name: p.arg('name'), target: range.withSheet(range.sheet ?? sheet.name) });
-          return [];
-        }),
+      run: (p, con) => dispatch(p, con, 'name', { name: p.arg('name'), range: p.arg('range') }),
     },
     {
       name: 'remove',
       description: 'Remove a named range',
       args: [fileArg(), { name: 'name', description: 'Name to remove' }],
       options: [inPlaceOpt, outputOpt, jsonOpt],
-      run: (p, con) =>
-        runEdit(p, con, null, (wb) => {
-          if (!wb.removeNamedRange(p.arg('name')))
-            throw new CliError(`No named range called '${p.arg('name')}'.`);
-          return [];
-        }),
+      run: (p, con) => dispatch(p, con, 'unname', { name: p.arg('name') }),
     },
   ],
 };
@@ -382,12 +361,7 @@ export const hyperlink: CommandSpec = {
 
 // ---- Insert / delete rows & columns ------------------------------------------
 
-function structuralCommand(
-  verb: string,
-  description: string,
-  axis: StructuralAxis,
-  operation: StructuralOperation,
-): CommandSpec {
+function structuralCommand(verb: string, description: string, axis: StructuralAxis): CommandSpec {
   const isRow = axis === 'row';
   return {
     name: verb,
@@ -404,26 +378,14 @@ function structuralCommand(
       jsonOpt,
     ],
     run: (p, con) =>
-      runEdit(p, con, null, (wb) => {
-        const worksheet = pickSheet(wb, p.str('--sheet'));
-        const index = isRow ? parseRow(p.arg('at')) : parseColumn(p.arg('at'));
-        const n = p.num('--count') ?? 1;
-        if (n < 1) throw new CliError('--count must be at least 1.');
-        checkStructuralEdit(worksheet, axis, operation, index, n);
-        return [new StructuralEditCommand(worksheet.name, axis, operation, index, n)];
-      }),
+      dispatch(p, con, verb, { sheet: p.str('--sheet'), at: p.arg('at'), count: p.num('--count') }),
   };
 }
 
-export const insertRows = structuralCommand('insert-rows', 'Insert rows before a row', 'row', 'insert');
-export const deleteRows = structuralCommand('delete-rows', 'Delete rows', 'row', 'delete');
-export const insertCols = structuralCommand(
-  'insert-cols',
-  'Insert columns before a column',
-  'column',
-  'insert',
-);
-export const deleteCols = structuralCommand('delete-cols', 'Delete columns', 'column', 'delete');
+export const insertRows = structuralCommand('insert-rows', 'Insert rows before a row', 'row');
+export const deleteRows = structuralCommand('delete-rows', 'Delete rows', 'row');
+export const insertCols = structuralCommand('insert-cols', 'Insert columns before a column', 'column');
+export const deleteCols = structuralCommand('delete-cols', 'Delete columns', 'column');
 
 // ---- Hide / unhide rows & columns --------------------------------------------
 
@@ -437,14 +399,9 @@ function visibilityCommand(verb: string, description: string, isRow: boolean, hi
     ],
     options: [sheetOpt, inPlaceOpt, outputOpt, jsonOpt],
     run: (p, con) =>
-      runEdit(p, con, null, (wb) => {
-        const worksheet = pickSheet(wb, p.str('--sheet'));
-        const [first, last] = isRow ? parseRowSpan(p.arg('lines')) : parseColumnSpan(p.arg('lines'));
-        return [
-          isRow
-            ? EditCommands.setRowsHidden(worksheet.name, first, last, hidden)
-            : EditCommands.setColumnsHidden(worksheet.name, first, last, hidden),
-        ];
+      dispatch(p, con, hidden ? 'hide' : 'show', {
+        sheet: p.str('--sheet'),
+        [isRow ? 'rows' : 'columns']: p.arg('lines'),
       }),
   };
 }
@@ -461,11 +418,7 @@ export const merge: CommandSpec = {
   description: 'Merge a range into a single cell',
   args: [fileArg(), { name: 'range', description: 'Range to merge into one cell, e.g. Sheet1.A1:B2' }],
   options: [inPlaceOpt, outputOpt, jsonOpt],
-  run: (p, con) =>
-    runEdit(p, con, null, (wb) => {
-      const { sheet, range } = resolveRange(wb, p.arg('range'));
-      return [EditCommands.mergeCells(sheet.name, range)];
-    }),
+  run: (p, con) => dispatch(p, con, 'merge', { range: p.arg('range') }),
 };
 
 export const unmerge: CommandSpec = {
@@ -473,9 +426,5 @@ export const unmerge: CommandSpec = {
   description: 'Split a merged region back into individual cells',
   args: [fileArg(), { name: 'cell', description: 'Any cell of the merged region, e.g. Sheet1.A1' }],
   options: [inPlaceOpt, outputOpt, jsonOpt],
-  run: (p, con) =>
-    runEdit(p, con, null, (wb) => {
-      const { sheet, address } = resolveCell(wb, p.arg('cell'));
-      return [EditCommands.unmergeCells(sheet.name, address.row, address.column)];
-    }),
+  run: (p, con) => dispatch(p, con, 'unmerge', { cell: p.arg('cell') }),
 };

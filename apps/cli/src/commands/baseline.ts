@@ -1,7 +1,6 @@
 import {
   CellAddress,
   Defaults,
-  EditCommands,
   Evaluator,
   FunctionRegistry,
   NumberFormatter,
@@ -61,6 +60,7 @@ import {
   sheetOpt,
   toOpt,
 } from './options.ts';
+import { runOp } from './apply.ts';
 
 /** The genuinely useful core: convert, cat, get, set, recalc, sheets, info, eval, validate. */
 
@@ -247,12 +247,7 @@ export const set: CommandSpec = {
       resolveLocale(p.str('--locale')),
       p.flag('--json'),
       (session) => {
-        for (const [reference, value] of pairs) {
-          const { sheet, address: a } = resolveCell(session.workbook, reference);
-          session.apply(
-            EditCommands.setInput(sheet.name, a.row, a.column, value, session.locale, session.workbook),
-          );
-        }
+        for (const [cell, value] of pairs) runOp(session, 'set', { cell, value });
       },
       null,
     );

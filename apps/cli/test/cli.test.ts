@@ -1017,6 +1017,41 @@ describe('data, structural, and layout edits', () => {
     expect(run('name', 'list', ods).out).not.toContain('TaxRate');
   });
 
+  it('name add refuses a name the app refuses', () => {
+    const ods = path2('badnames.ods');
+    run('new', ods);
+    const r = run('name', 'add', ods, 'B2', 'A1:A3', '--in-place');
+    expect(r.exit).toBe(1);
+    expect(r.err).toMatch(/cell reference/);
+    expect(run('name', 'add', ods, 'Rate', 'A1', '--in-place').exit).toBe(0);
+    expect(run('name', 'add', ods, 'rate', 'A2', '--in-place').exit).toBe(1);
+  });
+
+  it('set just below a table grows the table, as typing in the app does', () => {
+    const ods = threeRowBook();
+    run('table', ods, 'A1:B3', '--in-place');
+    expect(run('set', ods, 'A4', 'Gamma', '--in-place').exit).toBe(0);
+    expect(sheet1(ods).tables[0]!.range.toString()).toBe('A1:B4');
+  });
+
+  it('set reports a value that breaks its cell validation rule', () => {
+    const ods = path2('dvset.ods');
+    run('new', ods);
+    run('data-validation', ods, 'A1:A3', '--list', 'Red,Green', '--in-place');
+    const r = run('set', ods, 'A1', 'Blue', '--in-place');
+    expect(r.exit).toBe(0);
+    expect(r.err).toMatch(/Sheet1\.A1 breaks its validation rule/);
+  });
+
+  it('a new table takes the first name no table in the workbook has', () => {
+    const ods = threeRowBook();
+    run('add-sheet', ods, 'Other', '--in-place');
+    run('set', ods, 'Other.A1', 'x', '--in-place');
+    run('table', ods, 'Other.A1:A2', '--in-place');
+    const r = run('table', ods, 'A1:B3', '--in-place', '--json');
+    expect(json(r.out).table).toBe('Table2');
+  });
+
   it('hyperlink sets and removes a link without mangling the value', () => {
     const ods = path2('link.ods');
     run('new', ods);

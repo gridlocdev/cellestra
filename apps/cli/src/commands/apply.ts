@@ -10,10 +10,12 @@ import {
   EditCommands,
   Fills,
   InputParser,
+  namedRangeError,
+  planCellEntry,
   RenameSheetCommand,
   StructuralEditCommand,
+  TableCommands,
   dataValidation,
-  table as makeTable,
   type ArgbColor,
   type BorderLineStyle,
   type CellStyle,
@@ -50,7 +52,6 @@ import { addChart, chartSheet, updateChart } from './chartOps.ts';
 import { editTarget, fileArg, inPlaceOpt, jsonOpt, localeOpt, outputOpt } from './options.ts';
 import {
   checkStructuralEdit,
-  nextTableName,
   parseColumn,
   parseColumnSpan,
   parseRow,
@@ -488,16 +489,7 @@ function set(session: EditSession, op: Op): void {
   if (op.has('formula')) {
     // The original {"cell", "formula"} form: the leading = is optional there.
     const formula = op.require('formula');
-    session.apply(
-      EditCommands.setInput(
-        sheet.name,
-        at.row,
-        at.column,
-        formula.startsWith('=') ? formula : '=' + formula,
-        session.locale,
-        wb,
-      ),
-    );
+    enter(session, sheet, at.row, at.column, formula.startsWith('=') ? formula : '=' + formula);
     return;
   }
   setOne(session, sheet, at.row, at.column, op.raw('value'));
@@ -518,13 +510,29 @@ function setOne(
   } else if (typeof value === 'boolean') {
     session.apply(EditCommands.setValue(sheet.name, row, column, CellValue.boolean(value)));
   } else if (typeof value === 'string') {
-    // The same parse as typing into the app: formulas, numbers, dates (with a date format stamped), text.
-    session.apply(EditCommands.setInput(sheet.name, row, column, value, session.locale, session.workbook));
+    enter(session, sheet, row, column, value);
   } else {
     throw new CliError(
       `a cell value must be a number, string, boolean, or null (at ${address(sheet.name, row, column)}).`,
     );
   }
+}
+
+/**
+ * Typing into the app: the same parse (formulas, numbers, dates with a date format stamped, text),
+ * and a table beside the cell grows to take it in. A value that breaks the cell's validation rule
+ * is still written, with a note, so a script can record what it was given (`lint` reports it).
+ */
+function enter(session: EditSession, sheet: Worksheet, row: number, column: number, text: string): void {
+  const entry = planCellEntry(session.workbook, sheet.name, row, column, text, session.locale, (range) =>
+    readRange(sheet, range),
+  );
+  session.apply(entry.command);
+  if (entry.brokenRule) session.note(`${address(sheet.name, row, column)} breaks its validation rule.`);
+}
+
+function* readRange(sheet: Worksheet, range: CellRange): Iterable<CellValue> {
+  for (const [row, column] of range.positions()) yield sheet.getValue(row, column);
 }
 
 function clear(session: EditSession, op: Op): void {
@@ -837,20 +845,18 @@ function sort(session: EditSession, op: Op): void {
 
 function tableOp(session: EditSession, op: Op): void {
   const { sheet, range } = rangeOf(session, op, 'range');
-  const overlapping = sheet.tables.filter((t) => t.range.intersects(range));
-  if (overlapping.length > 0) {
-    if (op.bool('replace') !== true) {
-      throw new CliError(
-        `the range overlaps table '${overlapping[0]!.name}'; a cell can belong to only one table (add "replace": true to redefine it).`,
-      );
-    }
-    for (const old of overlapping) session.apply(DataEditCommands.removeTable(sheet.name, old));
-  }
-  const created = makeTable(op.string('name') ?? nextTableName(sheet), range, {
-    hasHeader: op.bool('header') ?? true,
+  const plan = TableCommands.create(session.workbook, sheet.name, range, {
+    name: op.string('name'),
+    header: op.bool('header') ?? true,
+    replace: op.bool('replace') === true,
   });
-  session.apply(DataEditCommands.createStyledTable(session.workbook, sheet.name, created));
-  session.field('table', created.name);
+  if (!plan.ok) {
+    throw new CliError(
+      `the range overlaps table '${plan.overlapping[0]!.name}'; a cell can belong to only one table (add "replace": true to redefine it).`,
+    );
+  }
+  session.apply(plan.command);
+  session.field('table', plan.table.name);
 }
 
 function validation(session: EditSession, op: Op): void {
@@ -1048,10 +1054,11 @@ function tableOptions(session: EditSession, op: Op): void {
 
 function name(session: EditSession, op: Op): void {
   const { sheet, range } = rangeOf(session, op, 'range');
-  session.workbook.addNamedRange({
-    name: op.require('name'),
-    target: range.withSheet(range.sheet ?? sheet.name),
-  });
+  const named = op.require('name');
+  const error = namedRangeError(session.workbook, named);
+  if (error !== null) throw new CliError(error);
+  // Stored fully sheet-qualified, so the name resolves whatever sheet is active.
+  session.workbook.addNamedRange({ name: named, target: range.withSheet(range.sheet ?? sheet.name) });
 }
 
 function hyperlink(session: EditSession, op: Op): void {

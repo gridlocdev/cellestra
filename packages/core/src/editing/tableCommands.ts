@@ -1,15 +1,71 @@
+import { DataRegion } from '../data/dataRegion.ts';
 import { TableAutoExpand } from '../data/tables.ts';
-import type { Table } from '../data/types.ts';
+import { table as makeTable, type Table } from '../data/types.ts';
 import { CellRange } from '../model/cellRange.ts';
 import type { Workbook } from '../model/workbook.ts';
+import type { Worksheet } from '../model/worksheet.ts';
 import type { CellStyle } from '../styling/cellStyle.ts';
 import { CellValue } from '../values/cellValue.ts';
 import { CellSnapshotCommand } from './cellSnapshotCommand.ts';
 import { ActionCommand, EditResult, requireSheet, type EditCommand } from './editCommand.ts';
 import { EditCommands } from './editCommands.ts';
+import { StructuralEditCommand } from './structuralEditCommand.ts';
+
+/** How `TableCommands.create` treats the range's first row. */
+export type TableHeaderChoice = boolean | 'labels';
+
+/** A table ready to create, or why not: the range overlaps these tables. */
+export type TablePlan =
+  | { readonly ok: true; readonly command: EditCommand; readonly table: Table }
+  | { readonly ok: false; readonly overlapping: readonly Table[] };
 
 /** Undoable table edits: create, restyle, resize, grow for an entry, remove. */
 export const TableCommands = {
+  /**
+   * Create Table, as one undo step. The name defaults to the next free `TableN` in the workbook
+   * (tables are saved as document-wide database ranges). `header: 'labels'` gives every table a
+   * header row: a first row of text labels is it, otherwise "Column N" labels go in the blank row
+   * just above, or in a row inserted there. A range that overlaps a table is refused unless
+   * `replace` is set, which removes those tables in the same step.
+   */
+  create(
+    workbook: Workbook,
+    sheet: string,
+    range: CellRange,
+    options: { name?: string | null; header?: TableHeaderChoice; replace?: boolean } = {},
+  ): TablePlan {
+    const ws = requireSheet(workbook, sheet);
+    const overlapping = ws.tables.filter((t) => t.range.intersects(range));
+    if (overlapping.length > 0 && options.replace !== true) return { ok: false, overlapping };
+    const steps: EditCommand[] = overlapping.map((t) => TableCommands.removeTable(sheet, t));
+    const header = options.header ?? true;
+    let target = range;
+    if (header === 'labels' && !DataRegion.firstRowIsLabels(ws, range)) {
+      const above = range.top - 1;
+      const free =
+        above >= 0 &&
+        rowIsBlank(ws, above, range.left, range.right) &&
+        !ws.tables.some((t) => t.range.top <= above && t.range.bottom >= above);
+      if (free) target = CellRange.fromBounds(above, range.left, range.bottom, range.right);
+      else {
+        steps.push(new StructuralEditCommand(sheet, 'row', 'insert', range.top, 1));
+        target = CellRange.fromBounds(range.top, range.left, range.bottom + 1, range.right);
+      }
+    }
+    const table = makeTable(options.name ?? TableCommands.nextName(workbook), target, {
+      hasHeader: header !== false,
+    });
+    steps.push(TableCommands.createStyledTable(workbook, sheet, table));
+    const command = steps.length === 1 ? steps[0]! : EditCommands.composite('Create Table', steps);
+    return { ok: true, command, table };
+  },
+
+  /** The first `TableN` no table in the workbook is called (names compare without case). */
+  nextName(workbook: Workbook): string {
+    const taken = new Set(workbook.worksheets.flatMap((s) => s.tables).map((t) => t.name.toLowerCase()));
+    for (let n = 1; ; n++) if (!taken.has(`table${n}`)) return `Table${n}`;
+  },
+
   createTable: (sheet: string, table: Table): EditCommand =>
     new ActionCommand(
       'Create Table',
@@ -130,4 +186,9 @@ function swapTable(label: string, sheet: string, existing: Table, replacement: T
       return EditResult.none;
     },
   );
+}
+
+function rowIsBlank(sheet: Worksheet, row: number, left: number, right: number): boolean {
+  for (let c = left; c <= right; c++) if (sheet.getValue(row, c).kind !== 'empty') return false;
+  return true;
 }

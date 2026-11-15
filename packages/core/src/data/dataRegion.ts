@@ -54,6 +54,17 @@ export const DataRegion = {
     }
     return headerAllText && bodyHasNonText;
   },
+
+  /** A first row of text labels (blanks allowed, but no numbers, dates or other values) reads as a header. */
+  firstRowIsLabels(sheet: Worksheet, range: CellRange): boolean {
+    let anyText = false;
+    for (let c = range.left; c <= range.right; c++) {
+      const v = sheet.getValue(range.top, c);
+      if (v.kind !== 'text' && v.kind !== 'empty') return false;
+      if (v.kind === 'text') anyText = true;
+    }
+    return anyText;
+  },
 } as const;
 
 function rowHasData(sheet: Worksheet, row: number, left: number, right: number): boolean {

@@ -79,14 +79,6 @@ export function splitList(text: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-export function nextTableName(sheet: Worksheet): string {
-  const taken = new Set(sheet.tables.map((t) => t.name.toLowerCase()));
-  for (let i = 1; ; i++) {
-    const candidate = `Table${i}`;
-    if (!taken.has(candidate.toLowerCase())) return candidate;
-  }
-}
-
 /**
  * Refuse an insert or delete the sheet can't hold: a count past the sheet's edge, or an insert that
  * would push stored cells off the last row or column (the engine would drop them silently).

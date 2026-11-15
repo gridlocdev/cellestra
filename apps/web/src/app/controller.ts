@@ -8,15 +8,16 @@ import {
   ClipboardBlock,
   CompositeEditCommand,
   DataEditCommands,
-  ActionCommand,
   DataRegion,
+  namedRangeError,
+  planCellEntry,
+  SortFilterCommands,
+  TableCommands,
   DataScope,
   EdgeNavigator,
-  EditResult,
   FilterEngine,
   InputParser,
   ValidationPreflight,
-  Validator,
   CellValue,
   EditCommands,
   FillCommand,
@@ -1264,29 +1265,23 @@ export class AppController {
 
   commit(row: number, column: number, text: string): boolean {
     const s = this.session;
-    const sheet = this.sheet;
-    const rule = sheet.findValidation(row, column);
-    if (rule) {
-      const parsed = InputParser.parse(text, s.locale);
-      if (parsed.formula === null && !Validator.isValid(rule, parsed.value, s.locale, this.resolver)) {
-        if (rule.response === 'stop') {
-          this.error(rule.errorMessage || 'That value is not allowed for this cell.');
-          return false;
-        }
-        if (rule.response !== 'none')
-          this.info(rule.errorMessage || 'That value does not match the cell’s validation rule.');
-      }
+    const entry = planCellEntry(
+      s.workbook.peek(),
+      this.sheetName,
+      row,
+      column,
+      text,
+      s.locale,
+      this.resolver,
+    );
+    const rule = entry.brokenRule;
+    if (rule?.response === 'stop') {
+      this.error(rule.errorMessage || 'That value is not allowed for this cell.');
+      return false;
     }
-    const wb = s.workbook.peek();
-    const set = EditCommands.setInput(this.sheetName, row, column, text, s.locale, wb);
-    let expand: EditCommand | null = null;
-    if (text !== '' && !sheet.findTable(row, column)) {
-      for (const t of sheet.tables) {
-        expand = DataEditCommands.expandTableForEdit(wb, this.sheetName, t, row, column);
-        if (expand) break;
-      }
-    }
-    this.run(expand ? new CompositeEditCommand(set.label, [set, expand]) : set);
+    if (rule && rule.response !== 'none')
+      this.info(rule.errorMessage || 'That value does not match the cell’s validation rule.');
+    this.run(entry.command);
     return true;
   }
 
@@ -1727,7 +1722,7 @@ export class AppController {
     const region = this.regionOrSelection;
     if (region.rowCount < 2) return;
     const { column } = this.selection.active.peek();
-    const hasHeader = this.range.isSingleCell && looksLikeHeader(this.sheet, region);
+    const hasHeader = this.range.isSingleCell && DataRegion.firstRowIsLabels(this.sheet, region);
     this.run(
       DataEditCommands.sortByColumn(
         this.sheetName,
@@ -1742,7 +1737,7 @@ export class AppController {
 
   removeDuplicates(): void {
     const region = this.regionOrSelection;
-    const hasHeader = looksLikeHeader(this.sheet, region);
+    const hasHeader = DataRegion.firstRowIsLabels(this.sheet, region);
     const columns = range(region.left, region.right);
     const { command, removedCount } = DataEditCommands.removeDuplicates(
       this.sheetName,
@@ -1784,7 +1779,7 @@ export class AppController {
     const t = this.sheet.findTable(row, column);
     if (t) return { range: t.range, hasHeader: t.hasHeader, table: t };
     const range = this.regionOrSelection;
-    return { range, hasHeader: looksLikeHeader(this.sheet, range), table: null };
+    return { range, hasHeader: DataRegion.firstRowIsLabels(this.sheet, range), table: null };
   }
 
   /** The AutoFilter or table at the cursor, if any (for enabling Clear Filter and friends). */
@@ -1799,28 +1794,7 @@ export class AppController {
   }
 
   sortFilterCommit(target: DataTarget, sort: SortSpec | null, filter: FilterSpec | null): void {
-    this.run(this.#sortFilterCommand(target, sort, filter));
-  }
-
-  /**
-   * One undo step. A plain AutoFilter left with no filter or sort would vanish, so it is put back in
-   * the same step (keeping its chevrons).
-   */
-  #sortFilterCommand(target: DataTarget, sort: SortSpec | null, filter: FilterSpec | null): EditCommand {
-    const sheet = this.sheetName;
-    const locale = this.session.locale;
-    const steps: EditCommand[] = [];
-    if (target.table) {
-      const auto = this.sheet.activeFilter;
-      if (auto && auto.equals(target.table.range))
-        steps.push(DataEditCommands.applySortAndFilter(sheet, auto, null, null, locale));
-      steps.push(DataEditCommands.applyTableSortAndFilter(sheet, target.table, sort, filter, locale));
-    } else {
-      steps.push(DataEditCommands.applySortAndFilter(sheet, target.range, sort, filter, locale));
-      if (!filter && !sort && this.sheet.activeFilter?.equals(target.range))
-        steps.push(this.#autoFilterState(target.range));
-    }
-    return steps.length === 1 ? steps[0]! : new CompositeEditCommand('Sort & Filter', steps);
+    this.run(SortFilterCommands.sortAndFilter(this.sheet, target, sort, filter, this.session.locale));
   }
 
   /** Filter dropdown: replace one column's checklist (null = show all) and optionally sort by it. */
@@ -1869,16 +1843,7 @@ export class AppController {
 
   toggleFilter(): void {
     const sheet = this.sheet;
-    if (sheet.activeFilter) {
-      const range = sheet.activeFilter;
-      this.run(
-        each('Remove AutoFilter', [
-          DataEditCommands.applySortAndFilter(this.sheetName, range, null, null, this.session.locale),
-          this.#autoFilterState(null),
-        ]),
-      );
-      return;
-    }
+    if (sheet.activeFilter) return this.run(SortFilterCommands.removeAutoFilter(sheet, this.session.locale));
     const target = this.dataTarget();
     if (target.table) return this.info('Tables have their own filter buttons.');
     // Whole columns (A:D) would filter, and save hidden flags for, a million empty rows.
@@ -1896,64 +1861,17 @@ export class AppController {
 
   #setAutoFilter(range: CellRange): void {
     if (this.sheet.activeFilter?.equals(range)) return;
-    this.run(this.#autoFilterState(range));
-  }
-
-  /** Undoable switch of the sheet's AutoFilter range (keeps spec/sort only when the range stays). */
-  #autoFilterState(range: CellRange | null): EditCommand {
-    const name = this.sheetName;
-    let before: [CellRange | null, FilterSpec | null, SortSpec | null] = [null, null, null];
-    const ws = (wb: { findSheet(n: string): Worksheet | undefined }) => wb.findSheet(name)!;
-    return new ActionCommand(
-      range ? 'AutoFilter' : 'Remove AutoFilter',
-      (wb) => {
-        const s = ws(wb);
-        before = [s.activeFilter, s.activeFilterSpec, s.activeSort];
-        const same = range && s.activeFilter?.equals(range);
-        s.activeFilter = range;
-        if (!same) {
-          s.activeFilterSpec = null;
-          s.activeSort = null;
-        }
-        return EditResult.none;
-      },
-      (wb) => {
-        const s = ws(wb);
-        [s.activeFilter, s.activeFilterSpec, s.activeSort] = before;
-        return EditResult.none;
-      },
-    );
+    this.run(SortFilterCommands.setAutoFilter(this.sheetName, range));
   }
 
   createTable(): void {
-    const sheet = this.sheet;
-    const r = clampToUsed(sheet, this.regionOrSelection);
+    const r = clampToUsed(this.sheet, this.regionOrSelection);
     if (!r) return this.info('Select some data to make a table.');
-    if (sheet.tables.some((t) => t.range.intersects(r)))
-      return this.info('That range overlaps an existing table.');
-    let n = 1;
-    while (sheet.tables.some((t) => t.name.toLowerCase() === `table${n}`)) n++;
-    // Every table gets a header row, so its columns always have filter and sort arrows. A first
-    // row of labels is that header; otherwise the labels (Column 1, …) go in a new row above the
-    // data: the empty row just above when there is one, else a row inserted there.
-    let range = r;
-    let insert: EditCommand | null = null;
-    if (!looksLikeHeader(sheet, r)) {
-      const above = r.top - 1;
-      const free =
-        above >= 0 &&
-        rowIsBlank(sheet, above, r.left, r.right) &&
-        !sheet.tables.some((t) => t.range.top <= above && t.range.bottom >= above);
-      if (free) range = CellRange.fromBounds(above, r.left, r.bottom, r.right);
-      else {
-        insert = new StructuralEditCommand(this.sheetName, 'row', 'insert', r.top, 1);
-        range = CellRange.fromBounds(r.top, r.left, r.bottom + 1, r.right);
-      }
-    }
-    const t: Table = { name: `Table${n}`, range, hasHeader: true };
-    const create = DataEditCommands.createStyledTable(this.session.workbook.peek(), this.sheetName, t);
-    this.run(insert ? EditCommands.composite('Create Table', [insert, create]) : create);
-    this.selection.select(range.top, range.left);
+    // Every table gets a header row, so its columns always have filter and sort arrows.
+    const plan = TableCommands.create(this.session.workbook.peek(), this.sheetName, r, { header: 'labels' });
+    if (!plan.ok) return this.info('That range overlaps an existing table.');
+    this.run(plan.command);
+    this.selection.select(plan.table.range.top, plan.table.range.left);
   }
 
   /** ⌘A: inside a table, the table first; pressed again (or outside one), the whole sheet. */
@@ -2060,9 +1978,8 @@ export class AppController {
   /** Named ranges change the workbook directly (not undoable), then formulas are re-planned. */
   addNamedRange(nr: NamedRange): string | null {
     const wb = this.session.workbook.peek();
-    if (!/^[A-Za-z_\\][A-Za-z0-9_.]*$/.test(nr.name) || CellAddress.tryParse(nr.name))
-      return 'Names start with a letter or underscore and can’t look like a cell reference.';
-    if (wb.findNamedRange(nr.name, nr.scope ?? null)) return `“${nr.name}” already exists.`;
+    const error = namedRangeError(wb, nr.name, nr.scope ?? null);
+    if (error) return error;
     wb.addNamedRange(nr);
     this.session.namesChanged();
     return null;
@@ -2421,23 +2338,6 @@ function range(from: number, to: number): number[] {
   const out: number[] = [];
   for (let i = from; i <= to; i++) out.push(i);
   return out;
-}
-
-/** A first row of all text over a column that isn't all text reads as a header. */
-/** A first row of text labels (no numbers, dates or formulas' results other than text) is a header. */
-function looksLikeHeader(sheet: Worksheet, region: CellRange): boolean {
-  let anyText = false;
-  for (let c = region.left; c <= region.right; c++) {
-    const v = sheet.getValue(region.top, c);
-    if (v.kind !== 'text' && v.kind !== 'empty') return false;
-    if (v.kind === 'text') anyText = true;
-  }
-  return anyText;
-}
-
-function rowIsBlank(sheet: Worksheet, row: number, left: number, right: number): boolean {
-  for (let c = left; c <= right; c++) if (sheet.getValue(row, c).kind !== 'empty') return false;
-  return true;
 }
 
 function splitNasId(id: string): [string, string] {
