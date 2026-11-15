@@ -268,11 +268,16 @@ export function dispatch(
 ): number {
   const path = p.arg('file');
   const target = editTarget(path, p.flag('--in-place'), p.str('--output'));
-  const present = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== null && v !== undefined));
+  // `undefined` is always dropped; null too, unless the verb asks for "remove" with it.
+  const present = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined && v !== null));
+  for (const [k, v] of Object.entries(fields)) if (v === REMOVE) present[k] = null;
   return EditSession.run(con, path, target, locale, p.flag('--json'), (session) =>
     runOp(session, kind, present),
   );
 }
+
+/** A field value a verb passes to `dispatch` to send an explicit null ("remove it"). */
+export const REMOVE = Symbol('remove');
 
 // ---- Dispatch ----------------------------------------------------------------
 
@@ -402,6 +407,10 @@ function run(session: EditSession, op: Op, kind: string): void {
       return structural(session, op, 'column', 'delete');
     case 'sort':
       return sort(session, op);
+    case 'remove-duplicates':
+      return removeDuplicates(session, op);
+    case 'split':
+      return split(session, op);
     case 'table':
       return tableOp(session, op);
     case 'validation':
@@ -841,6 +850,22 @@ function sort(session: EditSession, op: Op): void {
       session.locale,
     ),
   );
+}
+
+function removeDuplicates(session: EditSession, op: Op): void {
+  const { sheet, range } = rangeOf(session, op, 'range');
+  const keyColumns = op.strings('columns').map(parseColumn);
+  const edit = DataEditCommands.removeDuplicates(sheet.name, range, keyColumns, op.bool('header') ?? true);
+  session.apply(edit.command);
+  session.field('removed', edit.removedCount());
+  session.note(`Removed ${edit.removedCount()} duplicate row(s).`);
+}
+
+function split(session: EditSession, op: Op): void {
+  const { sheet, range } = rangeOf(session, op, 'range');
+  const delimiter = op.string('delimiter') ?? ',';
+  if ([...delimiter].length !== 1) throw new CliError('"delimiter" must be a single character.');
+  session.apply(DataEditCommands.textToColumns(sheet, range, delimiter));
 }
 
 function tableOp(session: EditSession, op: Op): void {

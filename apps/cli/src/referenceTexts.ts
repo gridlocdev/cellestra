@@ -61,6 +61,8 @@ Blocks
 
 Data
   {"op":"sort", "range":"A1:D100", "by":"B,A:desc", "header":true}
+  {"op":"remove-duplicates", "range":"A1:D100", "columns":["A","C"], "header":true}   columns: the key columns (default: all)
+  {"op":"split", "range":"A1:A100", "delimiter":";"}   text to columns (default delimiter ,)
   {"op":"table", "range":"A1:D20", "name":"Sales", "header":true, "replace":true}   replace: redefine a table already on the range
   {"op":"table-options", "table":"Sales", "bandedRows":true, "headerColumn":true, "range":"A1:D30"}   table: a name or a cell in it
   {"op":"table-remove", "table":"Sales"}

@@ -948,6 +948,22 @@ describe('data, structural, and layout edits', () => {
     expect(run('get', ods, 'A4').out.trim()).toBe('');
   });
 
+  it('apply runs remove-duplicates and split like the verbs', () => {
+    const ods = threeRowBook();
+    const ops = path2('data-ops.json');
+    run('set', ods, 'A4', 'Beta', '--in-place');
+    run('set', ods, 'B4', '2', '--in-place');
+    run('set', ods, 'D1', 'x;y', '--in-place');
+    writeFileSync(
+      ops,
+      `[{"op":"remove-duplicates","range":"A1:B4","columns":"A"},{"op":"split","range":"D1:D1","delimiter":";"}]`,
+    );
+    const r = run('apply', ods, ops, '--in-place', '--json');
+    expect(r.exit).toBe(0);
+    expect(run('get', ods, 'A4').out.trim()).toBe('');
+    expect(run('get', ods, 'E1').out.trim()).toBe('y');
+  });
+
   it('clean-up --dry-run reports without writing', () => {
     const ods = messyBook();
     const before = statSync(ods).mtimeMs;

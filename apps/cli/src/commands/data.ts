@@ -1,23 +1,13 @@
-import {
-  CleanUp,
-  DataEditCommands,
-  EditCommands,
-  cleanUpNoteText,
-  type EditCommand,
-  type StructuralAxis,
-  type Workbook,
-} from '@cellestra/core';
-import { pickSheet, resolveCell, resolveRange } from '../infra/cells.ts';
+import { CleanUp, cleanUpNoteText, type StructuralAxis } from '@cellestra/core';
+import { pickSheet } from '../infra/cells.ts';
 import { EditSession } from '../infra/editSession.ts';
 import { CliError } from '../infra/errors.ts';
-import type { Console } from '../infra/io.ts';
 import { resolveLocale } from '../infra/locale.ts';
 import { namedRangeReport, writeReport } from '../infra/report.ts';
 import { load } from '../infra/workspace.ts';
-import type { CommandSpec, OptionSpec, Parsed } from '../spec.ts';
-import { dispatch } from './apply.ts';
+import type { CommandSpec, OptionSpec } from '../spec.ts';
+import { dispatch, REMOVE } from './apply.ts';
 import { editTarget, fileArg, inPlaceOpt, jsonOpt, localeOpt, outputOpt, sheetOpt } from './options.ts';
-import { parseColumn, splitList } from './parsers.ts';
 
 /**
  * Data verbs: sort, remove-duplicates, clean-up, split, table, data-validation, named ranges,
@@ -29,20 +19,6 @@ const noHeaderOpt: OptionSpec = {
   description: 'Treat the first row as data, not a header',
   kind: 'flag',
 };
-
-/** Load, run the built edit commands, recalc, and save atomically to the resolved target. */
-function runEdit(
-  p: Parsed,
-  con: Console,
-  locale: string | null,
-  build: (wb: Workbook, locale: string) => readonly EditCommand[],
-): number {
-  const path = p.arg('file');
-  const target = editTarget(path, p.flag('--in-place'), p.str('--output'));
-  return EditSession.run(con, path, target, locale, p.flag('--json'), (session) => {
-    for (const edit of build(session.workbook, session.locale)) session.apply(edit);
-  });
-}
 
 export const sort: CommandSpec = {
   name: 'sort',
@@ -81,18 +57,12 @@ export const removeDuplicates: CommandSpec = {
     outputOpt,
     jsonOpt,
   ],
-  run(p, con) {
-    const path = p.arg('file');
-    const target = editTarget(path, p.flag('--in-place'), p.str('--output'));
-    return EditSession.run(con, path, target, null, p.flag('--json'), (session) => {
-      const { sheet, range } = resolveRange(session.workbook, p.arg('range'));
-      const keyColumns = splitList(p.str('--columns') ?? '').map(parseColumn);
-      const edit = DataEditCommands.removeDuplicates(sheet.name, range, keyColumns, !p.flag('--no-header'));
-      session.apply(edit.command);
-      session.field('removed', edit.removedCount());
-      session.note(`Removed ${edit.removedCount()} duplicate row(s).`);
-    });
-  },
+  run: (p, con) =>
+    dispatch(p, con, 'remove-duplicates', {
+      range: p.arg('range'),
+      columns: p.str('--columns'),
+      header: p.flag('--no-header') ? false : null,
+    }),
 };
 
 /**
@@ -163,13 +133,11 @@ export const split: CommandSpec = {
     outputOpt,
     jsonOpt,
   ],
-  run: (p, con) =>
-    runEdit(p, con, null, (wb) => {
-      const { sheet, range } = resolveRange(wb, p.arg('column'));
-      const d = p.str('--delimiter') ?? ',';
-      if ([...d].length !== 1) throw new CliError('--delimiter must be a single character.');
-      return [DataEditCommands.textToColumns(sheet, range, d)];
-    }),
+  run(p, con) {
+    const delimiter = p.str('--delimiter') ?? ',';
+    if ([...delimiter].length !== 1) throw new CliError('--delimiter must be a single character.');
+    return dispatch(p, con, 'split', { range: p.arg('column'), delimiter });
+  },
 };
 
 // ---- Tables & validation (fronts on the apply ops) ---------------------------
@@ -344,19 +312,14 @@ export const hyperlink: CommandSpec = {
     outputOpt,
     jsonOpt,
   ],
-  run: (p, con) =>
-    runEdit(p, con, null, (wb) => {
-      const { sheet, address } = resolveCell(wb, p.arg('cell'));
-      let link: { target: string; tooltip: string | null } | null = null;
-      if (!p.flag('--remove')) {
-        const target = p.argOrNull('url');
-        if (target === null || target.trim() === '') {
-          throw new CliError('Give a url, or pass --remove to clear the link.');
-        }
-        link = { target, tooltip: p.str('--tooltip') };
-      }
-      return [EditCommands.setHyperlink(wb, sheet.name, address.row, address.column, link)];
-    }),
+  run(p, con) {
+    if (p.flag('--remove')) return dispatch(p, con, 'hyperlink', { cell: p.arg('cell'), url: REMOVE });
+    const url = p.argOrNull('url');
+    if (url === null || url.trim() === '') {
+      throw new CliError('Give a url, or pass --remove to clear the link.');
+    }
+    return dispatch(p, con, 'hyperlink', { cell: p.arg('cell'), url, tooltip: p.str('--tooltip') });
+  },
 };
 
 // ---- Insert / delete rows & columns ------------------------------------------

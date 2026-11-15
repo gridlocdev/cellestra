@@ -117,7 +117,8 @@ headers, centring, page order), `width`, `height`, `freeze`,
 app's paste), `fill` (the fill handle), `paint` (format painter), `filter` (hide rows by SUMIF-style
 conditions or allowed values; `clear` to show all), `add-sheet` (`at`, `ifMissing`)/`rename-sheet`/
 `delete-sheet`/`duplicate-sheet`/`move-sheet`, `settings` (locale, calc, activeSheet),
-`insert-rows`/`delete-rows`/`insert-cols`/`delete-cols`, `sort`, `table` (`replace`)/
+`insert-rows`/`delete-rows`/`insert-cols`/`delete-cols`, `sort`, `remove-duplicates`, `split`
+(text to columns), `table` (`replace`)/
 `table-options` (banded rows, header column, resize)/`table-remove`, `validation` (list, or
 whole/decimal/date/text-length with an operator and bounds; `remove`), `name`/`unname`,
 `hyperlink`, `chart`/`chart-update`/`chart-remove`. Re-running a batch is safe when you use
