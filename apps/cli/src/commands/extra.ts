@@ -679,11 +679,7 @@ export const renameSheet: CommandSpec = {
     { name: 'new', description: 'New sheet name' },
   ],
   options: [inPlaceOpt, outputOpt, jsonOpt],
-  run: (p, con) =>
-    mutate(p, con, (session) => {
-      session.workbook.renameSheet(pickSheet(session.workbook, p.arg('old')), p.arg('new'));
-      session.field('sheet', p.arg('new'));
-    }),
+  run: (p, con) => dispatch(p, con, 'rename-sheet', { name: p.arg('old'), to: p.arg('new') }),
 };
 
 export const deleteSheet: CommandSpec = {

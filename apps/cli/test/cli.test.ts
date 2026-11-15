@@ -1057,6 +1057,26 @@ describe('data, structural, and layout edits', () => {
   });
 });
 
+describe('rename-sheet', () => {
+  it('rewrites formulas that name the sheet, as the verb and as an apply op', () => {
+    const ods = path2('rename.ods');
+    run('new', ods);
+    run('add-sheet', ods, 'Data', '--in-place');
+    run('set', ods, 'Data.A1', '7', '--in-place');
+    run('set', ods, 'Sheet1.A1', '=Data.A1*2', '--in-place');
+
+    expect(run('rename-sheet', ods, 'Data', 'Input', '--in-place').exit).toBe(0);
+    expect(run('get', ods, 'Sheet1.A1', '--formula').out.trim()).toBe('=Input.A1*2');
+    expect(run('get', ods, 'Sheet1.A1').out.trim()).toBe('14');
+
+    const ops = path2('ops.json');
+    writeFileSync(ops, JSON.stringify([{ op: 'rename-sheet', name: 'Input', to: 'Source' }]));
+    expect(run('apply', ods, ops, '--in-place').exit).toBe(0);
+    expect(run('get', ods, 'Sheet1.A1', '--formula').out.trim()).toBe('=Source.A1*2');
+    expect(run('get', ods, 'Sheet1.A1').out.trim()).toBe('14');
+  });
+});
+
 describe('chart sheets', () => {
   function chartDataBook(): string {
     const ods = path2('chartdata.ods');

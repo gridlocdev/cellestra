@@ -12,6 +12,7 @@ import {
   EditResult,
   Fills,
   InputParser,
+  RenameSheetCommand,
   StructuralEditCommand,
   dataValidation,
   table as makeTable,
@@ -312,9 +313,13 @@ function run(session: EditSession, op: Op, kind: string): void {
       return visibility(session, op, false);
     case 'add-sheet':
       return addSheet(session, op);
-    case 'rename-sheet':
-      wb.renameSheet(pickSheet(wb, op.require('name')), op.require('to'));
+    case 'rename-sheet': {
+      const sheet = pickSheet(wb, op.require('name'));
+      const to = op.require('to');
+      session.apply(new RenameSheetCommand(sheet.name, to));
+      session.field('sheet', to);
       return;
+    }
     case 'duplicate-sheet': {
       const copy = wb.duplicateSheet(pickSheet(wb, op.require('name')));
       const newName = op.string('as');
