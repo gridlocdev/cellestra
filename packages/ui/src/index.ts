@@ -107,6 +107,7 @@ export { Grid, type GridHost, type GridController, type GridProps } from './grid
 export { Icon } from './components/Icon.tsx';
 export { Dialog } from './components/Dialog.tsx';
 export { CommandMenu, QuickPick } from './components/CommandMenu.tsx';
+export { listStep } from './components/listStep.ts';
 export { FormulaBar } from './components/FormulaBar.tsx';
 export { SheetTabs } from './components/SheetTabs.tsx';
 export { NasBrowser } from './components/NasBrowser.tsx';

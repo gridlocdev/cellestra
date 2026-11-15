@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { compact, type CommandCatalog } from '../commands/command.ts';
 import { Icon } from './Icon.tsx';
+import { listStep } from './listStep.ts';
 
 /** ⌘K: search and run any command. Recent commands come first when the query is empty. */
 export function CommandMenu({
@@ -112,12 +113,11 @@ function ListPopup(props: {
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
+    const step = listStep(e, props.index, props.count);
+    if (step !== undefined) {
+      // Tab and Shift+Tab step through the list too, so focus never leaves the field.
       e.preventDefault();
-      props.onIndex(Math.min(props.count - 1, props.index + 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      props.onIndex(Math.max(0, props.index - 1));
+      props.onIndex(step);
     } else if (e.key === 'Enter') {
       e.preventDefault();
       props.onPick(props.index);

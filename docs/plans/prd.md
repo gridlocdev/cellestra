@@ -306,7 +306,7 @@ The **window title** is the document's file name (`Budget.ods`, or `Untitled`), 
 
 ### 6.7 Command Menu and sheet switcher
 
-Two keyboard-summoned overlays are the fast path to "do a thing" and "go somewhere" — both modeled on VS Code's palettes. Each appears as a floating, centered input with a filtered result list below it; ↑/↓ move the highlight, Return activates it, Esc dismisses without changing anything.
+Two keyboard-summoned overlays are the fast path to "do a thing" and "go somewhere" — both modeled on VS Code's palettes. Each appears as a floating, centered input with a filtered result list below it; ↑/↓ (or Tab/⇧Tab) move the highlight, stopping at the ends, Return activates it, Esc dismisses without changing anything.
 
 **Command Menu — ⌘K (run any command).**
 - Opens an input over the grid; typing **fuzzy-filters every command in the `AppCommands` catalog** by name (see `architecture.md`). The command bar's "Search commands…" affordance opens the same palette.
