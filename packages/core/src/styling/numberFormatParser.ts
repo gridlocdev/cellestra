@@ -10,12 +10,16 @@ export type NumberFormatKind =
   | 'dateTime'
   | 'text';
 
+/** `[$` followed by a symbol: `[$€-407]`, `[$USD]`. A bare locale tag `[$-409]` has none. */
+const CURRENCY_TOKEN = /\[\$[^\]-]/;
+
 /** Classify a format code by its pattern letters only — literals (`"days"`, `[RED]`, `\d`) don't count. */
 export function classifyNumberFormat(code: string | null | undefined): NumberFormatKind {
   if (!code || code.toLowerCase() === 'general') return 'general';
   if (code === '@') return 'text';
-  // A currency-locale token is currency by definition, whatever letters its locale tag contains.
-  if (code.includes('[$')) return 'currency';
+  // A currency token (`[$€-407]`, `[$USD]`) is currency by definition, whatever letters its locale
+  // tag contains. A locale tag alone (`[$-409]`) only sets the language, so the pattern decides.
+  if (CURRENCY_TOKEN.test(code)) return 'currency';
   const pattern = withoutLiterals(code);
   const hasDate = /[yYdD]/.test(pattern);
   const hasMonth = /[mM]/.test(pattern);

@@ -51,6 +51,18 @@ describe('fraction number formats', () => {
     expect(classifyNumberFormat('d/m/yy')).toBe('date');
   });
 
+  it.each([
+    ['[$-409]d/m/yy', 'date'],
+    ['[$-F800]dddd, mmmm dd, yyyy', 'date'],
+    ['[$-409]h:mm AM/PM', 'time'],
+    ['[$-409]#,##0.00', 'number'],
+    ['[$€-407] #,##0.00', 'currency'],
+    ['[$USD] 0.00', 'currency'],
+    ['#,##0.00 [$kr.-406]', 'currency'],
+  ])('a locale tag alone is not currency, a symbol is: %s is %s', (code, kind) => {
+    expect(classifyNumberFormat(code)).toBe(kind);
+  });
+
   it.each(['# ?/?', '# ??/??', '?/4', '# ?/4', '?/?', '0 ?/?', '# ?/16', '# ???/???'])(
     'writes and reads back %s',
     (code) => {
