@@ -1,5 +1,7 @@
 import {
+  accessSync,
   chownSync,
+  constants as fsConstants,
   closeSync,
   existsSync,
   fchmodSync,
@@ -128,23 +130,18 @@ export function saveText(con: Console, content: string, path: string): void {
 }
 
 /**
- * Write next to the target, fsync, then rename over it: a reader never sees half a file. A symlink
- * is followed, so the link stays and its target is replaced. The replacement keeps the target's
- * mode (and owner, where permitted). A hard-linked target is written in place instead, since a
- * rename would split the link.
+ * Write next to the target, fsync, rename over it, then fsync the folder: a reader never sees half a
+ * file, and the rename is on disk too. A symlink is followed, so the link stays and its target is
+ * replaced. The replacement keeps the target's mode (and owner, where permitted). A read-only target
+ * is refused rather than replaced. A hard-linked target is written in place instead, since a rename
+ * would split the link.
  */
 export function atomicWrite(path: string, bytes: Uint8Array): void {
   const full = realTarget(resolve(path));
   const target = statOrNull(full);
+  if (target && !writable(full)) throw new CliError(`'${path}' is read-only; nothing was written.`);
   if (target && target.nlink > 1) {
-    const fd = openSync(full, 'r+');
-    try {
-      ftruncateSync(fd, 0);
-      writeAll(fd, bytes);
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
+    writeInPlace(full, bytes);
     return;
   }
   const mode = target ? target.mode & 0o7777 : 0o644;
@@ -171,6 +168,49 @@ export function atomicWrite(path: string, bytes: Uint8Array): void {
   } catch (e) {
     if (created) rmSync(temp, { force: true });
     throw e;
+  }
+  syncDir(dirname(full));
+}
+
+/**
+ * Not atomic, as the server and desktop app do it: write the new bytes over the old ones first and
+ * cut to length only after, so a crash part-way leaves the new bytes at the front (possibly with old
+ * ones after), never an empty file.
+ */
+function writeInPlace(full: string, bytes: Uint8Array): void {
+  const fd = openSync(full, 'r+');
+  try {
+    writeAll(fd, bytes);
+    ftruncateSync(fd, bytes.length);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Errors from fsyncing a folder on platforms or file systems that don't allow it (Windows, some SMB). */
+const DIR_SYNC_UNSUPPORTED = new Set(['EISDIR', 'EPERM', 'EINVAL', 'ENOTSUP', 'EBADF']);
+
+/** fsync a folder, so a rename into it is on disk; where the platform can't, this does nothing. */
+function syncDir(dir: string): void {
+  let fd: number | null = null;
+  try {
+    fd = openSync(dir, 'r');
+    fsyncSync(fd);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException | null)?.code;
+    if (code === undefined || !DIR_SYNC_UNSUPPORTED.has(code)) throw e;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+}
+
+function writable(full: string): boolean {
+  try {
+    accessSync(full, fsConstants.W_OK);
+    return true;
+  } catch {
+    return false;
   }
 }
 

@@ -1311,6 +1311,32 @@ describe('review fixes', () => {
     expect(readdirSync(dir).filter((n) => n.endsWith('.tmp'))).toEqual([]);
   });
 
+  it('--in-place refuses a read-only file and leaves it as it was', () => {
+    const ods = path2('locked.ods');
+    run('new', ods);
+    run('set', ods, 'A1', '1', '--in-place');
+    chmodSync(ods, 0o444);
+    const before = readFileSync(ods);
+    const r = run('set', ods, 'A1', '2', '--in-place');
+    expect(r.exit).toBe(1);
+    expect(r.err).toMatch(/read-only/);
+    expect(readFileSync(ods)).toEqual(before);
+    expect(statSync(ods).mode & 0o777).toBe(0o444);
+  });
+
+  it('a hard-linked file that gets shorter is cut to the new length', () => {
+    const real = path2('long.ods');
+    const twin = path2('long-twin.ods');
+    run('new', real);
+    for (let r = 1; r <= 40; r++) run('set', real, `A${r}`, `row ${r} with some padding text`, '--in-place');
+    linkSync(real, twin);
+    expect(run('clear', real, 'A2:A40', '--in-place').exit).toBe(0);
+    expect(statSync(twin).nlink).toBe(2);
+    const reopened = sheet1(twin);
+    expect(reopened.getValue(0, 0)).toEqual(CellValue.text('row 1 with some padding text'));
+    expect(reopened.getValue(1, 0)).toEqual(CellValue.empty);
+  });
+
   it('a new file written with -o gets the usual mode', () => {
     const out = path2('fresh.ods');
     run('new', out);
