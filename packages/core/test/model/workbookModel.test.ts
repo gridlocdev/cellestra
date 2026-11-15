@@ -210,3 +210,24 @@ describe('Workbook model', () => {
     expect(Defaults.rowHeight).toBe(20);
   });
 });
+
+describe('Worksheet.clear', () => {
+  it('empties cells and layout but keeps the name and page setup', () => {
+    const sheet = new Worksheet('Data');
+    sheet.setValue(4, 2, CellValue.number(1));
+    sheet.getOrCreateColumn(0).width = 200;
+    sheet.getOrCreateRow(1).height = 50;
+    sheet.replaceMerges([new MergedRegion(CellRange.parse('A1:B1'))]);
+    sheet.frozenRows = 1;
+    sheet.activeFilter = CellRange.parse('A1:C5');
+    sheet.clear();
+    expect(sheet.cellCount).toBe(0);
+    expect(sheet.getUsedRange()).toBeNull();
+    expect(sheet.getColumnWidth(0)).toBe(Defaults.columnWidth);
+    expect(sheet.getRowHeight(1)).toBe(Defaults.rowHeight);
+    expect(sheet.merges).toEqual([]);
+    expect(sheet.frozenRows).toBe(0);
+    expect(sheet.activeFilter).toBeNull();
+    expect(sheet.name).toBe('Data');
+  });
+});

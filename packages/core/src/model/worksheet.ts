@@ -419,6 +419,28 @@ export class Worksheet {
 
   // ---- Structural edits ---------------------------------------------------
 
+  /**
+   * Empty the sheet as if it were new: cells, row and column layout, merges, tables, validation,
+   * filter and sort, frozen panes and outline go. Its name, chart and page setup stay.
+   */
+  clear(): void {
+    this.cells.clear();
+    this.#cellExtent = null;
+    this.restoreLayout({
+      rows: new Map(),
+      columns: new Map(),
+      merges: [],
+      tables: [],
+      frozenRows: 0,
+      frozenColumns: 0,
+      outline: SheetOutline.empty,
+    });
+    this.validationList = [];
+    this.activeFilter = null;
+    this.activeFilterSpec = null;
+    this.activeSort = null;
+  }
+
   captureLayout(): WorksheetLayout {
     return {
       rows: new Map([...this.rowMap].map(([k, r]) => [k, r.clone()])),

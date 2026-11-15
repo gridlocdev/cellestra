@@ -105,7 +105,7 @@ export const importCommand: CommandSpec = {
       const workbook = session.workbook;
       let worksheet = workbook.findSheet(sheetName);
       if (!worksheet) worksheet = workbook.addSheet(sheetName);
-      else clearSheet(worksheet);
+      else worksheet.clear();
       fillFromCsv(workbook, worksheet, text, { delimiter: csvDelimiter(p.arg('csv'), csv), locale });
       session.field('sheet', worksheet.name);
       session.field('range', worksheet.getUsedRange()?.toString() ?? null);
@@ -801,9 +801,3 @@ export const completions: CommandSpec = {
 };
 
 // ---- Helpers -----------------------------------------------------------------
-
-function clearSheet(sheet: Worksheet): void {
-  // Snapshot populated positions first (can't mutate while enumerating), then clear them.
-  const positions = [...sheet.enumerateCells()].map(([row, column]) => [row, column] as const);
-  for (const [row, column] of positions) sheet.putCell(row, column, null);
-}

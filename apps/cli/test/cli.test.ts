@@ -142,6 +142,31 @@ describe('basics', () => {
     expect(run('get', path2('book.ods'), 'T.B2').out.trim()).toBe('90');
   });
 
+  it('import into an existing sheet replaces its layout along with its cells', () => {
+    const ods = path2('laid-out.ods');
+    run('new', ods);
+    for (const [cell, value] of [
+      ['A1', 'old'],
+      ['B1', 'x'],
+      ['A2', '1'],
+    ])
+      run('set', ods, cell!, value!, '--in-place');
+    expect(run('width', ods, 'A:B', '100', '--in-place').exit).toBe(0);
+    expect(run('height', ods, '2', '40', '--in-place').exit).toBe(0);
+    expect(run('merge', ods, 'A1:B1', '--in-place').exit).toBe(0);
+    expect(run('freeze', ods, '--rows', '1', '--in-place').exit).toBe(0);
+    const csv = path2('fresh.csv');
+    writeFileSync(csv, 'a,b\n1,2\n');
+    expect(run('import', csv, '--into', ods, '--sheet', 'Sheet1').exit).toBe(0);
+    const sheet = sheet1(ods, 'Sheet1');
+    const blank = Workbook.createNew().worksheets[0]!;
+    expect(sheet.getValue(0, 0)).toEqual(CellValue.text('a'));
+    expect(sheet.getColumnWidth(0)).toBe(blank.getColumnWidth(0));
+    expect(sheet.getRowHeight(1)).toBe(blank.getRowHeight(1));
+    expect(sheet.merges).toEqual([]);
+    expect(sheet.frozenRows).toBe(0);
+  });
+
   it('set refuses to write without --in-place or --output', () => {
     const ods = path2('book.ods');
     run('new', ods);
