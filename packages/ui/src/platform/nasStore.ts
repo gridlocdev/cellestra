@@ -27,7 +27,8 @@ const LOCK_HEADER = 'X-Cellestra-Lock';
 /**
  * Files in the NAS folders the Cellestra server exposes (`/api`). Conflict detection uses the
  * etag from open: a save sends If-Match, the server answers 412 if someone else saved first.
- * Picking is the UI's own folder browser (`capabilities.browse`), so `pick()` is not used.
+ * It has no picker of its own: the app shows its folder browser (`capabilities.browse`), then calls
+ * `open` or `saveNew`.
  */
 export class NasStore implements FileStore {
   readonly kind = 'nas' as const;
@@ -77,8 +78,8 @@ export class NasStore implements FileStore {
     return this.json(`/list?${new URLSearchParams({ root, path })}`);
   }
 
-  pick(): Promise<OpenedDocument | null> {
-    return Promise.resolve(null);
+  canSaveInPlace(): boolean {
+    return true;
   }
 
   async open(root: string, path: string): Promise<OpenedDocument> {
@@ -128,11 +129,6 @@ export class NasStore implements FileStore {
   /** Save a new file into a NAS folder; refuses to overwrite unless `overwrite`. */
   saveNew(root: string, path: string, bytes: Uint8Array, overwrite = false): Promise<DocumentRef> {
     return this.put(root, path, bytes, overwrite ? {} : { 'If-None-Match': '*' }, false, false);
-  }
-
-  /** The UI drives Save As through its own folder browser, then calls `saveNew`. */
-  saveAs(): Promise<DocumentRef | null> {
-    return Promise.resolve(null);
   }
 
   private async put(

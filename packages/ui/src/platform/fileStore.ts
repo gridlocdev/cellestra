@@ -43,8 +43,8 @@ export interface FileStore {
   readonly kind: StoreKind;
   readonly label: string;
   readonly capabilities: StoreCapabilities;
-  /** Ask the user for a file (native/browser picker). Null when cancelled. */
-  pick(): Promise<OpenedDocument | null>;
+  /** Whether Save can write back over `ref` without asking where (a browser upload can't). */
+  canSaveInPlace(ref: DocumentRef): boolean;
   /** Re-read a document (revert, external change). */
   reload(ref: DocumentRef): Promise<OpenedDocument>;
   /** Write back over `ref`. Throws ConflictError when it changed since `ref.version`, unless forced. */
@@ -59,6 +59,15 @@ export interface FileStore {
     bytes: Uint8Array,
     opts?: { force?: boolean; ignoreLock?: boolean; background?: boolean },
   ): Promise<DocumentRef>;
+}
+
+/**
+ * How Open and Save As ask the user for a file. The browser and Electron stores have their own
+ * pickers; the NAS has none (the app shows its own folder dialog), so it is not one.
+ */
+export interface FilePicker {
+  /** Ask the user for a file to open. Null when cancelled. */
+  pick(): Promise<OpenedDocument | null>;
   /** Ask where to save a new copy. Null when cancelled. */
   saveAs(suggestedName: string, bytes: Uint8Array): Promise<DocumentRef | null>;
 }

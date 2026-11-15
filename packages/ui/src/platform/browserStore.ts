@@ -4,6 +4,7 @@ import {
   mimeFor,
   SPREADSHEET_TYPES,
   type DocumentRef,
+  type FilePicker,
   type FileStore,
   type OpenedDocument,
 } from './fileStore.ts';
@@ -44,7 +45,7 @@ function isAbort(e: unknown): boolean {
 }
 
 /** Files on this computer, through the browser: File System Access where available, else upload/download. */
-export class BrowserStore implements FileStore {
+export class BrowserStore implements FileStore, FilePicker {
   readonly kind = 'browser' as const;
   readonly label = 'This computer';
   readonly capabilities;
@@ -54,6 +55,11 @@ export class BrowserStore implements FileStore {
     this.win = win;
     const fsAccess = typeof win.showSaveFilePicker === 'function';
     this.capabilities = { saveInPlace: fsAccess, browse: false, watch: false };
+  }
+
+  /** Only a file opened through a File System Access handle can be written back. */
+  canSaveInPlace(ref: DocumentRef): boolean {
+    return this.capabilities.saveInPlace && ref.handle !== undefined;
   }
 
   async pick(): Promise<OpenedDocument | null> {

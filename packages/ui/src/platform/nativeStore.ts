@@ -1,9 +1,15 @@
 import { CONFLICT, type CellestraNative, type NativeFile, type SavedFile } from './native.ts';
 import { parseLockFile } from './lockFile.ts';
-import { ConflictError, type DocumentRef, type FileStore, type OpenedDocument } from './fileStore.ts';
+import {
+  ConflictError,
+  type DocumentRef,
+  type FilePicker,
+  type FileStore,
+  type OpenedDocument,
+} from './fileStore.ts';
 
 /** Files on disk through Electron's main process. Version = a hash of the contents, checked again before each save. */
-export class NativeStore implements FileStore {
+export class NativeStore implements FileStore, FilePicker {
   readonly kind = 'native' as const;
   readonly label = 'Files';
   readonly capabilities = { saveInPlace: true, browse: false, watch: true };
@@ -11,6 +17,10 @@ export class NativeStore implements FileStore {
 
   constructor(bridge: CellestraNative) {
     this.bridge = bridge;
+  }
+
+  canSaveInPlace(): boolean {
+    return true;
   }
 
   async pick(): Promise<OpenedDocument | null> {

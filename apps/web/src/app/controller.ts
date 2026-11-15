@@ -74,7 +74,6 @@ import {
   saveRecovery,
   type CellestraNative,
   type DocumentRef,
-  type FileStore,
   type GridController,
   type GridRange,
   type OpenedDocument,
@@ -82,6 +81,7 @@ import {
 } from '@cellestra/ui';
 
 import type { ChartDefinition } from '@cellestra/charts';
+import { DocumentStores } from './documentStores.ts';
 import { findMatches, nextMatch, replaceIn, replaceableText, type FindMatch } from './find.ts';
 
 /**
@@ -262,9 +262,16 @@ export class AppController {
   readonly nameBox: { current: HTMLInputElement | null } = { current: null };
 
   readonly native: CellestraNative | null = nativeBridge();
-  readonly browser = new BrowserStore();
-  readonly nativeStore: NativeStore | null = this.native ? new NativeStore(this.native) : null;
-  readonly nas = new NasStore();
+  readonly stores = new DocumentStores({
+    browser: new BrowserStore(),
+    native: this.native ? new NativeStore(this.native) : null,
+    nas: new NasStore(),
+    nasAvailable: () => this.nasAvailable.peek(),
+    nasDialogs: {
+      choose: (mode, suggestedName) => this.askNas(mode, suggestedName),
+      confirmOverwrite: async (e) => (await this.askConflict(e)) === 'overwrite',
+    },
+  });
   /** Whether the NAS server answered `/api/info` (the web client is being served by it). */
   readonly nasAvailable = signal(false);
 
@@ -458,15 +465,12 @@ export class AppController {
 
   // ── Stores & documents ───────────────────────────────────────────────────
 
-  storeFor(ref: DocumentRef): FileStore {
-    if (ref.store === 'native' && this.nativeStore) return this.nativeStore;
-    if (ref.store === 'nas') return this.nas;
-    return this.browser;
+  get browser(): BrowserStore {
+    return this.stores.browser;
   }
 
-  /** Where Open/Save As go by default: Electron's file system, else the NAS, else this computer. */
-  get primaryStore(): 'native' | 'nas' | 'browser' {
-    return this.nativeStore ? 'native' : this.nasAvailable.peek() ? 'nas' : 'browser';
+  get nas(): NasStore {
+    return this.stores.nas;
   }
 
   async newDocument(): Promise<void> {
@@ -481,14 +485,9 @@ export class AppController {
   async open(): Promise<void> {
     const ticket = await this.#startOpen();
     if (!ticket) return;
-    const kind = this.primaryStore;
     let opened: OpenedDocument | null;
     try {
-      if (kind === 'native') opened = await this.nativeStore!.pick();
-      else if (kind === 'nas') {
-        const where = await this.askNas('open');
-        opened = where ? await this.nas.open(where.root, where.path) : null;
-      } else opened = await this.browser.pick();
+      opened = await this.stores.primary.pick();
     } catch (e) {
       return this.error(e);
     }
@@ -525,11 +524,12 @@ export class AppController {
   async openNativePath(path: string): Promise<void> {
     // A file passed at launch waits for the recovery prompt, so neither replaces the other unasked.
     await this.#ready;
-    if (!this.nativeStore) return;
+    const native = this.stores.native;
+    if (!native) return;
     const ticket = await this.#startOpen();
     if (!ticket) return;
     try {
-      await this.#finishOpen(await this.nativeStore.openPath(path), ticket);
+      await this.#finishOpen(await native.openPath(path), ticket);
     } catch (e) {
       this.error(e);
     }
@@ -539,14 +539,7 @@ export class AppController {
     const ticket = await this.#startOpen();
     if (!ticket) return;
     try {
-      const ref = entry.ref;
-      const opened =
-        ref.store === 'nas'
-          ? await this.nas.open(...splitNasId(ref.id))
-          : ref.store === 'native' && this.nativeStore
-            ? await this.nativeStore.openPath(ref.id)
-            : await this.browser.reload(ref);
-      await this.#finishOpen(opened, ticket);
+      await this.#finishOpen(await this.stores.reopen(entry.ref), ticket);
     } catch (e) {
       // Only a file that is gone leaves the list; a denied permission or an offline NAS doesn't.
       if (isNotFound(e)) {
@@ -634,8 +627,8 @@ export class AppController {
       csvLosses(this.session.workbook.peek(), this.session.csvSheet()).length > 0
     )
       return false;
-    const store = this.storeFor(ref);
-    if (!store.capabilities.saveInPlace || (ref.store === 'browser' && !ref.handle)) return false;
+    if (!this.stores.canSaveInPlace(ref)) return false;
+    const store = this.stores.storeFor(ref);
     const run = async (): Promise<SaveOutcome> => {
       const edits = this.session.editCount;
       const generation = this.session.generation;
@@ -687,10 +680,9 @@ export class AppController {
   async #save(force: boolean, ignoreLock: boolean): Promise<SaveOutcome> {
     const ref = this.session.document.peek();
     if (!ref) return this.#saveAs(this.session.format.peek());
-    const store = this.storeFor(ref);
     // Without a handle, a browser file (uploaded, dropped) cannot be written back: ask where.
-    if (!store.capabilities.saveInPlace || (ref.store === 'browser' && !ref.handle))
-      return this.#saveAs(this.session.format.peek());
+    if (!this.stores.canSaveInPlace(ref)) return this.#saveAs(this.session.format.peek());
+    const store = this.stores.storeFor(ref);
     if (this.session.format.peek() === 'csv') {
       const keep = await this.askCsvLoss(ref.name);
       if (keep === 'cancel') return false;
@@ -735,11 +727,7 @@ export class AppController {
     const generation = this.session.generation;
     const bytes = this.session.serialize(format, name);
     try {
-      let saved: DocumentRef | null;
-      const kind = this.primaryStore;
-      if (kind === 'native') saved = await this.nativeStore!.saveAs(name, bytes);
-      else if (kind === 'nas') saved = await this.saveToNas(name, bytes);
-      else saved = await this.browser.saveAs(name, bytes);
+      const saved = await this.stores.primary.saveAs(name, bytes);
       if (!saved) return false;
       if (isExport) {
         this.info(`Exported ${saved.name}`);
@@ -795,18 +783,6 @@ export class AppController {
     }
   }
 
-  async saveToNas(name: string, bytes: Uint8Array): Promise<DocumentRef | null> {
-    const where = await this.askNas('save', name);
-    if (!where) return null;
-    try {
-      return await this.nas.saveNew(where.root, where.path, bytes);
-    } catch (e) {
-      if (!(e instanceof ConflictError) || e.reason !== 'exists') throw e;
-      const choice = await this.askConflict(e);
-      return choice === 'overwrite' ? this.nas.saveNew(where.root, where.path, bytes, true) : null;
-    }
-  }
-
   /**
    * Re-read the document from its store. `onlyIfClean` (external changes) gives up when edits
    * landed while the file was being read, instead of throwing them away.
@@ -818,7 +794,7 @@ export class AppController {
     const edits = this.session.editCount;
     const generation = this.session.generation;
     try {
-      const opened = await this.storeFor(ref).reload(ref);
+      const opened = await this.stores.storeFor(ref).reload(ref);
       // Another document was opened meanwhile: this reload is for a file no longer on screen.
       if (this.session.generation !== generation) return;
       // Same contents (a sync client rewrote it, `touch`): nothing to reload, and undo stays.
@@ -2338,11 +2314,6 @@ function range(from: number, to: number): number[] {
   const out: number[] = [];
   for (let i = from; i <= to; i++) out.push(i);
   return out;
-}
-
-function splitNasId(id: string): [string, string] {
-  const i = id.indexOf(':');
-  return [id.slice(0, i), id.slice(i + 1)];
 }
 
 function normalize(text: string): string {

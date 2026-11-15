@@ -47,8 +47,8 @@ class FakeStore implements FileStore {
   reloadVersion: string | null = 'v-disk';
   reloadGate: Promise<void> = Promise.resolve();
 
-  pick(): Promise<OpenedDocument | null> {
-    return Promise.resolve(null);
+  canSaveInPlace(): boolean {
+    return true;
   }
   async reload(ref: DocumentRef): Promise<OpenedDocument> {
     await this.reloadGate;
@@ -67,13 +67,10 @@ class FakeStore implements FileStore {
       });
     });
   }
-  saveAs(): Promise<DocumentRef | null> {
-    return Promise.resolve(null);
-  }
 }
 
 function withFake(app: Controller, fake: FakeStore): void {
-  (app as unknown as { nas: FileStore }).nas = fake;
+  (app.stores as unknown as { nas: FileStore }).nas = fake;
   app.error = (e: unknown) => {
     throw e;
   };
