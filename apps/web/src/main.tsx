@@ -4,7 +4,7 @@ import '@cellestra/ui/styles.css';
 import { App } from './app/App.tsx';
 import { buildCommands } from './app/commands.ts';
 import { AppController } from './app/controller.ts';
-import { menuSchedule, menuSender, nativeMenu } from './app/nativeMenu.ts';
+import { menuSchedule, menuSender, nativeMenu, watchMenuInputs } from './app/nativeMenu.ts';
 
 /** How long the cursor must stand still before the desktop menu is worked out again. */
 const MENU_SETTLE_MS = 100;
@@ -59,15 +59,5 @@ if (native) {
     menu.forget();
     menuChanged(true);
   });
-  effect(() => {
-    void app.session.version.value;
-    void app.recents.value;
-    void app.showFormulas.value;
-    void app.isDark.value;
-    menuChanged(true);
-  });
-  effect(() => {
-    void app.selection.state.value;
-    menuChanged(false);
-  });
+  watchMenuInputs(app, menuChanged);
 }

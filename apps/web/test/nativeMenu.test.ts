@@ -39,6 +39,33 @@ describe('the native menu', () => {
   });
 });
 
+describe('watchMenuInputs', () => {
+  it('works the menu out again when any state a menu item shows changes', async () => {
+    const { AppController } = await import('../src/app/controller.ts');
+    const { watchMenuInputs } = await import('../src/app/nativeMenu.ts');
+    const app = new AppController();
+    const calls: boolean[] = [];
+    const stop = watchMenuInputs(app, (soon) => calls.push(soon));
+    calls.length = 0;
+    const changes: [string, () => void][] = [
+      ['layout', () => (app.layout.value = app.layout.value === 'ribbon' ? 'bar' : 'ribbon')],
+      ['ribbon collapsed', () => (app.ribbonCollapsed.value = !app.ribbonCollapsed.value)],
+      ['format painter', () => (app.formatPainter.value = {} as never)],
+      ['find query', () => (app.findQuery.value = 'x')],
+      ['NAS available', () => (app.nasAvailable.value = !app.nasAvailable.value)],
+      ['show formulas', () => (app.showFormulas.value = !app.showFormulas.value)],
+    ];
+    for (const [what, change] of changes) {
+      change();
+      expect(calls, what).toEqual([true]);
+      calls.length = 0;
+    }
+    app.selection.select(3, 2);
+    expect(calls).toEqual([false]);
+    stop();
+  });
+});
+
 describe('menuSchedule', () => {
   it('waits for the cursor to stand still, but sends an edit at once', async () => {
     const { menuSchedule } = await import('../src/app/nativeMenu.ts');

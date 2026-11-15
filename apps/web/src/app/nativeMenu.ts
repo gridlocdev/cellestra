@@ -5,6 +5,8 @@ import {
   type NativeMenuItem,
   type Shortcut,
 } from '@cellestra/ui';
+import { effect } from '@preact/signals';
+import type { AppController } from './controller.ts';
 
 const MENU_ORDER: readonly CommandGroup[] = [
   'File',
@@ -127,5 +129,33 @@ export function menuSchedule(refresh: () => void, settleMs: number): (soon: bool
       },
       urgent ? 0 : settleMs,
     );
+  };
+}
+
+/**
+ * Call `changed` whenever something a menu item's enabled or checked state reads may have moved:
+ * `changed(true)` for the document and the app's settings, `changed(false)` for the cursor, which
+ * moves often and can wait for it to stand still. Returns a function that stops watching.
+ */
+export function watchMenuInputs(app: AppController, changed: (soon: boolean) => void): () => void {
+  const stopApp = effect(() => {
+    void app.session.version.value;
+    void app.recents.value;
+    void app.showFormulas.value;
+    void app.isDark.value;
+    void app.layout.value;
+    void app.ribbonCollapsed.value;
+    void app.formatPainter.value;
+    void app.findQuery.value;
+    void app.nasAvailable.value;
+    changed(true);
+  });
+  const stopCursor = effect(() => {
+    void app.selection.state.value;
+    changed(false);
+  });
+  return () => {
+    stopApp();
+    stopCursor();
   };
 }
