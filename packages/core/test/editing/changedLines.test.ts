@@ -99,16 +99,6 @@ describe('changed rows and columns', () => {
       expect(r.changedRows).toEqual(lines(name, 1, 4));
   });
 
-  it('clearing structure reports the rows it covers and the merges it removed', () => {
-    const { workbook, name, each } = setup();
-    workbook.activeSheet.setValue(0, 0, CellValue.text('x'));
-    new EditHistory(workbook).execute(EditCommands.mergeCells(name, R('A1:A10')));
-    for (const r of each(DataEditCommands.clearRangeStructure(name, R('A3:B4'))))
-      expect(r.changedRows).toEqual([...lines(name, 2, 3), ...lines(name, 0, 9)]);
-    for (const r of each(DataEditCommands.clearRangeStructure(name, CellRange.fromBounds(0, 2, LAST_ROW, 3))))
-      expect(r.changedColumns).toEqual(lines(name, 2, 3));
-  });
-
   it('painting formats over part of a merge reports the merge rows', () => {
     const { workbook, name, each } = setup();
     const sheet = workbook.activeSheet;

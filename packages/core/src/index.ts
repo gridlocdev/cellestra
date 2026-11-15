@@ -64,7 +64,6 @@ export {
   type SortLevel,
   sortSpec,
   type SortSpec,
-  StickyTableHeader,
   table,
   type Table,
   TableAutoExpand,

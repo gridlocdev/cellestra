@@ -19,6 +19,5 @@ export { type RangeResolver, validationCovers, Validator } from './dataValidatio
 export { EdgeNavigator } from './edgeNavigator.ts';
 export { columnFilterMatches, FilterEngine, filterSpec } from './filterEngine.ts';
 export { SortEngine, sortSpec } from './sortEngine.ts';
-export { StickyTableHeader } from './stickyTableHeader.ts';
 export { TableAutoExpand, tableHeaderLabels, tableWithRange } from './tables.ts';
 export { type IncomingWrite, ValidationPreflight } from './validationPreflight.ts';
