@@ -15,7 +15,7 @@ import {
   parseRuleValue,
   rulesOf,
   rulesTransform,
-} from '../src/components/conditionalFormats.ts';
+} from '../../src/styling/conditionalFormatRules.ts';
 
 const base = { sheet: 'Sheet1', row: 0, column: 0 };
 const transform = (rules: Parameters<typeof rulesTransform>[0]) => {

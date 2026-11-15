@@ -1,17 +1,16 @@
+import { FormulaWriter } from '../formulas/formulaWriter.ts';
+import { Parser } from '../formulas/parsing/parser.ts';
+import type { Expr } from '../formulas/ast/expr.ts';
+import { SheetDimensions } from '../model/sheetDimensions.ts';
+import { CellValue } from '../values/cellValue.ts';
+import type { CellStyle, CellStyleMap } from './cellStyle.ts';
+import type { ArgbColor } from './color.ts';
 import {
-  CellValue,
-  FormulaWriter,
-  Parser,
-  SheetDimensions,
   parseMapCondition,
   writeMapCondition,
-  type ArgbColor,
-  type CellStyle,
-  type CellStyleMap,
   type ConditionOperator,
-  type Expr,
   type MapCondition,
-} from '@cellestra/core';
+} from './conditionalStyles.ts';
 
 /** What a rule checks. */
 export type RuleKind =

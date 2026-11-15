@@ -8,9 +8,5 @@
     "moduleResolution": "NodeNext"
   },
   "include": ["src", "test"],
-  "references": [
-    { "path": "../../packages/charts" },
-    { "path": "../../packages/core" },
-    { "path": "../../packages/ui" }
-  ]
+  "references": [{ "path": "../../packages/charts" }, { "path": "../../packages/core" }]
 }

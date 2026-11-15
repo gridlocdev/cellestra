@@ -38,9 +38,6 @@ importers:
       '@cellestra/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@cellestra/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
 
   apps/desktop:
     devDependencies:

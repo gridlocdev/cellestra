@@ -1,7 +1,5 @@
-import { Argb, type CellStyle } from '@cellestra/core';
-import { useMemo, useState } from 'preact/hooks';
-import { Dialog } from './Dialog.tsx';
 import {
+  Argb,
   FORMAT_PRESETS,
   RULE_KINDS,
   applyPreset,
@@ -9,10 +7,13 @@ import {
   newRule,
   rulesOf,
   rulesTransform,
+  type CellStyle,
   type FormatPresetId,
   type RuleDraft,
   type RuleKind,
-} from './conditionalFormats.ts';
+} from '@cellestra/core';
+import { useMemo, useState } from 'preact/hooks';
+import { Dialog } from './Dialog.tsx';
 
 /**
  * Conditional formatting for the selection: rules checked in order, the first that holds giving the

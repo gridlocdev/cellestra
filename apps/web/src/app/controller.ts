@@ -42,6 +42,8 @@ import {
   ConditionalStyles,
   type Workbook,
   SetPageSetupCommand,
+  printHtml,
+  printableRange,
   type PageSetup,
 } from '@cellestra/core';
 import {
@@ -62,8 +64,6 @@ import {
   lightPalette,
   lockWarning,
   nativeBridge,
-  printHtml,
-  printableRange,
   canvasRowMeasure,
   contentRowHeights,
   printInFrame,

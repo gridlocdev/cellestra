@@ -1,14 +1,10 @@
-import {
-  Argb,
-  PageSetups,
-  SheetDimensions,
-  StylePool,
-  type BorderEdge,
-  type CellStyle,
-  type CellValue,
-  type PageSetup,
-  type Worksheet,
-} from '@cellestra/core';
+import { PageSetups, type PageSetup } from '../model/pageSetup.ts';
+import { SheetDimensions } from '../model/sheetDimensions.ts';
+import type { Worksheet } from '../model/worksheet.ts';
+import type { BorderEdge, CellStyle } from '../styling/cellStyle.ts';
+import { Argb } from '../styling/color.ts';
+import { StylePool } from '../styling/stylePool.ts';
+import type { CellValue } from '../values/cellValue.ts';
 
 /** Cells to print, inclusive. */
 export interface PrintRange {

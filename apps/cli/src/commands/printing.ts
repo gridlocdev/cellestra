@@ -6,23 +6,21 @@ import { fileURLToPath } from 'node:url';
 import {
   ConditionalStyles,
   EditCommands,
+  FORMAT_PRESETS,
   NumberFormatter,
   PAPER_SIZES,
   PageSetups,
-  SetPageSetupCommand,
-  type CellStyle,
-  type PageSetup,
-} from '@cellestra/core';
-import {
-  FORMAT_PRESETS,
   RULE_KINDS,
+  SetPageSetupCommand,
+  printHtml,
   rulesOf,
   rulesTransform,
+  type CellStyle,
   type FormatPresetId,
+  type PageSetup,
   type RuleDraft,
   type RuleKind,
-} from '@cellestra/ui/conditional-formats';
-import { printHtml } from '@cellestra/ui/print';
+} from '@cellestra/core';
 import { pickSheet, resolveRange } from '../infra/cells.ts';
 import type { EditSession } from '../infra/editSession.ts';
 import { CliError } from '../infra/errors.ts';
