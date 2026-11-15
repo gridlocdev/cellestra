@@ -1,10 +1,14 @@
 # Architecture
 
-Cellestra is one TypeScript code base with three hosts. The browser, the NAS server's client and the Electron app all run the same engine and UI. The only thing that differs between them is where files come from.
+Cellestra is one TypeScript code base with three hosts and a command line. The browser, the NAS server's client and the Electron app all run the same engine and UI. The only thing that differs between them is where files come from. The `cellestra` CLI runs the same engine in Node, without the UI.
 
 ```
+            ┌──────────────── apps/web (the app shell) ──────────────────────┐
+            │  App · Ribbon · AppController · commands · DocumentStores      │
+            └──────────────────────────────┬─────────────────────────────────┘
+                                           │ imports
             ┌──────────────── packages/ui (Preact + signals) ────────────────┐
-            │  App · Grid (canvas) · FormulaBar · SheetTabs · ⌘K · dialogs   │
+            │  Grid (canvas) · FormulaBar · SheetTabs · ⌘K · dialogs         │
             │  WorkbookSession (undo, selection, dirty) · CommandCatalog     │
             │  FileStore ─┬─ BrowserStore  (File System Access / upload)     │
             │             ├─ NasStore      (fetch /api, ETag)                │
@@ -14,12 +18,13 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
             ┌──────────────── packages/core (pure TS) ───────────────────────┐
             │  values · model · formulas · dependencies (recalc) · editing   │
             │  data (sort/filter/tables/validation) · styling · xml          │
-            │  serialization (ods via fflate + saxes, csv)                   │
+            │  serialization (ods via fflate + saxes, csv) · printing        │
             └──────────────────────────────┬─────────────────────────────────┘
                                            │
                                packages/charts (model + ODF chart XML)
 
- apps/web      Vite entry; static build with relative URLs (base './')
+ apps/web      the app shell + Vite entry; static build with relative URLs (base './')
+ apps/cli      the cellestra command line; imports packages/core only
  apps/server   node:http: static client + /api/{info,roots,list,file}
  apps/desktop  Electron main + sandboxed preload; loads apps/web build via app://
 ```
@@ -31,13 +36,15 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
   - A worksheet keeps its cells in one `Map<number, Cell>` keyed by `row * 16384 + col`, so there is no 2-D array and no object for each empty cell.
   - Rows and columns that differ from the defaults are kept in their own sparse maps.
   - Styles are interned: a cell stores a style id.
-- **Formulas.** The pipeline is lexer → parser (AST) → evaluator. `FunctionRegistry` holds every function together with its metadata, which also drives autocomplete and help. `OpenFormulaTranslator` converts between the internal syntax (`SUM(A1:A3)`) and ODF's (`of:=SUM([.A1:.A3])`).
-- **Dependencies.** `RecalculationEngine` covers full recalc, recalc after an edit, re-planning after a structural edit (`recordStructuralChange`), volatile functions, manual mode (where neither kind of edit evaluates anything until a full recalc), and cycle detection, which shows `#REF!`.
-- **Editing.** Every model change is an edit command with apply and revert. `EditHistory` keeps up to 1,000 of them. Structural edits rewrite formula references through `ReferenceAdjuster`.
+- **Formulas.** The pipeline is lexer → parser (AST) → evaluator. `FunctionRegistry` holds every function together with its metadata, which also drives autocomplete and help. A function's traits sit on the function itself: `volatile` (TODAY, NOW), `trapsErrors` (IFERROR) and `extraReads` (cells it reads beyond its arguments, as SUMIF does). `evaluateFormula` is the one way to evaluate a parsed formula against a workbook; the recalculation engine and the CLI both use it. `OpenFormulaTranslator` converts between the internal syntax (`SUM(A1:A3)`) and ODF's (`of:=SUM([.A1:.A3])`).
+- **Dependencies.** `RecalculationEngine` covers full recalc, recalc after an edit, re-planning after a structural edit (`recordStructuralChange`), volatile functions, manual mode (where neither kind of edit evaluates anything until a full recalc), and cycle detection, which shows `#REF!`. `RecalculationEngine.apply(edit)` takes an edit's result and decides what to recalculate, manual mode included; callers don't check the mode themselves.
+- **Editing.** Every model change is an edit command with apply and revert. The app and the CLI share them (for example `DataEditCommands` for tables, AutoFilter, validation and named ranges), so both make the same change. A command that won't make an edit (sorting over a merge) throws `EditRefusedError`. `EditHistory` keeps up to 1,000 of them. Structural edits rewrite formula references through `ReferenceAdjuster`.
 - **Serialization.**
   - `.ods` is read and written through a small namespace-aware XML tree, so elements Cellestra doesn't model survive a round trip verbatim.
   - The `mimetype` entry is always first in the zip and stored uncompressed.
+  - Cell values are read and written in `odsCellValue.ts`, and named ranges in `odsNamedExpressions.ts`.
   - CSV is RFC 4180.
+- **Printing and conditional formats.** `printHtml` turns a sheet and its page setup into a printable HTML document, and `conditionalFormatRules.ts` turns a cell's conditional styles into editable rules and back. Both are pure, so the app's dialogs and the CLI's `print` and `conditional` commands share them.
 - **Locale.** All number, date and collation behaviour goes through `Intl`. A document's locale is a BCP-47 tag; if it has none, the host's locale is used (set through `setHostLocale` at startup).
 
 ## UI (`packages/ui`)
@@ -46,14 +53,26 @@ Cellestra is one TypeScript code base with three hosts. The browser, the NAS ser
   - `Axis` stores only the rows and columns with non-default sizes, as prefix sums, so offsets and hit-tests are O(log n) even with a million rows.
   - `Viewport` is the geometry for one frame: frozen panes, zoom and visible bands. Rendering, hit-testing and the inline editor all use it.
   - The renderer reads the `Worksheet` directly.
+  - `cellText.ts` measures cell text: the font, padding and line height the renderer, row heights and column autofit all use.
+  - `navigation.ts` turns keys into grid actions and steps the active cell over hidden lines and merges; `sheetLayout.ts` holds the sheet's axes and content extent.
   - The editor is a `<textarea>` placed over the active cell, so IME works.
 - **State.** Signals hold the chrome state: selection, zoom, theme and a document version counter. The grid redraws whenever the version changes.
 - **Commands.** `CommandCatalog` is the one list of commands. The toolbar, ⌘K, the shortcut dispatcher and the Electron menu bar (sent over IPC) all read it. Shortcuts are written once as `mod+shift+k` and formatted for each platform.
-- **Files.** `FileStore` has three implementations, and the UI only ever sees the interface.
+- **Files.** `FileStore` has three implementations, and the UI only ever sees the interface. Stores with their own dialogs (browser, native) are also a `FilePicker` (`pick`, `saveAs`). In `apps/web`, `DocumentStores` chooses the store for a document and the picker for Open and Save As (native, then the NAS through the app's folder dialog, then the browser).
   - Conflict detection uses an ETag (NAS) or a SHA-256 hash of the file's contents (native), so an edit that keeps the size and mtime is still caught.
   - The server can't push changes, so while a NAS document is open the client polls its ETag with `HEAD /api/file` every 30 seconds (`ChangePoller`), and not while the tab is hidden. A new ETag on a document without local edits offers to reload it; with local edits it only warns, and the save then meets the server's `If-Match` check and the usual conflict dialog.
   - The NAS store exists only in a NAS build (`VITE_CELLESTRA_NAS=1`: the Docker image, `just build-web-nas`, `just run-web`, `just preview-web`). A NAS build still shows NAS open and save only after the server answers `/api/info`. Every other build, the desktop app included, never contacts the server and shows nothing about a NAS.
   - IndexedDB keeps the recent files (including browser file handles) and a crash-recovery snapshot.
+
+## App shell (`apps/web`)
+
+- `App.tsx` lays out the ribbon, grid, formula bar, sheet tabs and dialogs. `AppController` owns the open document, saving, autosave and the dialogs' state. `commands.ts` builds the command catalog from the controller, and `nativeMenu.ts` sends it to the Electron menu bar.
+
+## CLI (`apps/cli`)
+
+- `cellestra` reads and edits `.ods` and CSV files from the command line, for scripts, CI and agents. It runs from source with Node's type stripping and depends on `packages/core` only.
+- Edits go through core's edit commands, and saving follows the server's rules (atomic replace, hard links written in place, read-only files refused).
+- A mistake the user can fix prints one `cellestra: <message>` line and exits 1 (2 for a bad command line). Anything else is a bug and keeps its stack trace.
 
 ## Server (`apps/server`)
 
