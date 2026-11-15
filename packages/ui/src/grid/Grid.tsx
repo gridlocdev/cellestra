@@ -8,7 +8,6 @@ import {
   type StylePool,
   type Worksheet,
 } from '@cellestra/core';
-import { Axis } from './axis.ts';
 import { chromeButtons, hitChrome, type ChromeButton } from './chrome.ts';
 import {
   columnCompletion,
@@ -33,6 +32,8 @@ import {
 import { CELL_PAD_X, CELL_PAD_Y } from './cellText.ts';
 import { canvasRowMeasure, ContentHeights } from './rowHeights.ts';
 import { afterTab, enterOrigin, startsComposition, type TabRun } from './keys.ts';
+import { contentEnd, sheetLayout, type SheetLayout } from './sheetLayout.ts';
+import { firstVisible, gridKeyAction, growOverMerges, stepFrom } from './navigation.ts';
 import { insertLineBreak } from '../components/lineBreak.ts';
 import { ClickCounter } from './clickCounter.ts';
 import { Viewport, HEADER_HEIGHT, HEADER_WIDTH, type Rect } from './viewport.ts';
@@ -142,49 +143,6 @@ const reducedMotion = () =>
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
-interface Axes {
-  readonly columns: Axis;
-  readonly rows: Axis;
-  /** The last row and column with non-default layout (−1 for none), for the scroll extent. */
-  readonly lastRow: number;
-  readonly lastColumn: number;
-}
-
-function axesFor(sheet: Worksheet, content: ReadonlyMap<number, number>): Axes {
-  const cols: [number, number][] = [];
-  let lastColumn = -1;
-  for (const [i, c] of sheet.columns) {
-    cols.push([i, c.hidden ? 0 : c.width]);
-    if (!c.isDefault) lastColumn = Math.max(lastColumn, i);
-  }
-  const rows: [number, number][] = [];
-  let lastRow = -1;
-  for (const [i, r] of sheet.rows) {
-    rows.push([i, r.hidden ? 0 : Math.max(r.height, content.get(i) ?? 0)]);
-    if (!r.isDefault) lastRow = Math.max(lastRow, i);
-  }
-  // Rows with no layout of their own that their content makes taller.
-  for (const [i, h] of content) if (!sheet.rows.has(i)) rows.push([i, h]);
-  return {
-    columns: new Axis(MAX_COLUMN + 1, 64, cols),
-    rows: new Axis(MAX_ROW + 1, 20, rows),
-    lastRow,
-    lastColumn,
-  };
-}
-
-/** The bottom-right corner the scroller must reach: cells, merges and laid-out lines. */
-function contentEnd(sheet: Worksheet, axes: Axes): { bottom: number; right: number } {
-  const cells = sheet.cellExtent();
-  let bottom = Math.max(cells?.lastRow ?? 0, axes.lastRow);
-  let right = Math.max(cells?.lastColumn ?? 0, axes.lastColumn);
-  for (const m of sheet.merges) {
-    bottom = Math.max(bottom, m.range.bottom);
-    right = Math.max(right, m.range.right);
-  }
-  return { bottom, right };
-}
-
 export function Grid({ host, selection, zoom, palette, showFormulas, controller }: GridProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   /** The line shown while dragging a column/row edge; the size is committed once, on release. */
@@ -208,7 +166,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     /** The axes are rebuilt only when row/column layout moves (`layoutStamp`) or the sheet changes. */
     axesStamp: -1,
     axesSheet: null as Worksheet | null,
-    axes: null as Axes | null,
+    axes: null as SheetLayout | null,
     /** The scroll extent for `usedVersion`. */
     usedVersion: -1,
     used: null as { bottom: number; right: number } | null,
@@ -293,7 +251,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const sheet = host.sheet.value;
     const grew = refreshContentHeights(sheet, version);
     if (grew || !s.axes || s.axesStamp !== sheet.layoutStamp || s.axesSheet !== sheet) {
-      s.axes = axesFor(sheet, s.content);
+      s.axes = sheetLayout(sheet, s.content);
       s.axesStamp = sheet.layoutStamp;
       s.axesSheet = sheet;
       s.usedVersion = -1;
@@ -634,27 +592,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   };
 
   // --- navigation --------------------------------------------------------------------------------
-  /** Widen a range until no merge straddles its edge (merges can chain, so to a fixed point). */
-  const growOverMerges = (r: GridRange): GridRange => {
-    const merges = host.sheet.value.merges;
-    if (merges.length === 0) return r;
-    let { top, left, bottom, right } = r;
-    for (let changed = true; changed;) {
-      changed = false;
-      for (const m of merges) {
-        const g = m.range;
-        if (g.bottom < top || g.top > bottom || g.right < left || g.left > right) continue;
-        if (g.top < top || g.left < left || g.bottom > bottom || g.right > right) {
-          top = Math.min(top, g.top);
-          left = Math.min(left, g.left);
-          bottom = Math.max(bottom, g.bottom);
-          right = Math.max(right, g.right);
-          changed = true;
-        }
-      }
-    }
-    return { top, left, bottom, right };
-  };
+  const growOverSheetMerges = (r: GridRange): GridRange => growOverMerges(host.sheet.value.merges, r);
 
   const moveActive = (dr: number, dc: number, extend: boolean, cycleInRange = false, jump = false) => {
     const skipCell = (row: number, column: number) => {
@@ -679,26 +617,10 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       : cycleInRange && dr === 1 && dc === 0
         ? enterOrigin(run, active)
         : active;
-    let row: number;
-    let column: number;
-    if (jump) ({ row, column } = host.edge(from.row, from.column, dr, dc));
-    else if (extend) {
-      row = dr ? v.rows.step(from.row, dr) : from.row;
-      column = dc ? v.columns.step(from.column, dc) : from.column;
-    } else if (Math.abs(dr) > 1) {
-      // A page: count visible rows, so hidden ones don't shorten (or overshoot) it.
-      row = v.rows.step(from.row, dr);
-      column = from.column;
-      if (v.rows.isHidden(row)) row = from.row;
-    } else {
-      [row, column] = sheet.stepOverMerges(from.row, from.column, dr, dc);
-      // Past hidden lines; with nothing visible that way, stay put rather than land on a hidden one.
-      if (dr && v.rows.isHidden(row)) row = v.rows.step(row, dr);
-      if (dr && v.rows.isHidden(row)) row = from.row;
-      if (dc && v.columns.isHidden(column)) column = v.columns.step(column, dc);
-      if (dc && v.columns.isHidden(column)) column = from.column;
-    }
-    selection.select(row, column, { extend, grow: growOverMerges });
+    const { row, column } = jump
+      ? host.edge(from.row, from.column, dr, dc)
+      : stepFrom(from, dr, dc, extend ? 'extend' : Math.abs(dr) > 1 ? 'page' : 'cell', v, sheet);
+    selection.select(row, column, { extend, grow: growOverSheetMerges });
     if (cycleInRange && !extend && dr === 0 && dc !== 0)
       state.current.tabRun = afterTab(run, active, selection.active.value);
     // Extending a whole-row (or whole-column) selection must not scroll to its far end.
@@ -728,74 +650,50 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       e.preventDefault();
       return;
     }
-    const arrows: Record<string, [number, number]> = {
-      ArrowUp: [-1, 0],
-      ArrowDown: [1, 0],
-      ArrowLeft: [0, -1],
-      ArrowRight: [0, 1],
-    };
     if (e.key === ' ' && !mod && !e.altKey && host.toggleCheckboxes?.()) {
       e.preventDefault();
       return;
     }
-    const arrow = arrows[e.key];
-    if (arrow) {
-      e.preventDefault();
-      moveActive(arrow[0], arrow[1], e.shiftKey, false, mod);
+    const action = gridKeyAction(e);
+    if (!action) return;
+    if (action.kind === 'escape') {
+      // Esc drops the copy marquee first; with none, it collapses the selection to the active cell.
+      if (host.marquee?.value?.sheet === host.sheet.value.name) {
+        host.clearMarquee?.();
+        return;
+      }
+      const { row, column } = selection.active.value;
+      const m = host.sheet.value.selectionRangeAt(row, column);
+      if (selection.collapse({ top: m.top, left: m.left, bottom: m.bottom, right: m.right }))
+        e.preventDefault();
       return;
     }
-    switch (e.key) {
-      case 'Enter':
-        e.preventDefault();
-        moveActive(e.shiftKey ? -1 : 1, 0, false, true);
+    e.preventDefault();
+    switch (action.kind) {
+      case 'move':
+        moveActive(action.rows, action.columns, action.extend, action.cycle, action.jump);
         return;
-      case 'Tab':
-        e.preventDefault();
-        moveActive(0, e.shiftKey ? -1 : 1, false, true);
+      case 'page':
+        moveActive(action.down ? pageRows() : -pageRows(), 0, action.extend);
         return;
-      case 'PageDown':
-      case 'PageUp':
-        e.preventDefault();
-        moveActive(e.key === 'PageDown' ? pageRows() : -pageRows(), 0, e.shiftKey);
-        return;
-      case 'Home': {
-        e.preventDefault();
+      case 'home': {
         // The first visible column (and row, with ⌘), not a hidden A or 1.
         const v = state.current.viewport ?? viewport();
-        const firstVisible = (axis: typeof v.rows) => (axis.isHidden(0) ? axis.step(0, 1) : 0);
-        const row = mod ? firstVisible(v.rows) : selection.active.value.row;
+        const row = action.top ? firstVisible(v.rows) : selection.active.value.row;
         const column = firstVisible(v.columns);
-        selection.select(row, column, { extend: e.shiftKey });
+        selection.select(row, column, { extend: action.extend });
         reveal(row, column);
         return;
       }
-      case 'F2':
-        e.preventDefault();
+      case 'edit':
         beginEdit();
         return;
-      case 'Delete':
-      case 'Backspace':
-        e.preventDefault();
+      case 'clear':
         host.clearSelection();
         return;
-      case 'Escape': {
-        // Esc drops the copy marquee first; with none, it collapses the selection to the active cell.
-        if (host.marquee?.value?.sheet === host.sheet.value.name) {
-          host.clearMarquee?.();
-          return;
-        }
-        const { row, column } = selection.active.value;
-        const m = host.sheet.value.selectionRangeAt(row, column);
-        if (selection.collapse({ top: m.top, left: m.left, bottom: m.bottom, right: m.right }))
-          e.preventDefault();
+      case 'type':
+        beginEdit(action.text);
         return;
-      }
-    }
-    // Typing a printable character replaces the cell's content and starts editing. ⌥ (macOS) and
-    // AltGr (Ctrl+Alt elsewhere) type characters too; ⌘ and plain Ctrl are shortcuts.
-    if (e.key.length === 1 && !e.metaKey && (!e.ctrlKey || e.altKey)) {
-      e.preventDefault();
-      beginEdit(e.key);
     }
   };
 
@@ -1101,7 +999,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
           return;
         }
         const merged = host.sheet.value.selectionRangeAt(hit.row, hit.column);
-        if (e.shiftKey) selection.select(hit.row, hit.column, { extend: true, grow: growOverMerges });
+        if (e.shiftKey) selection.select(hit.row, hit.column, { extend: true, grow: growOverSheetMerges });
         else selection.select(merged.top, merged.left, { add });
         state.current.drag = { kind: 'cells', index: 0, origin: 0, start: 0 };
         if (clicks === 2) beginEdit();
@@ -1150,7 +1048,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       case 'cells': {
         const row = v.rowAt(y);
         const column = v.columnAt(x);
-        selection.select(row, column, { extend: true, grow: growOverMerges });
+        selection.select(row, column, { extend: true, grow: growOverSheetMerges });
         return;
       }
       case 'columns':
