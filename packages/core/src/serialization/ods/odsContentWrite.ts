@@ -1,22 +1,19 @@
 import { Defaults } from '../../defaults.ts';
-import { DateConversion, type CivilDateTime } from '../../formulas/evaluation/dateConversion.ts';
 import { OpenFormulaTranslator } from '../../formulas/openFormulaTranslator.ts';
 import type { Cell } from '../../model/cell.ts';
 import type { MergedRegion } from '../../model/mergedRegion.ts';
 import type { CellRange } from '../../model/cellRange.ts';
-import type { NamedRange } from '../../model/namedRange.ts';
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import { cellKey } from '../../model/sheetDimensions.ts';
-import { NumberFormats } from '../../styling/cellStyle.ts';
-import { NumberFormatter } from '../../styling/numberFormatter.ts';
 import { StylePool } from '../../styling/stylePool.ts';
-import { roundTripNumber } from '../../values/cellValue.ts';
 import { parseXmlElement, XmlDocument, XmlElement, XmlText } from '../../xml/index.ts';
 import { OdsCharts } from './odsCharts.ts';
 import { checkboxCells, checkboxControl, checkboxForm, Form, formsElement, Ooo } from './odsCheckboxes.ts';
-import { appendParagraphText, odfCellAddress, odfRangeAddress } from './odsContentShared.ts';
+import { appendParagraphText } from './odsContentShared.ts';
+import { writeCellValue } from './odsCellValue.ts';
 import { addDatabaseRanges } from './odsDatabaseRanges.ts';
+import { addLocalNamedExpressions, addNamedExpressions } from './odsNamedExpressions.ts';
 import type { ForeignXml } from './odsPackage.ts';
 import { LineContainers } from './odsLineContainers.ts';
 import { OdsPreserved } from './odsPreserved.ts';
@@ -38,9 +35,6 @@ import {
   Text,
   Xlink,
 } from './odsXmlNames.ts';
-
-/** A fixed locale for the cached display text written beside each value, whatever the system's. */
-const INVARIANT_LOCALE = 'en-US';
 
 type ValidationTargets = ReadonlyArray<{ readonly range: CellRange; readonly name: string }>;
 const NO_VALIDATIONS: ValidationTargets = [];
@@ -566,38 +560,13 @@ function writeCellContent(element: XmlElement, cell: Cell, registry: StyleRegist
 
   const value = cell.value;
   const format = registry.styles.get(styleId).numberFormat;
-  const kind = NumberFormats.kind(format);
-  const isTime = kind === 'time';
-  const isDate = kind === 'date' || kind === 'dateTime';
 
   let lines: string[] = [];
   switch (value.kind) {
     case 'number':
-      if (isTime) {
-        // A time format stores the serial as an ISO-8601 duration so the whole value (days *and*
-        // time-of-day fraction) survives, including elapsed times past 24h.
-        element.setAttr(Office('value-type'), 'time');
-        element.setAttr(Office('time-value'), durationText(value.value));
-      } else if (isDate) {
-        element.setAttr(Office('value-type'), 'date');
-        element.setAttr(Office('date-value'), dateValueText(value.value));
-      } else if (kind === 'currency') {
-        element.setAttr(Office('value-type'), 'currency');
-        element.setAttr(Office('currency'), currencyCode(format.code));
-        element.setAttr(Office('value'), floatValueText(value.value));
-      } else if (kind === 'percent') {
-        element.setAttr(Office('value-type'), 'percentage');
-        element.setAttr(Office('value'), floatValueText(value.value));
-      } else {
-        element.setAttr(Office('value-type'), 'float');
-        element.setAttr(Office('value'), floatValueText(value.value));
-      }
-      lines = [NumberFormatter.format(value, format.code, INVARIANT_LOCALE)];
-      break;
     case 'boolean':
-      element.setAttr(Office('value-type'), 'boolean');
-      element.setAttr(Office('boolean-value'), value.value ? 'true' : 'false');
-      lines = [value.value ? 'TRUE' : 'FALSE'];
+    case 'error':
+      lines = writeCellValue(element, value, format);
       break;
     case 'text':
       element.setAttr(Office('value-type'), 'string');
@@ -614,13 +583,6 @@ function writeCellContent(element: XmlElement, cell: Cell, registry: StyleRegist
       // it to a space). The reader joins paragraphs with "\n".
       // A pasted Windows line end ("\r\n") or a lone "\r" is a line break too, not a stray character.
       lines = value.value.replace(/\r\n?/g, '\n').split('\n');
-      break;
-    case 'error':
-      // As LibreOffice writes it: an empty string value marked as an error, the token as display.
-      element.setAttr(Office('value-type'), 'string');
-      element.setAttr(Office('string-value'), '');
-      element.setAttr(Calcext('value-type'), 'error');
-      lines = [value.error.token];
       break;
     case 'empty':
       break;
@@ -641,146 +603,4 @@ function writeCellContent(element: XmlElement, cell: Cell, registry: StyleRegist
     }
     element.add(paragraph);
   });
-}
-
-const CURRENCY_BY_SYMBOL: Readonly<Record<string, string>> = { $: 'USD', '€': 'EUR', '£': 'GBP', '¥': 'JPY' };
-
-/**
- * The ISO 4217 code for `office:currency`, read from the format's symbol: `[$€-407]`, `[$USD]`,
- * `"$"` or a bare `€`. Null (the attribute is optional) when the code names no currency we know.
- */
-function currencyCode(code: string): string | null {
-  const tagged = /\[\$([^\]-]+)/.exec(code)?.[1];
-  const symbol = tagged ?? /[$€£¥]/.exec(code)?.[0];
-  if (symbol === undefined) return null;
-  if (/^[A-Z]{3}$/.test(symbol)) return symbol;
-  return CURRENCY_BY_SYMBOL[symbol] ?? null;
-}
-
-/**
- * An ODF `office:value` (`xsd:double`). Non-finite values spell `INF`/`-INF`/`NaN`; "Infinity" is
- * rejected by conformant readers.
- */
-function floatValueText(n: number): string {
-  if (Number.isNaN(n)) return 'NaN';
-  if (n === Infinity) return 'INF';
-  if (n === -Infinity) return '-INF';
-  return roundTripNumber(n);
-}
-
-/**
- * An ODF `office:date-value`. Pure dates stay `yyyy-MM-dd`; values with a time-of-day fraction emit
- * the full ISO-8601 timestamp. Out-of-range serials fall back to a plain date string.
- */
-function dateValueText(serial: number): string {
-  const when = DateConversion.tryToDateTime(serial, false);
-  if (!when) return datePart(DateConversion.dateFromSerial(serial));
-  const midnight = when.hour === 0 && when.minute === 0 && when.second === 0 && when.millisecond === 0;
-  if (midnight) return datePart(when);
-  // Sub-second time is part of the value: 12:00:00.5 must not come back as 12:00:00.
-  const fraction = when.millisecond === 0 ? '' : '.' + pad(when.millisecond, 3).replace(/0+$/, '');
-  return `${datePart(when)}T${pad(when.hour, 2)}:${pad(when.minute, 2)}:${pad(when.second, 2)}${fraction}`;
-}
-
-function datePart(d: CivilDateTime): string {
-  return `${pad(d.year, 4)}-${pad(d.month, 2)}-${pad(d.day, 2)}`;
-}
-
-function pad(n: number, width: number): string {
-  return String(n).padStart(width, '0');
-}
-
-const TICKS_PER_DAY = 864_000_000_000;
-const TICKS_PER_SECOND = 10_000_000;
-
-/**
- * `XmlConvert.ToString(TimeSpan.FromDays(days))`: an `xsd:duration` such as `P1DT6H`, `PT12H`,
- * `PT0.5S`, or `PT0S`, at tick (100 ns) precision with a trimmed seven-digit fraction.
- */
-export function durationText(days: number): string {
-  if (!Number.isFinite(days)) return 'PT0S';
-  let ticks = Math.round(days * TICKS_PER_DAY);
-  let sign = '';
-  if (ticks < 0) {
-    sign = '-';
-    ticks = -ticks;
-  }
-
-  const d = Math.floor(ticks / TICKS_PER_DAY);
-  let rest = ticks - d * TICKS_PER_DAY;
-  const h = Math.floor(rest / (3600 * TICKS_PER_SECOND));
-  rest -= h * 3600 * TICKS_PER_SECOND;
-  const m = Math.floor(rest / (60 * TICKS_PER_SECOND));
-  rest -= m * 60 * TICKS_PER_SECOND;
-  const s = Math.floor(rest / TICKS_PER_SECOND);
-  const fraction = rest - s * TICKS_PER_SECOND;
-
-  let text = sign + 'P';
-  if (d !== 0) text += `${d}D`;
-  if (h !== 0 || m !== 0 || s !== 0 || fraction !== 0) {
-    text += 'T';
-    if (h !== 0) text += `${h}H`;
-    if (m !== 0) text += `${m}M`;
-    if (s !== 0 || fraction !== 0) {
-      text += String(s);
-      if (fraction !== 0) text += '.' + String(fraction).padStart(7, '0').replace(/0+$/, '');
-      text += 'S';
-    }
-  } else if (d === 0) {
-    text += 'T0S';
-  }
-  return text;
-}
-
-/**
- * The workbook's global names: every modeled named range, then each preserved entry (a named
- * expression such as `Rate = of:=0.07`) whose name the model does not now hold itself.
- */
-function addNamedExpressions(
-  spreadsheet: XmlElement,
-  workbook: Workbook,
-  preserved: readonly XmlElement[],
-): void {
-  const global = workbook.namedRanges.filter((n) => n.scope === null || n.scope === undefined);
-  const fallbackSheet =
-    workbook.worksheets.length > 0 ? workbook.worksheets[0]!.name : Defaults.firstSheetName;
-  const container = namedExpressionsElement(global, preserved, fallbackSheet);
-  if (container) spreadsheet.add(container);
-}
-
-/** A sheet's own names (`scope` = the sheet), written inside its table as ODF scopes them. */
-function addLocalNamedExpressions(
-  table: XmlElement,
-  workbook: Workbook,
-  sheet: Worksheet,
-  preserved: readonly XmlElement[],
-): void {
-  const key = sheet.name.toLowerCase();
-  const local = workbook.namedRanges.filter((n) => n.scope?.toLowerCase() === key);
-  const container = namedExpressionsElement(local, preserved, sheet.name);
-  if (container) table.add(container);
-}
-
-function namedExpressionsElement(
-  modeled: readonly NamedRange[],
-  preserved: readonly XmlElement[],
-  fallbackSheet: string,
-): XmlElement | null {
-  const container = new XmlElement(Table('named-expressions'));
-  const taken = new Set<string>();
-  for (const named of modeled) {
-    taken.add(named.name.toLowerCase());
-    container.add(
-      new XmlElement(Table('named-range'))
-        .setAttr(Table('name'), named.name)
-        .setAttr(Table('cell-range-address'), odfRangeAddress(named.target, fallbackSheet))
-        .setAttr(Table('base-cell-address'), odfCellAddress(named.target.topLeft, fallbackSheet)),
-    );
-  }
-  for (const element of preserved) {
-    const name = element.attr(Table('name'));
-    if (name !== null && taken.has(name.toLowerCase())) continue;
-    container.add(element.clone());
-  }
-  return container.hasElements ? container : null;
 }

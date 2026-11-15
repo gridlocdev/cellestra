@@ -1,4 +1,3 @@
-import { DateConversion } from '../../formulas/evaluation/dateConversion.ts';
 import { OpenFormulaTranslator } from '../../formulas/openFormulaTranslator.ts';
 import type { CellRichText, UnmodeledCellContent, UnparsedFormulaSource } from '../../model/cell.ts';
 import { CellAddress } from '../../model/cellAddress.ts';
@@ -10,8 +9,7 @@ import { SheetOutline, type LineGroup, type LineSpan } from '../../model/sheetOu
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import { StylePool } from '../../styling/stylePool.ts';
-import { CellError } from '../../values/cellError.ts';
-import { CellValue } from '../../values/cellValue.ts';
+import type { CellValue } from '../../values/cellValue.ts';
 import {
   appendXmlText,
   openXmlElement,
@@ -26,7 +24,6 @@ import {
   type XmlEventHandler,
   type XmlName,
 } from '../../xml/index.ts';
-import { parseInvariantFloat } from './mapping/odsCellStyles.ts';
 import { ChartSheetProbe, OdsCharts } from './odsCharts.ts';
 import {
   applyCheckboxes,
@@ -39,6 +36,8 @@ import { readDatabaseRanges } from './odsDatabaseRanges.ts';
 import type { ForeignXml, OdsPackage } from './odsPackage.ts';
 import { OdsPreserved } from './odsPreserved.ts';
 import { paragraphText } from './odsContentShared.ts';
+import { readCellValue } from './odsCellValue.ts';
+import { readNamedExpressions } from './odsNamedExpressions.ts';
 import { OdsStyleIndex } from './odsStyleIndex.ts';
 import {
   assembleValidations,
@@ -46,7 +45,7 @@ import {
   recordValidationRect,
   type ValidationCells,
 } from './odsValidation.ts';
-import { Calcext, Draw, OdsXmlNames as N, Office, Table, Text, Xlink } from './odsXmlNames.ts';
+import { Draw, OdsXmlNames as N, Office, Table, Text, Xlink } from './odsXmlNames.ts';
 
 const MAX_COLUMNS = SheetDimensions.maxColumns;
 const MAX_ROWS = SheetDimensions.maxRows;
@@ -1001,7 +1000,7 @@ function parseCell(element: XmlElement, context: ReadContext): ParsedCell {
     (paragraphs.length > 0 ? after : before).push(child.clone());
   }
 
-  const value = readValue(element, paragraphs);
+  const value = readCellValue(element, paragraphs);
   const hyperlink = readHyperlink(paragraphs);
   const read = formula !== null ? OpenFormulaTranslator.read(formula) : null;
   return {
@@ -1028,50 +1027,6 @@ function readRichText(paragraphs: readonly XmlElement[], hyperlink: Hyperlink | 
   };
 }
 
-function readValue(element: XmlElement, paragraphs: readonly XmlElement[]): CellValue {
-  if (element.attr(Calcext('value-type')) === 'error') {
-    // LibreOffice writes an error result as an empty string marked as an error, the token as display.
-    // A token we have no code for (Calc's "Err:502") stays the text it shows.
-    const shown = paragraphs.map(paragraphText).join('\n').trim();
-    const code = CellError.codeFromToken(shown);
-    return code === null
-      ? CellValue.text(shown)
-      : CellValue.error(new CellError(code, `The file saved this result as ${shown}.`));
-  }
-  switch (element.attr(Office('value-type'))) {
-    case 'float':
-    case 'percentage':
-    case 'currency': {
-      const n = parseDouble(element.attr(Office('value')));
-      return n === null ? CellValue.empty : CellValue.number(n);
-    }
-    case 'date': {
-      const serial = parseDateValue(element.attr(Office('date-value')));
-      return serial === null ? CellValue.empty : CellValue.number(serial);
-    }
-    case 'time': {
-      const days = parseDuration(element.attr(Office('time-value')));
-      return days === null ? CellValue.empty : CellValue.number(days);
-    }
-    case 'boolean': {
-      // xsd:boolean is "true"/"false" or "1"/"0".
-      const b = element.attr(Office('boolean-value'))?.trim();
-      return CellValue.boolean(b === 'true' || b === '1');
-    }
-    case 'string': {
-      // office:string-value, when present, is the value; the paragraphs are only its display.
-      const value = element.attr(Office('string-value'));
-      return CellValue.text(value ?? paragraphs.map(paragraphText).join('\n'));
-    }
-    default: {
-      // No value type, but text: a string cell from a writer that left the type out (ODF 19.385
-      // makes it optional), which LibreOffice reads as text too.
-      const text = paragraphs.map(paragraphText).join('\n');
-      return text.length > 0 ? CellValue.text(text) : CellValue.empty;
-    }
-  }
-}
-
 function readHyperlink(paragraphs: readonly XmlElement[]): Hyperlink | null {
   for (const paragraph of paragraphs) {
     const href = paragraph.descendants(Text('a'))[0]?.attr(Xlink('href')) ?? null;
@@ -1080,102 +1035,10 @@ function readHyperlink(paragraphs: readonly XmlElement[]): Hyperlink | null {
   return null;
 }
 
-/**
- * Read a `table:named-expressions` block: each `table:named-range` the model can hold becomes a
- * named range (sheet-local when `scope` is a sheet name); everything else — a named expression
- * (`Rate = of:=0.07`), a range the model cannot parse — is returned to be kept verbatim.
- */
-function readNamedExpressions(container: XmlElement, workbook: Workbook, scope: string | null): XmlElement[] {
-  const preserved: XmlElement[] = [];
-  for (const named of container.elements()) {
-    if (named.is(Table('named-range'))) {
-      const name = named.attr(Table('name'));
-      const address = named.attr(Table('cell-range-address'));
-      if (name !== null && address !== null) {
-        const internalRef = OpenFormulaTranslator.fromOpenFormula(
-          'of:=[' + address.replace(/^\$+/, '') + ']',
-        );
-        const range = CellRange.tryParse(internalRef);
-        if (range) {
-          const key = name.toLowerCase();
-          const taken = workbook.namedRanges.some(
-            (n) => n.name.toLowerCase() === key && (n.scope ?? null)?.toLowerCase() === scope?.toLowerCase(),
-          );
-          if (!taken)
-            workbook.addNamedRange(scope === null ? { name, target: range } : { name, target: range, scope });
-          continue;
-        }
-      }
-    }
-    preserved.push(named.clone());
-  }
-  return preserved;
-}
-
 /** `int.TryParse(…) && n > 0 ? n : 1`. */
 function readPositive(element: XmlElement, attribute: XmlName): number {
   const text = element.attr(attribute)?.trim() ?? '';
   if (!/^[+-]?\d+$/.test(text)) return 1;
   const n = Number(text);
   return n > 0 && n <= 2147483647 ? n : 1;
-}
-
-function parseDouble(text: string | null): number | null {
-  switch (text) {
-    case 'INF':
-      return Infinity;
-    case '-INF':
-      return -Infinity;
-    case 'NaN':
-      return NaN;
-  }
-  return parseInvariantFloat(text);
-}
-
-const ISO_DATE =
-  /^\s*(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?\s*(?:Z|[+-]\d{2}:?\d{2})?\s*$/;
-
-/** An ODF `office:date-value` (`yyyy-MM-dd` or `yyyy-MM-ddTHH:mm:ss[.fff]`) → a day serial. */
-function parseDateValue(text: string | null): number | null {
-  if (text === null) return null;
-  const m = ISO_DATE.exec(text);
-  if (!m) return null;
-  const year = Number(m[1]);
-  const month = Number(m[2]);
-  const day = Number(m[3]);
-  const hour = m[4] === undefined ? 0 : Number(m[4]);
-  const minute = m[5] === undefined ? 0 : Number(m[5]);
-  const second = m[6] === undefined ? 0 : Number(m[6]);
-  const millisecond = m[7] === undefined ? 0 : Math.round(Number('0.' + m[7]) * 1000);
-  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
-  if (hour > 23 || minute > 59 || second > 59) return null;
-  return DateConversion.toSerial({ year, month, day, hour, minute, second, millisecond });
-}
-
-function daysInMonth(year: number, month: number): number {
-  if (month === 2) return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 29 : 28;
-  return [4, 6, 9, 11].includes(month) ? 30 : 31;
-}
-
-const DURATION =
-  /^\s*(-)?P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d*)?|\.\d+)S)?)?\s*$/;
-
-/**
- * `XmlConvert.ToTimeSpan(text).TotalDays`: an `xsd:duration` → days, with .NET's conventions of a
- * 365-day year and a 30-day month. Null when malformed (including a bare `P` or a dangling `T`).
- */
-export function parseDuration(text: string | null): number | null {
-  if (!text) return null;
-  const m = DURATION.exec(text);
-  if (!m) return null;
-  const hasDate = m[2] !== undefined || m[3] !== undefined || m[4] !== undefined;
-  const hasTime = m[5] !== undefined || m[6] !== undefined || m[7] !== undefined;
-  if (!hasDate && !hasTime) return null;
-  if (text.includes('T') && !hasTime) return null;
-
-  const n = (s: string | undefined): number => (s === undefined ? 0 : Number(s));
-  const seconds = ((n(m[2]) * 365 + n(m[3]) * 30 + n(m[4])) * 24 + n(m[5])) * 3600 + n(m[6]) * 60 + n(m[7]);
-  const ticks = Math.round(seconds * 10_000_000);
-  const days = ticks / 864_000_000_000;
-  return m[1] ? -days : days;
 }
