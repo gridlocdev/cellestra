@@ -1,17 +1,6 @@
 import { Defaults, StylePool, type CellStyle, type CellValue, type Worksheet } from '@cellestra/core';
-import { CELL_PAD_Y, rotatedCellBox, wrap } from './render.ts';
-
-const PT_TO_PX = 96 / 72;
-/**
- * A line of text is about 1.2× its font size. With the 2px padding above and below, a 10pt
- * line comes to exactly the default 20px row, so only bigger fonts and wrapped text grow a row.
- */
-const LINE_FACTOR = 1.2;
-
-/** The height one cell's text needs: `lines` lines at `points`, plus the padding. */
-export function textHeight(points: number, lines = 1): number {
-  return Math.ceil(points * PT_TO_PX * LINE_FACTOR * Math.max(1, lines) + 2 * CELL_PAD_Y);
-}
+import { CELL_PAD_X, cellFont, LINE_FACTOR, PT_TO_PX, rotatedCellBox, textHeight } from './cellText.ts';
+import { wrap } from './render.ts';
 
 /** What the measuring needs from the grid: the shown text, and how many lines wrapping makes of it. */
 export interface RowMeasure {
@@ -130,7 +119,7 @@ export class ContentHeights {
       need = Math.max(need, textHeight(style.font.sizePoints, breaks));
     if (style.alignment.wrapText) {
       const text = this.#m.display(value, style);
-      const lines = this.#m.wrappedLines(text, style, this.#m.columnWidth(column) - 2 * 5);
+      const lines = this.#m.wrappedLines(text, style, this.#m.columnWidth(column) - 2 * CELL_PAD_X);
       need = Math.max(need, textHeight(style.font.sizePoints, lines));
     }
     return need;
@@ -140,11 +129,6 @@ export class ContentHeights {
 /** The rows content makes taller, measured in one pass (see `ContentHeights`). */
 export function contentRowHeights(sheet: Worksheet, styles: StylePool, m: RowMeasure): Map<number, number> {
   return new ContentHeights(sheet, styles, m).rows;
-}
-
-/** The CSS font a style's text is measured in, at 100%. */
-export function measureFont(style: CellStyle): string {
-  return `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${(style.font.sizePoints * 96) / 72}px "${style.font.family}", "Helvetica Neue", Arial, sans-serif`;
 }
 
 /**
@@ -160,13 +144,13 @@ export function canvasRowMeasure(
     display,
     wrappedLines: (text, style, width) => {
       if (!ctx) return text.split('\n').length;
-      ctx.font = measureFont(style);
+      ctx.font = cellFont(style.font);
       return wrap(ctx, text, width).length;
     },
     columnWidth: (c) => sheet.columns.get(c)?.width ?? Defaults.columnWidth,
     textWidth: (text, style) => {
       if (!ctx) return text.length * style.font.sizePoints * 0.6;
-      ctx.font = measureFont(style);
+      ctx.font = cellFont(style.font);
       return ctx.measureText(text).width;
     },
   };

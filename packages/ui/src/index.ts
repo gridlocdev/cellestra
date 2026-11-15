@@ -5,6 +5,15 @@ export * from './grid/axis.ts';
 export * from './grid/viewport.ts';
 export * from './grid/palette.ts';
 export * from './grid/render.ts';
+export {
+  CELL_PAD_X,
+  CELL_PAD_Y,
+  cellFont,
+  fittedWidth,
+  rotatedBox,
+  rotatedCellBox,
+  textHeight,
+} from './grid/cellText.ts';
 export * from './grid/chrome.ts';
 export { canvasRowMeasure, contentRowHeights, type RowMeasure } from './grid/rowHeights.ts';
 export { Grid, type GridHost, type GridController, type GridProps } from './grid/Grid.tsx';

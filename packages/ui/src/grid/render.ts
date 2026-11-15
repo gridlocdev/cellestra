@@ -9,6 +9,7 @@ import {
   StylePool,
   type Worksheet,
 } from '@cellestra/core';
+import { CELL_PAD_X, CELL_PAD_Y, cellFont, LINE_FACTOR, PT_TO_PX, rotatedBox } from './cellText.ts';
 import { drawChrome, type ChromeButton } from './chrome.ts';
 import type { GridPalette } from './palette.ts';
 import { HEADER_HEIGHT, HEADER_WIDTH, type Band, type Rect, type Viewport } from './viewport.ts';
@@ -19,10 +20,6 @@ const TABLE_OUTLINE_WIDTH = 2;
 const SPILL_SCAN_COLUMNS = 256;
 /** Height of one overflow chevron at 100% zoom, in CSS px. */
 const OVERFLOW_MARKER_SIZE = 6;
-
-export const CELL_PAD_X = 5;
-export const CELL_PAD_Y = 2;
-const PT_TO_PX = 96 / 72;
 
 /** Selection as the renderer needs it: the active cell plus inclusive ranges. */
 export interface RenderSelection {
@@ -441,7 +438,7 @@ function drawCellText(
   if (!shown.text) return;
   const font = style.font;
   const px = font.sizePoints * PT_TO_PX * v.zoom;
-  ctx.font = `${font.italic ? 'italic ' : ''}${font.bold ? 'bold ' : ''}${px}px ${cssFamily(font.family)}`;
+  ctx.font = cellFont(font, v.zoom);
   ctx.fillStyle = cell.hyperlink
     ? palette.hyperlink
     : (shown.color ??
@@ -460,7 +457,7 @@ function drawCellText(
           : 'left'
       : h;
   const pad = CELL_PAD_X * v.zoom;
-  const lineHeight = px * 1.2;
+  const lineHeight = px * LINE_FACTOR;
   const rotation = style.alignment.rotation ?? 0;
   if (rotation !== 0) {
     drawRotatedText(ctx, shown.text.split('\n'), rect, rotation, align, style.alignment.vertical, px, v.zoom);
@@ -583,7 +580,7 @@ function drawRotatedText(
   px: number,
   zoom: number,
 ): void {
-  const lineHeight = px * 1.2;
+  const lineHeight = px * LINE_FACTOR;
   const w = Math.max(...lines.map((t) => ctx.measureText(t).width));
   const h = lines.length * lineHeight;
   // The padding turns with the text: its ends keep the same gap as flat text's ends, so 90° text
@@ -604,26 +601,6 @@ function drawRotatedText(
   const x = align === 'left' ? -w / 2 : align === 'right' ? w / 2 : 0;
   lines.forEach((text, i) => ctx.fillText(text, x, -h / 2 + i * lineHeight + (lineHeight - px) / 2));
   ctx.restore();
-}
-
-/**
- * The upright room a cell's turned text needs, padding included: the text's `width` × `height` with
- * the cell padding added along it (so the ends get CELL_PAD_X), then turned `degrees`.
- */
-export function rotatedCellBox(
-  width: number,
-  height: number,
-  degrees: number,
-): { width: number; height: number } {
-  return rotatedBox(width + 2 * CELL_PAD_X, height + 2 * CELL_PAD_Y, degrees);
-}
-
-/** The upright bounding box of a `w` × `h` block turned `degrees`. */
-export function rotatedBox(w: number, h: number, degrees: number): { width: number; height: number } {
-  const t = (degrees * Math.PI) / 180;
-  const c = Math.abs(Math.cos(t));
-  const s = Math.abs(Math.sin(t));
-  return { width: w * c + h * s, height: w * s + h * c };
 }
 
 /** A value that takes up its cell: text spills over cells without one, and stops at the next. */
@@ -1005,8 +982,4 @@ function line(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number,
 /** Half-pixel align a 1px line so it lands on one device row. */
 function crisp(v: number): number {
   return Math.round(v) - 0.5;
-}
-
-function cssFamily(family: string): string {
-  return `"${family.replace(/"/g, '')}", "Helvetica Neue", Helvetica, Arial, sans-serif`;
 }

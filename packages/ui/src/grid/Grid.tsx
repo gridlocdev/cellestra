@@ -26,12 +26,11 @@ import {
   checkboxRect,
   fillHandleRect,
   renderGrid,
-  CELL_PAD_X,
-  CELL_PAD_Y,
   MARQUEE_DASH,
   type DisplayText,
   type GridOverlay,
 } from './render.ts';
+import { CELL_PAD_X, CELL_PAD_Y } from './cellText.ts';
 import { canvasRowMeasure, ContentHeights } from './rowHeights.ts';
 import { afterTab, enterOrigin, startsComposition, type TabRun } from './keys.ts';
 import { insertLineBreak } from '../components/lineBreak.ts';

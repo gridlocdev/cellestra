@@ -1,6 +1,7 @@
 import { CellRange, CellValue, EditCommands, OdsWriter, SheetDimensions, Workbook } from '@cellestra/core';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  CELL_PAD_X,
   ConflictError,
   keepRecoveryAside,
   MAX_ROW,
@@ -835,7 +836,7 @@ describe('autofit columns', () => {
     app.selection.select(0, 0);
     app.autofitColumns(CellRange.parse('A1:D1'));
     const [flat, up, slant, wrapped] = [0, 1, 2, 3].map((c) => sheet.getColumnWidth(c));
-    expect(flat).toBe(150 + 12);
+    expect(flat).toBe(150 + 2 * CELL_PAD_X);
     expect(up).toBeLessThan(40); // one line's height, not 150px of text
     expect(up).toBeGreaterThan(12);
     expect(slant).toBeGreaterThan(up!);
@@ -861,12 +862,12 @@ describe('double-click on a column edge', () => {
 
     app.autofitColumn(2);
     expect(app.session.lastAction.peek()).toBe('Autofitted columns A:A, C:C');
-    expect(sheet.getColumnWidth(0)).toBe(140 + 12);
-    expect(sheet.getColumnWidth(2)).toBe(140 + 12);
+    expect(sheet.getColumnWidth(0)).toBe(140 + 2 * CELL_PAD_X);
+    expect(sheet.getColumnWidth(2)).toBe(140 + 2 * CELL_PAD_X);
     expect(sheet.getColumnWidth(1)).toBe(before);
 
     app.autofitColumn(1); // not selected: only its own column
-    expect(sheet.getColumnWidth(1)).toBe(140 + 12);
+    expect(sheet.getColumnWidth(1)).toBe(140 + 2 * CELL_PAD_X);
     expect(app.session.lastAction.peek()).toBe('Autofitted columns B:B');
   });
 });

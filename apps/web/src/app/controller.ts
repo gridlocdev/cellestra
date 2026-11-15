@@ -70,7 +70,7 @@ import {
   orphanedRecoveries,
   recentFiles,
   rememberRecent,
-  rotatedCellBox,
+  fittedWidth,
   saveRecovery,
   type CellestraNative,
   type DocumentRef,
@@ -1630,9 +1630,8 @@ export class AppController {
     const ctx = document.createElement('canvas').getContext('2d')!;
     const wb = this.session.workbook.peek();
     const sheet = this.sheet;
-    // One pass over the stored cells (not every row of every column), with the font and the
-    // measured width cached: a column of repeated values measures each distinct text once.
-    const fonts = new Map<number, string>();
+    // One pass over the stored cells (not every row of every column), with each style's measured
+    // texts cached: a column of repeated values measures each distinct text once.
     const measured = new Map<string, number>();
     const widths = new Map<number, number>();
     for (const [row, column, cell] of sheet.enumerateCells()) {
@@ -1640,31 +1639,15 @@ export class AppController {
       if (cell.value.kind === 'empty' || sheet.findMerge(row, column)) continue;
       const styleId = sheet.effectiveStyleId(row, column);
       const style = wb.styles.get(styleId);
-      // Wrapped text folds at the column's edge; measured flat it would ask for a paragraph's width.
-      // Rotated text never wraps (the grid draws it unwrapped), so it is always measured.
-      const rotation = style.alignment.rotation ?? 0;
-      if (style.alignment.wrapText && rotation === 0) continue;
-      let font = fonts.get(styleId);
-      if (font === undefined) {
-        font = `${style.font.italic ? 'italic ' : ''}${style.font.bold ? 'bold ' : ''}${style.font.sizePoints * (4 / 3)}px ${style.font.family}, system-ui, sans-serif`;
-        fonts.set(styleId, font);
-      }
       const text = this.session.display(cell.value, style);
-      const key = `${font}\u0000${text}`;
+      const key = `${styleId}\u0000${text}`;
       let width = measured.get(key);
       if (width === undefined) {
-        ctx.font = font;
-        // A multi-line value is as wide as its longest line.
-        width = Math.max(...text.split('\n').map((line) => ctx.measureText(line).width));
+        // The grid's own measure: its font, its padding, its box for turned text. Wrapped flat
+        // text folds at the column's edge, so it asks for no width.
+        width = fittedWidth(ctx, text, style);
         measured.set(key, width);
       }
-      // Flat text gets 6px each side. Turned text takes the width of its upright bounding box,
-      // padding included: a 90° heading needs only its line height, a 45° one its diagonal.
-      // Same box the grid draws and sizes rows with.
-      if (rotation !== 0) {
-        const lines = text.split('\n').length;
-        width = rotatedCellBox(width, style.font.sizePoints * (4 / 3) * 1.2 * lines, rotation).width;
-      } else width += 12;
       if (width > (widths.get(column) ?? 0)) widths.set(column, width);
     }
     const cmds = [...widths]

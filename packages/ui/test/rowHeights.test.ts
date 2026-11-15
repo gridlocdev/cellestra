@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CellRange, CellValue, Defaults, MergedRegion, Workbook, type CellStyle } from '@cellestra/core';
-import { ContentHeights, contentRowHeights, textHeight, type RowMeasure } from '../src/grid/rowHeights.ts';
+import { textHeight } from '../src/grid/cellText.ts';
+import { ContentHeights, contentRowHeights, type RowMeasure } from '../src/grid/rowHeights.ts';
 
 /** Every character is 6px wide; wrapping is by character count. */
 const measure: RowMeasure = {

@@ -10,7 +10,8 @@ import {
   type EditCommand,
 } from '@cellestra/core';
 import { effect } from '@preact/signals';
-import { ContentHeights, textHeight, type RowMeasure } from '../src/grid/rowHeights.ts';
+import { textHeight } from '../src/grid/cellText.ts';
+import { ContentHeights, type RowMeasure } from '../src/grid/rowHeights.ts';
 import { WorkbookSession } from '../src/session/workbookSession.ts';
 
 const refusing: EditCommand = {
