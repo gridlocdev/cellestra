@@ -292,6 +292,12 @@ export {
 } from './styling/numberFormatter.ts';
 export { ChartDataResolver, type ResolvedChart, type ResolvedSeries } from './charts/chartDataResolver.ts';
 export {
+  ChartTableBinding,
+  type FromRangesResult,
+  type TableColumnInfo,
+  type TableColumnKind,
+} from './charts/chartTableBinding.ts';
+export {
   ActionCommand,
   AutoSumPlanner,
   type AutoSumProposal,

@@ -1,4 +1,5 @@
 import { ChartDocument } from '@cellestra/charts';
+import { ChartTableBinding } from '../../charts/chartTableBinding.ts';
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import { isNamespaceDeclaration, tryParseXml, XmlElement } from '../../xml/index.ts';
@@ -58,9 +59,11 @@ export const OdsCharts = {
       }
 
       const part = `${chart.objectName}/content.xml`;
-      const state = JSON.stringify(chart);
+      // A table-bound chart is written with the table's current ranges, so other readers plot it.
+      const written = ChartTableBinding.materialize(workbook, chart);
+      const state = JSON.stringify(written);
       if (writtenCharts.get(sheet) !== state || !pkg.contains(part)) {
-        pkg.setText(part, ChartDocument.buildContent(chart));
+        pkg.setText(part, ChartDocument.buildContent(written));
         writtenCharts.set(sheet, state);
       }
       dirs.push(chart.objectName);

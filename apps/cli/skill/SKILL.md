@@ -119,7 +119,8 @@ conditions or allowed values; `clear` to show all), `add-sheet` (`at`, `ifMissin
 `delete-sheet`/`duplicate-sheet`/`move-sheet`, `settings` (locale, calc, activeSheet),
 `insert-rows`/`delete-rows`/`insert-cols`/`delete-cols`, `sort`, `remove-duplicates`, `split`
 (text to columns), `table` (`replace`)/
-`table-options` (banded rows, header column, resize)/`table-remove`/`rename-table`, `validation` (list, or
+`table-options` (banded rows, header column, resize)/`table-remove`/`rename-table` (charts bound to the
+table follow), `validation` (list, or
 whole/decimal/date/text-length with an operator and bounds; `remove`), `name`/`unname`,
 `hyperlink`, `chart`/`chart-update`/`chart-remove`. Re-running a batch is safe when you use
 `ifMissing`/`replace`. `--dry-run` applies in memory and returns the same report (changed cells,

@@ -206,7 +206,7 @@ export const table: CommandSpec = {
 
 export const renameTable: CommandSpec = {
   name: 'rename-table',
-  description: 'Rename a table',
+  description: 'Rename a table; charts bound to it follow the new name',
   args: [
     fileArg(),
     { name: 'table', description: 'The table: its name or a cell in it' },

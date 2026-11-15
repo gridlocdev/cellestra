@@ -4,6 +4,8 @@ import {
   createSeries,
   type ChartDefinition,
   type ChartSeries,
+  type ChartSourceSeries,
+  type ChartTableSource,
   type ChartType,
 } from '../model.ts';
 import { ChartXmlNames as N } from './chartXmlNames.ts';
@@ -68,13 +70,22 @@ export const ChartDocument = {
     if (chart.yAxisTitle) yAxis.children.push(title(chart.yAxisTitle));
     plotArea.children.push(yAxis);
 
-    for (const series of chart.series) plotArea.children.push(buildSeries(series, chart.type));
+    chart.series.forEach((series, i) =>
+      plotArea.children.push(buildSeries(series, chart.type, chart.source?.series[i] ?? null)),
+    );
 
     const chartElement = el('chart:chart', [
       ['chart:class', ChartTypes.odsClass(chart.type)],
       ['svg:width', cm(ChartDocument.defaultWidthCm)],
       ['svg:height', cm(ChartDocument.defaultHeightCm)],
     ]);
+    // The table binding has no ODF equivalent: it rides along as Cellestra attributes, beside the
+    // plain ranges LibreOffice reads.
+    if (chart.source) {
+      cellestraAttr(chartElement, 'source-table', chart.source.table);
+      if (chart.source.categoryColumn !== null)
+        cellestraAttr(chartElement, 'source-categories', chart.source.categoryColumn);
+    }
     if (chart.title) chartElement.children.push(title(chart.title));
     if (chart.showLegend) chartElement.children.push(el('chart:legend', [['chart:legend-position', 'end']]));
     chartElement.children.push(plotArea);
@@ -133,8 +144,24 @@ export const ChartDocument = {
       }
     }
 
+    const sourceTable = chartElement.attr(N.cellestraChart, 'source-table');
+    const source: ChartTableSource | null = sourceTable
+      ? {
+          table: sourceTable,
+          categoryColumn: chartElement.attr(N.cellestraChart, 'source-categories'),
+          series: [],
+        }
+      : null;
     for (const seriesElement of elements(plotArea, N.chart, 'series')) {
       const seriesType = ChartTypes.fromOds(seriesElement.attr(N.chart, 'class'), vertical);
+      const column = seriesElement.attr(N.cellestraChart, 'source-column');
+      if (source && column !== null) {
+        source.series.push({
+          column,
+          type: seriesType === type ? null : seriesType,
+          sizeColumn: seriesElement.attr(N.cellestraChart, 'source-size-column'),
+        });
+      }
       chart.series.push(
         createSeries({
           valuesReference: seriesElement.attr(N.chart, 'values-cell-range-address') ?? '',
@@ -146,11 +173,12 @@ export const ChartDocument = {
         }),
       );
     }
+    chart.source = source;
     return chart;
   },
 } as const;
 
-function buildSeries(series: ChartSeries, chartType: ChartType): Node {
+function buildSeries(series: ChartSeries, chartType: ChartType, bound: ChartSourceSeries | null): Node {
   const type = series.type ?? chartType;
   const element = el('chart:series', [
     ['chart:class', ChartTypes.odsClass(type)],
@@ -162,12 +190,23 @@ function buildSeries(series: ChartSeries, chartType: ChartType): Node {
     // ODF has no attribute for a literal (non-cell) series name, so keep it on a Cellestra-namespaced
     // attribute. Conforming readers ignore unknown-namespace attributes, so this round-trips for us
     // without confusing LibreOffice.
-    element.attrs.push(['xmlns:cellestra', N.cellestraChart], ['cellestra:name', series.name]);
+    cellestraAttr(element, 'name', series.name);
+  }
+  if (bound) {
+    cellestraAttr(element, 'source-column', bound.column);
+    if (bound.sizeColumn !== null) cellestraAttr(element, 'source-size-column', bound.sizeColumn);
   }
   if (series.xValuesReference && series.xValuesReference.trim()) {
     element.children.push(el('chart:domain', [['table:cell-range-address', series.xValuesReference]]));
   }
   return element;
+}
+
+/** Set `cellestra:<local>` on `node`, declaring the namespace there the first time. */
+function cellestraAttr(node: Node, local: string, value: string): void {
+  if (!node.attrs.some(([k]) => k === 'xmlns:cellestra'))
+    node.attrs.push(['xmlns:cellestra', N.cellestraChart]);
+  node.attrs.push([`cellestra:${local}`, value]);
 }
 
 function title(text: string): Node {

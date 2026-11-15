@@ -16,6 +16,29 @@ export interface ChartSeries {
   type: ChartType | null;
 }
 
+/** One plotted column of a table-bound chart, by its header name. */
+export interface ChartSourceSeries {
+  /** The header of the column holding the values (Y values for scatter and bubble). */
+  column: string;
+  /** Per-series override (combo charts), as `ChartSeries.type`. */
+  type: ChartType | null;
+  /** Bubble charts: the header of the column sizing each bubble. */
+  sizeColumn: string | null;
+}
+
+/**
+ * A chart bound to a named table by column names rather than cell ranges, so it follows the table
+ * as it grows and its columns move. The engine turns it into ranges (`ChartTableBinding`); the
+ * ranges are what the file stores for other readers.
+ */
+export interface ChartTableSource {
+  /** The table's name (matched without case). */
+  table: string;
+  /** The header of the column labelling the categories, or holding the X values of an X/Y chart. */
+  categoryColumn: string | null;
+  series: ChartSourceSeries[];
+}
+
 export interface ChartDefinition {
   title: string;
   type: ChartType;
@@ -27,6 +50,8 @@ export interface ChartDefinition {
   yAxisTitle: string | null;
   /** The embedded object's directory inside the .ods (`Object 1`). */
   objectName: string;
+  /** The table the data comes from, by column names; null plots the ranges above as they are. */
+  source: ChartTableSource | null;
 }
 
 export function createChart(init: Partial<ChartDefinition> = {}): ChartDefinition {
@@ -40,6 +65,7 @@ export function createChart(init: Partial<ChartDefinition> = {}): ChartDefinitio
     xAxisTitle: null,
     yAxisTitle: null,
     objectName: '',
+    source: null,
     ...init,
   };
 }
@@ -55,8 +81,12 @@ export function createSeries(init: Partial<ChartSeries> & Pick<ChartSeries, 'val
   };
 }
 
+export function cloneSource(source: ChartTableSource): ChartTableSource {
+  return { ...source, series: source.series.map((s) => ({ ...s })) };
+}
+
 export function cloneChart(c: ChartDefinition): ChartDefinition {
-  return { ...c, series: c.series.map((s) => ({ ...s })) };
+  return { ...c, series: c.series.map((s) => ({ ...s })), source: c.source ? cloneSource(c.source) : null };
 }
 
 const ODS_CLASS: Record<ChartType, string> = {

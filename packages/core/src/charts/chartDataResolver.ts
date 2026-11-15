@@ -3,6 +3,7 @@ import { Defaults } from '../defaults.ts';
 import { fixedDigits } from '../formulas/evaluation/decimalDigits.ts';
 import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
 import { CellRange } from '../model/cellRange.ts';
+import { ChartTableBinding } from './chartTableBinding.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import type { CellValue } from '../values/cellValue.ts';
@@ -126,10 +127,12 @@ function seriesName(workbook: Workbook, series: ChartSeries, fallbackSheet: stri
 
 /**
  * Resolves a chart definition's stored range strings (e.g. `Data.B2:B7`) against a workbook into
- * numbers and labels. Unqualified references default to the first data sheet.
+ * numbers and labels. Unqualified references default to the first data sheet. A chart bound to a
+ * table reads the table's current columns instead (`ChartTableBinding`).
  */
 export const ChartDataResolver = {
-  resolve(workbook: Workbook, chart: ChartDefinition): ResolvedChart {
+  resolve(workbook: Workbook, definition: ChartDefinition): ResolvedChart {
+    const chart = ChartTableBinding.materialize(workbook, definition);
     const fallbackSheet = defaultSheetName(workbook);
     const categories = readLabels(workbook, chart.categoriesReference, fallbackSheet);
     const series: ResolvedSeries[] = chart.series.map((definition, i) => {

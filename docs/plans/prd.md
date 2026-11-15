@@ -436,7 +436,7 @@ below 5 seconds is treated as 5.
 - **Header column** (Data ▸ Header Column, also on a table cell's context menu) designates the table's **first column** as row labels: its cells are bolded and the grid paints the lighter band under them. Alignment is left alone — a row label is text, and text already sits left under the General default (§8.8). The corner cell belongs to the header **row**, so toggling the column never restyles it, and a table that auto-expands downward carries the look onto the new row's first cell.
 - **Banded rows are off by default** (Data ▸ Banded Rows toggles them per table): banding is a reading aid the user opts into, not part of what a table is. When on, alternate data rows take a **muted, translucent tint of the header band** — banding always reads as a quiet echo of the header, never a colour of its own.
 - The header-column and banded-rows designations persist as `cellestra:*` **foreign attributes** on the table's `table:database-range` (ODF permits foreign attributes; LibreOffice opens the file untroubled and ignores them). They are written only when on, so a workbook that uses neither serializes to pure vocabulary ODF.
-- **Names.** Create Table suggests a name from the text just above the range, else the header row's first cell, when that text makes a valid name (spaces become underscores); otherwise the next free `Table1`, `Table2`… A table name starts with a letter or underscore, holds only letters, digits and underscores, can't look like a cell reference, and is unique among the workbook's tables and named ranges, ignoring case. The Data tab's **Name** box renames the active table (one undo step). The Name Box accepts a table name and selects the table, on its own sheet. The CLI renames with `rename-table` and the `rename-table` apply op.
+- **Names.** Create Table suggests a name from the text just above the range, else the header row's first cell, when that text makes a valid name (spaces become underscores); otherwise the next free `Table1`, `Table2`… A table name starts with a letter or underscore, holds only letters, digits and underscores, can't look like a cell reference, and is unique among the workbook's tables and named ranges, ignoring case. The Data tab's **Name** box renames the active table (one undo step); charts bound to the table (§8.18) follow the new name. The Name Box accepts a table name and selects the table, on its own sheet. The CLI renames with `rename-table` and the `rename-table` apply op.
 - A sheet may hold multiple tables; tables may not overlap each other or merged regions.
 
 ### 8.11 Sorting
@@ -567,13 +567,25 @@ had to survive a save: `FrozenRows`/`FrozenColumns` round-trip through `settings
 map of a view, where LibreOffice reads them (split mode `2` = frozen; mode `1` is a movable split and
 is **not** read as a freeze).
 
+### 8.18 Charts
+
+**Chart sheets.** Insert ▸ Chart Sheet adds a sheet that holds one chart and no grid: the chart on the left, a panel on the right that edits its data and look. Every change in the panel is one undoable chart edit. A chart is saved as an ODF embedded object (`Object N/content.xml`) in a `draw:frame` marked `cellestra:chart-sheet`, so LibreOffice opens it as an ordinary chart.
+
+**Charts from a table.** A chart can be **bound to a named table** (§8.10) by column names instead of cell ranges: the table, the column that labels the categories (the X column of a scatter or bubble chart), and one column per series (a bubble series also names its size column). The engine turns the binding into ranges from the table's current range and header row each time it draws, so the chart:
+- **follows the table as it grows or shrinks**, row or column;
+- **survives a table rename** — Rename Table rewrites the bindings in the same undo step;
+- **survives column moves and header renames** — a column is found by its header name first (ignoring case); when no header has the name any more, by the column the chart last resolved to, and the binding takes the new header name;
+- **falls back to its stored ranges** when the table is removed.
+
+On save the resolved plain ranges are written into the chart object as for any chart, so LibreOffice plots it; the binding rides along as `cellestra:*` foreign attributes (`source-table` and `source-categories` on `chart:chart`, `source-column` and `source-size-column` on each `chart:series`), the way a table's header-column flag does (§8.10). A file without them reads as a range chart.
+
 ## 9. Non-goals (deliberately NOT in v1)
 
 Intentional exclusions, not oversights.
 
 - **Printing and page layout / print-to-PDF.** (Why it's called out: users may expect it, and it's why the menu bar has no "Page Layout.")
 - ~~**Autosave / crash auto-recovery.**~~ **Superseded — document auto-save is now in v1** (§8.7a). What remains a non-goal is *crash auto-recovery*: there is no sidecar snapshot of an unsaved workbook, and a workbook that has never been saved is not auto-saved at all, because it has nowhere to be written and asking where is a dialog nobody invited. Manual save plus the unsaved-changes warnings in §8.7 still carry that case.
-- **Charts and graphs.**
+- ~~**Charts and graphs.**~~ **Superseded — chart sheets are in v1** (§8.18). Charts embedded in a cell sheet are still kept verbatim but not edited.
 - **Pivot tables.**
 - **Macros / scripting.**
 - **Real-time collaboration / cloud sync.**

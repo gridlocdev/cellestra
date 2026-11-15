@@ -1,3 +1,5 @@
+import type { ChartDefinition } from '@cellestra/charts';
+import { ChartTableBinding } from '../charts/chartTableBinding.ts';
 import { DataRegion } from '../data/dataRegion.ts';
 import { TableAutoExpand } from '../data/tables.ts';
 import { table as makeTable, type Table } from '../data/types.ts';
@@ -114,13 +116,29 @@ export const TableCommands = {
 
   /**
    * Rename `table` on `sheet`. Throws `EditRefusedError` when the name is invalid or taken (see
-   * `tableNameError`).
+   * `tableNameError`). Charts bound to the table follow the new name.
    */
   renameTable(workbook: Workbook, sheet: string, table: Table, name: string): EditCommand {
     const next = name.trim();
     const error = tableNameError(workbook, next, table);
     if (error) throw new EditRefusedError(error);
-    return swapTable('Rename Table', sheet, table, { ...table, name: next });
+    const swap = swapTable('Rename Table', sheet, table, { ...table, name: next });
+    let before: Map<Worksheet, ChartDefinition | null> = new Map();
+    const charts = new ActionCommand(
+      'Rename Table',
+      (wb) => {
+        before = new Map(wb.worksheets.map((s) => [s, s.chart]));
+        for (const s of wb.worksheets) {
+          if (s.chart) s.chart = ChartTableBinding.renameTable(s.chart, table.name, next);
+        }
+        return EditResult.none;
+      },
+      (wb) => {
+        for (const s of wb.worksheets) if (before.has(s)) s.chart = before.get(s) ?? null;
+        return EditResult.none;
+      },
+    );
+    return EditCommands.composite('Rename Table', [swap, charts]);
   },
 
   createTable: (sheet: string, table: Table): EditCommand =>

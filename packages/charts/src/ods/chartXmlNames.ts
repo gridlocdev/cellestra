@@ -5,7 +5,7 @@ export const ChartXmlNames = {
   table: 'urn:oasis:names:tc:opendocument:xmlns:table:1.0',
   text: 'urn:oasis:names:tc:opendocument:xmlns:text:1.0',
   svg: 'urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0',
-  /** Cellestra's private namespace for a literal series name (no ODF equivalent exists). */
+  /** Cellestra's private namespace for what ODF has no attribute for: a literal series name, a table binding. */
   cellestraChart: 'urn:cellestra:chart',
   /** The ODF media type of an embedded chart sub-document. */
   chartMediaType: 'application/vnd.oasis.opendocument.chart',

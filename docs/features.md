@@ -46,6 +46,8 @@ Number formats (general, number, currency, percent, date, time, scientific and t
 
 **Chart Sheet** adds a sheet with a chart of the selected data. Charts are saved in the `.ods` file, so LibreOffice opens them too.
 
+A chart can plot a table by its column names instead of cell ranges. It then follows the table: rows added at the bottom show up in the chart, and renaming the table or a column header doesn't break it. Removing the table leaves the chart on the cells it last plotted.
+
 ## Sheets and the grid
 
 A workbook has any number of sheets: **Insert Sheet**, **Rename Sheet…**, **Duplicate Sheet** and **Delete Sheet** manage them, and **Go to Sheet…** jumps to one by name. **Freeze Panes** keeps header rows and columns in view, rows and columns can be hidden, resized and fitted with **Autofit Columns**, and **Zoom In** and **Zoom Out** change the view. Scrolled down inside a table, the column headers show the table's column titles in place of A, B, C. Text cut off by a filled neighbour (or its own merged cell) shows a small red chevron at the edge where it is cut.

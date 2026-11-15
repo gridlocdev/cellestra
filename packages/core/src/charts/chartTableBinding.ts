@@ -1,0 +1,296 @@
+import type { ChartDefinition, ChartSeries, ChartTableSource, ChartType } from '@cellestra/charts';
+import { ChartTypes, cloneChart, createSeries } from '@cellestra/charts';
+import { findTableByName, tableHeaderLabels } from '../data/tables.ts';
+import type { Table } from '../data/types.ts';
+import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
+import { CellRange } from '../model/cellRange.ts';
+import { SheetDimensions } from '../model/sheetDimensions.ts';
+import type { Workbook } from '../model/workbook.ts';
+import type { Worksheet } from '../model/worksheet.ts';
+
+/** What a table column mostly holds, for picking defaults. */
+export type TableColumnKind = 'number' | 'text' | 'empty';
+
+/** One column of a table as the chart panel lists it. */
+export interface TableColumnInfo {
+  /** The header text (or `ColumnN` when the table has no header row). */
+  readonly name: string;
+  /** The sheet column, zero-based. */
+  readonly column: number;
+  readonly kind: TableColumnKind;
+}
+
+/** Why a chart's ranges can't become a table binding. */
+export type FromRangesResult =
+  { readonly ok: true; readonly chart: ChartDefinition } | { readonly ok: false; readonly reason: string };
+
+const letters = (column: number): string => SheetDimensions.columnToLetters(column);
+
+/** The first and last data row of a table (the rows under its header). */
+function dataRows(table: Table): { top: number; bottom: number } {
+  const top = table.hasHeader ? table.range.top + 1 : table.range.top;
+  return { top, bottom: Math.max(top, table.range.bottom) };
+}
+
+/** `Sheet.B2:B7`: one table column's data rows. */
+function columnRange(sheet: Worksheet, table: Table, column: number): string {
+  const { top, bottom } = dataRows(table);
+  const c = letters(column);
+  return `${quoteSheetIfNeeded(sheet.name)}.${c}${top + 1}:${c}${bottom + 1}`;
+}
+
+function headerCell(sheet: Worksheet, table: Table, column: number): string {
+  return `${quoteSheetIfNeeded(sheet.name)}.${letters(column)}${table.range.top + 1}`;
+}
+
+function kindOf(sheet: Worksheet, table: Table, column: number): TableColumnKind {
+  const { top } = dataRows(table);
+  let numbers = 0;
+  let texts = 0;
+  for (let row = top; row <= table.range.bottom; row++) {
+    const kind = sheet.getValue(row, column).kind;
+    if (kind === 'number') numbers++;
+    else if (kind === 'text' || kind === 'boolean') texts++;
+  }
+  if (numbers === 0 && texts === 0) return 'empty';
+  return numbers > texts ? 'number' : 'text';
+}
+
+/** The sheet column a stored chart reference starts in, when it is on `sheet` inside `table`. */
+function storedColumn(reference: string | null | undefined, sheet: Worksheet, table: Table): number | null {
+  if (!reference) return null;
+  const range = CellRange.tryParse(reference.trim());
+  if (!range) return null;
+  if (range.sheet !== null && range.sheet.toLowerCase() !== sheet.name.toLowerCase()) return null;
+  const column = range.left;
+  return column >= table.range.left && column <= table.range.right ? column : null;
+}
+
+/**
+ * Find a bound column: by header name (ignoring case), preferring the column the chart last
+ * resolved to when two headers share the name; failing that, the column the stored range points at,
+ * so a renamed header keeps its place.
+ */
+function findColumn(
+  labels: readonly string[],
+  table: Table,
+  name: string | null,
+  stored: number | null,
+): number | null {
+  if (name === null) return null;
+  const lower = name.toLowerCase();
+  const matches: number[] = [];
+  labels.forEach((label, i) => {
+    if (label.toLowerCase() === lower) matches.push(table.range.left + i);
+  });
+  if (stored !== null && matches.includes(stored)) return stored;
+  if (matches.length > 0) return matches[0]!;
+  return stored;
+}
+
+function located(workbook: Workbook, source: ChartTableSource) {
+  const found = findTableByName(workbook, source.table);
+  if (!found) return null;
+  return { ...found, labels: tableHeaderLabels(found.table, found.sheet) };
+}
+
+/**
+ * Charts bound to a named table (`ChartDefinition.source`). The binding names the table and its
+ * columns; `materialize` turns it into the plain ranges the rest of the engine (and the file) use,
+ * from the table's current range and headers. A binding to a table that no longer exists leaves the
+ * stored ranges as they are.
+ */
+export const ChartTableBinding = {
+  /** The columns of the table called `name`, or null when there is no such table. */
+  columns(workbook: Workbook, name: string): TableColumnInfo[] | null {
+    const found = findTableByName(workbook, name);
+    if (!found) return null;
+    const { sheet, table } = found;
+    return tableHeaderLabels(table, sheet).map((label, i) => ({
+      name: label,
+      column: table.range.left + i,
+      kind: kindOf(sheet, table, table.range.left + i),
+    }));
+  },
+
+  /** Every table in the workbook, by name, in sheet order. */
+  tableNames(workbook: Workbook): string[] {
+    return workbook.worksheets.flatMap((s) => s.tables.map((t) => t.name));
+  },
+
+  /**
+   * The chart with its ranges rebuilt from its table binding, and the binding's column names brought
+   * up to date with the headers they were found under. The same chart when it has no binding or its
+   * table is gone. A bound column that can no longer be found drops out with its series.
+   */
+  materialize(workbook: Workbook, chart: ChartDefinition): ChartDefinition {
+    const source = chart.source;
+    if (!source) return chart;
+    const where = located(workbook, source);
+    if (!where) return chart;
+    const { sheet, table, labels } = where;
+    const xy = ChartTypes.isXY(chart.type);
+    const nameAt = (column: number): string => labels[column - table.range.left]!;
+
+    const storedCategory = xy ? chart.series[0]?.xValuesReference : chart.categoriesReference;
+    const categoryColumn = findColumn(
+      labels,
+      table,
+      source.categoryColumn,
+      storedColumn(storedCategory, sheet, table),
+    );
+    const categoryRange = categoryColumn === null ? null : columnRange(sheet, table, categoryColumn);
+
+    const next = cloneChart(chart);
+    next.categoriesReference = xy ? null : categoryRange;
+    next.series = [];
+    const nextSource: ChartTableSource = {
+      table: table.name,
+      categoryColumn: categoryColumn === null ? null : nameAt(categoryColumn),
+      series: [],
+    };
+    source.series.forEach((bound, i) => {
+      const stored = chart.series[i];
+      const column = findColumn(
+        labels,
+        table,
+        bound.column,
+        storedColumn(stored?.valuesReference, sheet, table),
+      );
+      if (column === null) return;
+      const sizeColumn =
+        chart.type === 'bubble'
+          ? findColumn(
+              labels,
+              table,
+              bound.sizeColumn,
+              storedColumn(stored?.bubbleSizeReference, sheet, table),
+            )
+          : null;
+      next.series.push(
+        createSeries({
+          valuesReference: columnRange(sheet, table, column),
+          nameReference: table.hasHeader ? headerCell(sheet, table, column) : null,
+          name: table.hasHeader ? null : nameAt(column),
+          xValuesReference: xy ? categoryRange : null,
+          bubbleSizeReference: sizeColumn === null ? null : columnRange(sheet, table, sizeColumn),
+          type: bound.type,
+        }),
+      );
+      nextSource.series.push({
+        column: nameAt(column),
+        type: bound.type,
+        sizeColumn: sizeColumn === null ? bound.sizeColumn : nameAt(sizeColumn),
+      });
+    });
+    next.source = nextSource;
+    return next;
+  },
+
+  /**
+   * A binding for a new chart of `type` over the table called `name`: the first text column labels
+   * the categories and the number columns become series. A scatter or bubble chart takes its X from
+   * the first number column (a bubble its sizes from the third); a pie or doughnut plots one column.
+   */
+  seed(workbook: Workbook, name: string, type: ChartType): ChartTableSource | null {
+    const found = findTableByName(workbook, name);
+    const columns = ChartTableBinding.columns(workbook, name);
+    if (!found || !columns) return null;
+    const numbers = columns.filter((c) => c.kind === 'number').map((c) => c.name);
+    const text = columns.find((c) => c.kind === 'text')?.name ?? null;
+    const source: ChartTableSource = { table: found.table.name, categoryColumn: null, series: [] };
+    if (ChartTypes.isXY(type)) {
+      const [x, ...rest] = numbers;
+      source.categoryColumn = x ?? null;
+      if (type === 'bubble') {
+        const [y, size] = rest;
+        if (y) source.series.push({ column: y, type: null, sizeColumn: size ?? null });
+      } else {
+        for (const y of rest) source.series.push({ column: y, type: null, sizeColumn: null });
+      }
+      return source;
+    }
+    source.categoryColumn = text;
+    const plotted = type === 'pie' || type === 'doughnut' ? numbers.slice(0, 1) : numbers;
+    for (const column of plotted) source.series.push({ column, type: null, sizeColumn: null });
+    return source;
+  },
+
+  /** The chart bound to `source`, with its ranges filled in from the table. */
+  bind(workbook: Workbook, chart: ChartDefinition, source: ChartTableSource): ChartDefinition {
+    return ChartTableBinding.materialize(workbook, { ...chart, source });
+  },
+
+  /** Table → Range: the binding's ranges as plain ranges, with no binding left. */
+  toRanges(workbook: Workbook, chart: ChartDefinition): ChartDefinition {
+    const next = cloneChart(ChartTableBinding.materialize(workbook, chart));
+    next.source = null;
+    return next;
+  },
+
+  /**
+   * Range → Table: when every range of the chart is one whole column of one table's data rows, the
+   * same chart bound to the table by column names (series take the column headers as their names).
+   * Otherwise why not, in a sentence for the panel.
+   */
+  fromRanges(workbook: Workbook, chart: ChartDefinition): FromRangesResult {
+    const xy = ChartTypes.isXY(chart.type);
+    const references = [
+      xy ? null : chart.categoriesReference,
+      ...chart.series.flatMap((s) => [
+        s.valuesReference,
+        xy ? s.xValuesReference : null,
+        chart.type === 'bubble' ? s.bubbleSizeReference : null,
+      ]),
+    ].filter((r): r is string => r !== null && r.trim() !== '');
+    if (chart.series.length === 0 || references.length === 0)
+      return { ok: false, reason: 'Add a series first: there is no data to match to a table.' };
+    const fallbackSheet = workbook.worksheets.find((s) => !s.isChartSheet)?.name ?? '';
+    const parsed = references.map((r) => CellRange.tryParse(r.trim()));
+    const first = parsed[0];
+    if (!first || parsed.some((r) => r === null))
+      return { ok: false, reason: 'One of the ranges isn’t a cell range.' };
+    const sheet = workbook.findSheet(first.sheet ?? fallbackSheet);
+    const table = sheet?.tables.find((t) => t.range.contains(first.top, first.left));
+    if (!sheet || !table)
+      return { ok: false, reason: 'The ranges aren’t inside a table. Make the data a table first.' };
+    const rows = dataRows(table);
+    const fits = (range: CellRange): boolean =>
+      (range.sheet ?? fallbackSheet).toLowerCase() === sheet.name.toLowerCase() &&
+      range.left === range.right &&
+      range.left >= table.range.left &&
+      range.left <= table.range.right &&
+      range.top === rows.top &&
+      range.bottom === table.range.bottom;
+    if (!parsed.every((r) => fits(r!)))
+      return {
+        ok: false,
+        reason: `Each range must be one whole column of the table “${table.name}”’s data, without its header.`,
+      };
+    const labels = tableHeaderLabels(table, sheet);
+    const nameOf = (reference: string | null): string | null => {
+      const range = reference ? CellRange.tryParse(reference.trim()) : null;
+      return range ? (labels[range.left - table.range.left] ?? null) : null;
+    };
+    const source: ChartTableSource = {
+      table: table.name,
+      categoryColumn: nameOf(xy ? (chart.series[0]?.xValuesReference ?? null) : chart.categoriesReference),
+      series: chart.series.map((s: ChartSeries) => ({
+        column: nameOf(s.valuesReference)!,
+        type: s.type,
+        sizeColumn: chart.type === 'bubble' ? nameOf(s.bubbleSizeReference) : null,
+      })),
+    };
+    if (xy && new Set(chart.series.map((s) => s.xValuesReference ?? '')).size > 1)
+      return { ok: false, reason: 'Every series must share one X column to plot from a table.' };
+    return { ok: true, chart: ChartTableBinding.bind(workbook, chart, source) };
+  },
+
+  /** The chart with its binding pointed at `to` when it was bound to `from` (ignoring case). */
+  renameTable(chart: ChartDefinition, from: string, to: string): ChartDefinition {
+    if (!chart.source || chart.source.table.toLowerCase() !== from.toLowerCase()) return chart;
+    const next = cloneChart(chart);
+    next.source!.table = to;
+    return next;
+  },
+} as const;
