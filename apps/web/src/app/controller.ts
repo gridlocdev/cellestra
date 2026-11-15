@@ -71,7 +71,8 @@ import {
   orphanedRecoveries,
   recentFiles,
   rememberRecent,
-  fittedWidth,
+  fitCsvColumns,
+  fittedColumnWidths,
   saveRecovery,
   type CellestraNative,
   type DocumentRef,
@@ -593,7 +594,12 @@ export class AppController {
       if (!(await this.confirm('Import CSV?', message, 'Import'))) return;
     }
     const text = new TextDecoder().decode(picked.bytes);
-    this.run(new ImportCsvCommand(this.sheetName, text, CsvOptions.forFileName(name)));
+    const ctx = this.session.textMeasure();
+    this.run(
+      new ImportCsvCommand(this.sheetName, text, CsvOptions.forFileName(name), (wb, sheet) => {
+        if (ctx) fitCsvColumns(ctx, wb, sheet);
+      }),
+    );
   }
 
   /** Re-read the document from its store; `onlyIfClean` gives up when edits landed meanwhile. */
@@ -1360,31 +1366,17 @@ export class AppController {
     const spans = (Array.isArray(ranges) ? ranges : [ranges]) as readonly CellRange[];
     const touches = (column: number) => spans.some((r) => column >= r.left && column <= r.right);
     const ctx = document.createElement('canvas').getContext('2d')!;
-    const wb = this.session.workbook.peek();
-    const sheet = this.sheet;
-    // One pass over the stored cells (not every row of every column), with each style's measured
-    // texts cached: a column of repeated values measures each distinct text once.
-    const measured = new Map<string, number>();
-    const widths = new Map<number, number>();
-    for (const [row, column, cell] of sheet.enumerateCells()) {
-      if (!touches(column)) continue;
-      if (cell.value.kind === 'empty' || sheet.findMerge(row, column)) continue;
-      const styleId = sheet.effectiveStyleId(row, column);
-      const style = wb.styles.get(styleId);
-      const text = this.session.display(cell.value, style);
-      const key = `${styleId}\u0000${text}`;
-      let width = measured.get(key);
-      if (width === undefined) {
-        // The grid's own measure: its font, its padding, its box for turned text. Wrapped flat
-        // text folds at the column's edge, so it asks for no width.
-        width = fittedWidth(ctx, text, style);
-        measured.set(key, width);
-      }
-      if (width > (widths.get(column) ?? 0)) widths.set(column, width);
-    }
+    // The grid's own measure: its font, its padding, its box for turned text.
+    const widths = fittedColumnWidths(
+      ctx,
+      this.session.workbook.peek(),
+      this.sheet,
+      (value, style) => this.session.display(value, style),
+      { columns: touches },
+    );
     const cmds = [...widths]
       .sort((a, b) => a[0] - b[0])
-      .map(([c, width]) => EditCommands.setColumnWidth(this.sheetName, c, Math.ceil(width)));
+      .map(([c, width]) => EditCommands.setColumnWidth(this.sheetName, c, width));
     // Always "Autofitted columns …", even for one column, which on its own would read "Resized".
     if (cmds.length > 0) this.run(new CompositeEditCommand('Autofit Columns', cmds), spans);
   }

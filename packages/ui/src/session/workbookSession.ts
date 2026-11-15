@@ -22,6 +22,8 @@ import {
   type OdsPackage,
   type Worksheet,
 } from '@cellestra/core';
+import type { TextMeasure } from '../grid/cellText.ts';
+import { canvasMeasure, fitCsvColumns } from '../grid/columnFit.ts';
 import type { DocumentRef } from '../platform/fileStore.ts';
 import type { GridRange, SelectionState } from './selection.ts';
 import { narrateEdit, narrateHistory } from './statusText.ts';
@@ -152,7 +154,11 @@ export class WorkbookSession {
     } else {
       const text = new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '');
       const options = /\.tsv$/i.test(name) ? CsvOptions.tab : sniffDelimiter(text);
-      this.#adopt(readCsv(text, options), null, ref, 'csv');
+      const workbook = readCsv(text, options);
+      // CSV keeps no widths: fit the columns to the data, as part of loading (not an edit).
+      const ctx = this.textMeasure();
+      if (ctx) fitCsvColumns(ctx, workbook, workbook.activeSheet);
+      this.#adopt(workbook, null, ref, 'csv');
     }
   }
 
@@ -234,6 +240,8 @@ export class WorkbookSession {
 
   /** Told when an edit is refused (a sort over merged cells, an insert that would push data off the sheet). */
   onRefused: (message: string) => void = () => {};
+  /** What a CSV's columns are measured with when it loads; null skips the fit. */
+  textMeasure: () => TextMeasure | null = canvasMeasure;
 
   /** `target` names where the edit landed in the status line when it reports no cells and the
    * selection isn't it (a column fitted by double-clicking its edge). */

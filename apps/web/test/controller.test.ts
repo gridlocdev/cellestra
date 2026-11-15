@@ -800,6 +800,17 @@ describe('Import CSV', () => {
     expect(sheet().getValue(0, 1)).toEqual(CellValue.empty);
   });
 
+  it('fits the columns to the data in the same undo step', async () => {
+    const { app, sheet } = await withOds(1);
+    sheet().getOrCreateColumn(1).width = 150;
+    app.session.textMeasure = () => ({ font: '', measureText: (t: string) => ({ width: t.length * 10 }) });
+    await app.importCsv();
+    expect(sheet().columns.get(1)?.width).toBe(60 + 2 * CELL_PAD_X); // "amount"
+    expect(app.session.undoLabel).toBe('Import CSV');
+    app.session.undo();
+    expect(sheet().columns.get(1)?.width).toBe(150);
+  });
+
   it('asks before replacing more than 100 filled cells', async () => {
     const { app, sheet, asked, answer } = await withOds(101);
     await app.importCsv();

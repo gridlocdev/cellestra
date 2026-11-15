@@ -93,6 +93,14 @@ export {
   rotatedCellBox,
   textHeight,
 } from './grid/cellText.ts';
+export {
+  canvasMeasure,
+  type ColumnFitOptions,
+  CSV_FIT_MAX_WIDTH,
+  CSV_FIT_ROWS,
+  fitCsvColumns,
+  fittedColumnWidths,
+} from './grid/columnFit.ts';
 export { type ChromeButton, chromeButtons, drawChrome, hitChrome } from './grid/chrome.ts';
 export { canvasRowMeasure, contentRowHeights, type RowMeasure } from './grid/rowHeights.ts';
 export { Grid, type GridHost, type GridController, type GridProps } from './grid/Grid.tsx';
