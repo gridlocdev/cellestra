@@ -51,6 +51,7 @@ export {
   StructuralEditCommand,
   type StructuralOperation,
 } from './structuralEditCommand.ts';
+export { MoveLinesCommand } from './moveLinesCommand.ts';
 export { SwapCellsCommand } from './swapCellsCommand.ts';
 export { TableCommands, type TableHeaderChoice, tableNameError, type TablePlan } from './tableCommands.ts';
 export { ValidationCommands } from './validationCommands.ts';

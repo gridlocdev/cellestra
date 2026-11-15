@@ -29,6 +29,7 @@ import {
   FillCommand,
   FormatBlock,
   HiddenLines,
+  MoveLinesCommand,
   PasteBlockCommand,
   sheetDeletionImpact,
   type SheetDeletionImpact,
@@ -1260,6 +1261,32 @@ export class AppController {
   insertColumns(): void {
     const r = this.range;
     this.run(new StructuralEditCommand(this.sheetName, 'column', 'insert', r.left, r.columnCount));
+  }
+
+  /**
+   * ⌥↑/⌥↓ and ⌥←/⌥→: the rows (or columns) the selection is on move one step, swapping places with
+   * the line next to them, and the selection goes with them.
+   */
+  moveLines(axis: 'row' | 'column', delta: -1 | 1): void {
+    const r = this.range;
+    const rows = axis === 'row';
+    const command = new MoveLinesCommand(
+      this.sheetName,
+      axis,
+      rows ? r.top : r.left,
+      rows ? r.bottom : r.right,
+      delta,
+    );
+    const refused = command.refusal(this.session.workbook.peek()) !== null;
+    this.run(command);
+    if (refused) return;
+    const { row, column } = this.selection.active.peek();
+    const dr = rows ? delta : 0;
+    const dc = rows ? 0 : delta;
+    this.selection.selectRange(
+      { top: r.top + dr, left: r.left + dc, bottom: r.bottom + dr, right: r.right + dc },
+      { row: row + dr, column: column + dc },
+    );
   }
 
   async deleteRows(): Promise<void> {

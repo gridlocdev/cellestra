@@ -1396,3 +1396,27 @@ describe('NAS file changed on the server', () => {
     await saving;
   });
 });
+
+describe('moving rows and columns', () => {
+  it('moves the selected rows and columns one step, and the selection goes with them', async () => {
+    const app = await makeApp();
+    const sheet = app.sheet;
+    for (let r = 0; r < 4; r++) sheet.setValue(r, 0, CellValue.number(r + 1));
+    app.selection.selectRange({ top: 1, left: 0, bottom: 2, right: 0 }, { row: 2, column: 0 });
+
+    app.moveLines('row', -1);
+    expect([0, 1, 2, 3].map((r) => sheet.getValue(r, 0))).toEqual(
+      [2, 3, 1, 4].map((n) => CellValue.number(n)),
+    );
+    expect(app.selection.range.peek()).toEqual({ top: 0, left: 0, bottom: 1, right: 0 });
+    expect(app.selection.active.peek()).toMatchObject({ row: 1, column: 0 });
+
+    // At the top edge it refuses, and the selection stays put.
+    app.moveLines('row', -1);
+    expect(app.selection.range.peek()).toEqual({ top: 0, left: 0, bottom: 1, right: 0 });
+
+    app.moveLines('column', 1);
+    expect(sheet.getValue(0, 1)).toEqual(CellValue.number(2));
+    expect(app.selection.range.peek()).toEqual({ top: 0, left: 1, bottom: 1, right: 1 });
+  });
+});

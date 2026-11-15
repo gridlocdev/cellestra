@@ -336,6 +336,7 @@ export {
   InputParser,
   type LineRun,
   lineStyleCommand,
+  MoveLinesCommand,
   OVERSIZED_CELL_CAP,
   type ParsedInput,
   PasteBlockCommand,

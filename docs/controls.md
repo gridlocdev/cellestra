@@ -23,6 +23,8 @@
 | Fill down / fill right         | `⌘D` / `⌘R`           | `Ctrl+D` / `Ctrl+R`                              |
 | Insert rows above              | `⇧⌘=`                 | `Ctrl+Shift+=`                                   |
 | Delete rows                    | `⌥⌘-`                 | `Ctrl+Alt+-`                                     |
+| Move rows up / down            | `⌥↑` / `⌥↓`           | `Alt+↑` / `Alt+↓`                                |
+| Move columns left / right      | `⌥←` / `⌥→`           | `Alt+←` / `Alt+→`                                |
 | Insert sheet                   | `⇧F11`                | `Shift+F11`                                      |
 | Insert function                | `⌃⌥F`                 | `Ctrl+Alt+F`                                     |
 | Hyperlink                      | `⌥⌘K`                 | `Ctrl+Alt+K`                                     |

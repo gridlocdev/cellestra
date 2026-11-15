@@ -128,6 +128,36 @@ const del = (at: number, count: number): AxisEdit => ({
 });
 
 /**
+ * Where a line lands when lines `first`…`last` move one step by `delta` (-1 or 1): the moved lines
+ * shift by `delta`, and the line they step onto takes the free place at the other end.
+ */
+export function lineMoveCoord(coord: number, first: number, last: number, delta: -1 | 1): number {
+  if (coord >= first && coord <= last) return coord + delta;
+  if (delta < 0 && coord === first - 1) return last;
+  if (delta > 0 && coord === last + 1) return first;
+  return coord;
+}
+
+/**
+ * How the span `lo`…`hi` fares in that move: it `moves` (wholly inside the moved lines, or the
+ * swapped line alone), `stays` (clear of both, or covering both), or is `split` across the edge.
+ */
+export function lineMoveSpan(
+  lo: number,
+  hi: number,
+  first: number,
+  last: number,
+  delta: -1 | 1,
+): 'moves' | 'stays' | 'split' {
+  const other = delta < 0 ? first - 1 : last + 1;
+  const start = Math.min(first, other);
+  const end = Math.max(last, other);
+  if (hi < start || lo > end || (lo <= start && hi >= end)) return 'stays';
+  if ((lo >= first && hi <= last) || (lo === other && hi === other)) return 'moves';
+  return 'split';
+}
+
+/**
  * Rewrites the references inside a formula AST — the one place reference fix-ups live. On
  * copy/fill, relative refs shift and absolute (`$`) refs stay. On insert/delete row/column, refs move
  * with their target and refs into deleted cells become `#REF!`. Serialize with `FormulaWriter`.
@@ -173,6 +203,36 @@ export const ReferenceAdjuster = {
     atColumn: number,
     count: number,
   ): Expr => axisRewrite(expr, homeSheet, editedSheet, false, del(atColumn, count)),
+
+  /**
+   * Lines `first`…`last` on `sheet` moved one step (`delta` is -1 or 1) along the row or column axis,
+   * swapping places with the line next to them. References follow their cells, `$`-absolute ones too.
+   * A range follows when it sits wholly in the moved lines or is the swapped line alone; any other
+   * range (covering both, or neither) keeps its bounds.
+   */
+  forLineMove(
+    expr: Expr,
+    homeSheet: string,
+    sheet: string,
+    rowAxis: boolean,
+    first: number,
+    last: number,
+    delta: -1 | 1,
+  ): Expr {
+    const onSheet = (s: string | null): boolean => sameSheet(s ?? homeSheet, sheet);
+    const coord = (a: CellAddress): number => (rowAxis ? a.row : a.column);
+    const mapAddress = (a: CellAddress): CellAddress =>
+      onSheet(a.sheet) ? withCoord(a, rowAxis, lineMoveCoord(coord(a), first, last, delta)) : a;
+    const mapRange = (r: CellRange): CellRange => {
+      if (!onSheet(r.sheet)) return r;
+      const lo = rowAxis ? r.top : r.left;
+      const hi = rowAxis ? r.bottom : r.right;
+      if (lineMoveSpan(lo, hi, first, last, delta) === 'moves')
+        return new CellRange(mapAddress(r.start), mapAddress(r.end));
+      return r;
+    };
+    return rewrite(expr, mapAddress, mapRange);
+  },
 
   /**
    * A row moved during a sort: a relative reference into the sorted data rows shifts by the same
