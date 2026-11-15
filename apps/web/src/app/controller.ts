@@ -9,6 +9,7 @@ import {
   CompositeEditCommand,
   DataEditCommands,
   DataRegion,
+  listItems,
   namedRangeError,
   planCellEntry,
   SortFilterCommands,
@@ -1654,18 +1655,7 @@ export class AppController {
 
   /** Items for a list rule's dropdown. */
   listItems(rule: DataValidation): string[] {
-    if (rule.listValues && rule.listValues.length > 0) return [...rule.listValues];
-    if (!rule.listSource) return [];
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const v of this.resolver(rule.listSource)) {
-      if (v.kind === 'empty') continue;
-      const t = v.kind === 'text' ? v.value : CellValue.toInvariantString(v);
-      if (seen.has(t.toUpperCase())) continue;
-      seen.add(t.toUpperCase());
-      out.push(t);
-    }
-    return out;
+    return listItems(rule, this.resolver);
   }
 
   setHyperlink(row: number, column: number, link: Hyperlink | null, text: string): void {

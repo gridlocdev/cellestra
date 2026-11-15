@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { dataValidation, table } from '../../src/data/types.ts';
 import { DuplicateRemover, TextToColumns } from '../../src/data/dataTools.ts';
-import { Validator } from '../../src/data/dataValidation.ts';
+import { listItems, Validator } from '../../src/data/dataValidation.ts';
 import { filterSpec, FilterEngine } from '../../src/data/filterEngine.ts';
 import { sortSpec, SortEngine } from '../../src/data/sortEngine.ts';
-import { TableAutoExpand } from '../../src/data/tables.ts';
+import { TableAutoExpand, tableHeaderLabels } from '../../src/data/tables.ts';
 import { CellRange } from '../../src/model/cellRange.ts';
 import { Worksheet } from '../../src/model/worksheet.ts';
 import { CellValue } from '../../src/values/cellValue.ts';
@@ -137,5 +137,38 @@ describe('DataEngine', () => {
     const rule = dataValidation('list', CellRange.parse('A1'), { listValues: ['Red', 'Green', 'Blue'] });
     expect(Validator.isValid(rule, CellValue.text('Green'), INV)).toBe(true);
     expect(Validator.isValid(rule, CellValue.text('Purple'), INV)).toBe(false);
+  });
+
+  it('list items skip blank and whitespace cells, trim, and drop repeats ignoring case', () => {
+    const source = CellRange.parse('B1:B6');
+    const rule = dataValidation('list', CellRange.parse('A1'), { listSource: source });
+    const cells = [
+      CellValue.text(' Red '),
+      CellValue.text(''),
+      CellValue.text('   '),
+      CellValue.empty,
+      CellValue.text('red'),
+      CellValue.number(2),
+    ];
+    expect(listItems(rule, () => cells)).toEqual(['Red', '2']);
+    const typed = dataValidation('list', CellRange.parse('A1'), { listValues: ['a', ' ', 'A', ' b'] });
+    expect(listItems(typed, null)).toEqual(['a', 'b']);
+  });
+
+  it('list validation matches trimmed text and accepts a blank entry', () => {
+    const rule = dataValidation('list', CellRange.parse('A1'), { listSource: CellRange.parse('B1:B2') });
+    const resolve = () => [CellValue.text(' Red '), CellValue.text('')];
+    expect(Validator.isValid(rule, CellValue.text('red'), INV, resolve)).toBe(true);
+    expect(Validator.isValid(rule, CellValue.text('  '), INV, resolve)).toBe(true);
+    expect(Validator.isValid(rule, CellValue.text('Blue'), INV, resolve)).toBe(false);
+  });
+});
+
+describe('table header labels', () => {
+  it('name blank headers by column and repeated headers uniquely', () => {
+    const sheet = new Worksheet('S');
+    ['Sales', ' ', 'Sales', 'sales'].forEach((h, c) => sheet.setValue(0, c, CellValue.text(h)));
+    const t = table('T', CellRange.parse('A1:E3'));
+    expect(tableHeaderLabels(t, sheet)).toEqual(['Sales', 'Column2', 'Sales (2)', 'sales (3)', 'Column5']);
   });
 });

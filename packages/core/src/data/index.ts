@@ -15,7 +15,7 @@ export { CleanUp, type CleanUpNote, cleanUpNoteText, CleanUpPlan } from './clean
 export { DataRegion } from './dataRegion.ts';
 export { DataScope } from './dataScope.ts';
 export { DuplicateRemover, TextToColumns } from './dataTools.ts';
-export { type RangeResolver, validationCovers, Validator } from './dataValidation.ts';
+export { listItems, type RangeResolver, validationCovers, Validator } from './dataValidation.ts';
 export { EdgeNavigator } from './edgeNavigator.ts';
 export { columnFilterMatches, FilterEngine, filterSpec } from './filterEngine.ts';
 export { SortEngine, sortSpec } from './sortEngine.ts';

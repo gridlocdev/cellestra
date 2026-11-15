@@ -139,11 +139,50 @@ function readLabels(workbook: Workbook, reference: string | null, fallbackSheet:
 function seriesName(workbook: Workbook, series: ChartSeries, fallbackSheet: string, index: number): string {
   const resolved = resolveRange(workbook, series.nameReference, fallbackSheet);
   if (resolved) {
-    const text = labelOf(resolved.sheet.getValue(resolved.range.top, resolved.range.left));
+    const text = labelOf(resolved.sheet.getValue(resolved.range.top, resolved.range.left)).trim();
     if (text.length > 0) return text;
   }
-  if (series.name) return series.name;
+  if (series.name?.trim()) return series.name.trim();
   return `Series ${index}`;
+}
+
+/** Names made unique for the legend: a repeat gets " (2)", " (3)"… */
+function uniqueNames(names: readonly string[]): string[] {
+  const seen = new Map<string, number>();
+  return names.map((name) => {
+    const n = (seen.get(name) ?? 0) + 1;
+    seen.set(name, n);
+    return n === 1 ? name : `${name} (${n})`;
+  });
+}
+
+const gapAt = (list: readonly number[] | null, i: number): boolean => Number.isNaN(list?.[i] ?? NaN);
+
+/**
+ * An X/Y series without its fully empty rows (no Y, X or size). A series without X values plots
+ * against the row number, so only its trailing empty rows go.
+ */
+function dropEmptyPoints(series: ResolvedSeries): ResolvedSeries {
+  const { values, xValues, bubbleSizes } = series;
+  const empty = (i: number) => gapAt(values, i) && gapAt(xValues, i) && gapAt(bubbleSizes, i);
+  const length = Math.max(values.length, xValues?.length ?? 0, bubbleSizes?.length ?? 0);
+  let keep: number[];
+  if (xValues) {
+    keep = [];
+    for (let i = 0; i < length; i++) if (!empty(i)) keep.push(i);
+  } else {
+    let end = length;
+    while (end > 0 && empty(end - 1)) end--;
+    keep = Array.from({ length: end }, (_, i) => i);
+  }
+  if (keep.length === length) return series;
+  const pick = (list: readonly number[]) => keep.map((i) => list[i] ?? NaN);
+  return {
+    ...series,
+    values: pick(values),
+    xValues: xValues ? pick(xValues) : null,
+    bubbleSizes: bubbleSizes ? pick(bubbleSizes) : null,
+  };
 }
 
 /**
@@ -151,7 +190,8 @@ function seriesName(workbook: Workbook, series: ChartSeries, fallbackSheet: stri
  * numbers and labels. Unqualified references default to the first data sheet. A chart bound to a
  * table reads the table's current columns instead (`ChartTableBinding`). Rows that repeat a category
  * label merge into one category by the chart's aggregate (`ChartGrouping`); scatter and bubble
- * charts plot every row.
+ * charts plot every row that has anything in it. Series names are unique, so the legend never
+ * lists one twice.
  */
 export const ChartDataResolver = {
   resolve(workbook: Workbook, definition: ChartDefinition): ResolvedChart {
@@ -165,16 +205,19 @@ export const ChartDataResolver = {
         ? ChartGrouping.group(labels, cells, chart.aggregate)
         : { categories: labels, values: cells.map((c) => c.values) };
     const categories = grouped.categories;
+    const xy = !ChartTypes.groupsCategories(chart.type);
+    const names = uniqueNames(chart.series.map((s, i) => seriesName(workbook, s, fallbackSheet, i + 1)));
     const series: ResolvedSeries[] = chart.series.map((definition, i) => {
       const xValues = readNumbers(workbook, definition.xValuesReference, fallbackSheet);
       const bubbleSizes = readNumbers(workbook, definition.bubbleSizeReference, fallbackSheet);
-      return {
-        name: seriesName(workbook, definition, fallbackSheet, i + 1),
+      const resolved: ResolvedSeries = {
+        name: names[i]!,
         type: definition.type ?? chart.type,
         values: grouped.values[i]!,
         xValues: xValues.length > 0 ? xValues : null,
         bubbleSizes: bubbleSizes.length > 0 ? bubbleSizes : null,
       };
+      return xy ? dropEmptyPoints(resolved) : resolved;
     });
     return {
       title: chart.title,

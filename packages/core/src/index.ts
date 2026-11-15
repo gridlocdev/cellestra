@@ -67,6 +67,7 @@ export {
   table,
   type Table,
   TableAutoExpand,
+  listItems,
   tableHeaderLabels,
   findTableByName,
   tableWithRange,

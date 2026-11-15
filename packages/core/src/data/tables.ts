@@ -3,12 +3,20 @@ import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import type { Table } from './types.ts';
 
-/** A table's column labels: header text, else `Column{n}` (1-based). */
+/**
+ * A table's column labels: header text, else `Column{n}` (1-based) for a blank header or a table
+ * without one. A repeated header gets " (2)", " (3)"… (ignoring case), so every label is unique.
+ */
 export function tableHeaderLabels(table: Table, sheet: Worksheet): string[] {
   const labels: string[] = [];
+  const seen = new Map<string, number>();
   for (let c = 0; c < table.range.columnCount; c++) {
     const v = table.hasHeader ? sheet.getValue(table.range.top, table.range.left + c) : null;
-    labels.push(v?.kind === 'text' ? v.value : `Column${c + 1}`);
+    const text = v?.kind === 'text' && v.value.trim() !== '' ? v.value : `Column${c + 1}`;
+    const key = text.toLowerCase();
+    const n = (seen.get(key) ?? 0) + 1;
+    seen.set(key, n);
+    labels.push(n === 1 ? text : `${text} (${n})`);
   }
   return labels;
 }

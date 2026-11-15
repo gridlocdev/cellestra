@@ -38,11 +38,31 @@ describe('ChartGrouping.group', () => {
     expect(ChartGrouping.group(['A', 'A'], [series([NaN, NaN])], 'sum').values[0]![0]).toBeNaN();
   });
 
-  it('never merges blank labels', () => {
-    expect(ChartGrouping.group(['', 'A', ''], [series([1, 2, 3])], 'sum')).toEqual({
-      categories: ['', 'A', ''],
-      values: [[1, 2, 3]],
-    });
+  it('merges blank and whitespace labels into one "(blank)" category', () => {
+    const grouped = ChartGrouping.group(['', 'A', '  ', 'B'], [series([1, 2, 3, 4])], 'sum');
+    expect(grouped.categories).toEqual(['(blank)', 'A', 'B']);
+    expect(grouped.values).toEqual([[4, 2, 4]]);
+    expect(grouped.rowCounts).toEqual([2, 1, 1]);
+  });
+
+  it('skips fully empty rows, such as empty rows at the bottom of a table', () => {
+    const grouped = ChartGrouping.group(
+      ['A', 'B', '', ' ', ''],
+      [series([1, 2, NaN, NaN, NaN]), series([3, NaN, NaN, NaN, NaN])],
+      'sum',
+    );
+    expect(grouped.categories).toEqual(['A', 'B']);
+    expect(grouped.values).toEqual([
+      [1, 2],
+      [3, NaN],
+    ]);
+  });
+
+  it('merges labels that differ only in leading or trailing spaces', () => {
+    const grouped = ChartGrouping.group(['North', ' North ', 'South'], [series([1, 2, 3])], 'sum');
+    expect(grouped.categories).toEqual(['North', 'South']);
+    expect(grouped.values).toEqual([[3, 3]]);
+    expect(grouped.rowCounts).toEqual([2, 1]);
   });
 
   it('leaves distinct labels as they are', () => {
@@ -88,6 +108,36 @@ describe('Grouping in the resolver', () => {
       series: [createSeries({ valuesReference: 'Sheet1.B1:B2' })],
     });
     expect(ChartDataResolver.resolve(book(), chart).rowCounts).toBeNull();
+  });
+
+  it('names series uniquely in the legend', () => {
+    const wb = book();
+    wb.activeSheet.setValue(0, 3, CellValue.text('  '));
+    const chart = createChart({
+      categoriesReference: 'Sheet1.A1:A3',
+      series: [
+        createSeries({ valuesReference: 'Sheet1.B1:B3', nameReference: 'Sheet1.D1' }),
+        createSeries({ valuesReference: 'Sheet1.B1:B3', name: 'Sales' }),
+        createSeries({ valuesReference: 'Sheet1.B1:B3', name: 'Sales' }),
+      ],
+    });
+    expect(ChartDataResolver.resolve(wb, chart).series.map((s) => s.name)).toEqual([
+      'Series 1',
+      'Sales',
+      'Sales (2)',
+    ]);
+  });
+
+  it('drops fully empty rows from a scatter chart', () => {
+    const wb = book();
+    wb.activeSheet.setValue(4, 1, CellValue.number(40));
+    const chart = createChart({
+      type: 'scatter',
+      series: [createSeries({ valuesReference: 'Sheet1.B1:B5', xValuesReference: 'Sheet1.B1:B5' })],
+    });
+    const s = ChartDataResolver.resolve(wb, chart).series[0]!;
+    expect(s.values).toEqual([10, 20, 30, 40]);
+    expect(s.xValues).toEqual([10, 20, 30, 40]);
   });
 
   it('never groups a scatter chart', () => {

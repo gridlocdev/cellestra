@@ -39,7 +39,7 @@ Number formats (general, number, currency, percent, date, time, scientific and t
 - **Sort Ascending**, **Sort Descending** and **Custom Sort…** sort a range by one or more columns, and **Sort & Filter…** chains sorts and filters in one dialog.
 - **AutoFilter** adds a filter dropdown to each column. Filtered-out rows are hidden, not deleted.
 - **Create Table** turns a range into a named table with a header band and filter buttons. The name comes from the text just above the range or its first header cell when that makes a valid name (`Monthly sales` becomes `Monthly_sales`), otherwise `Table1`, `Table2`… The **Name** box in the Data tab's Table group shows the table the cursor is in and renames it, and typing a table's name in the Name Box selects the table.
-- **Data Validation…** limits what a cell accepts, for example a dropdown list or a number range.
+- **Data Validation…** limits what a cell accepts, for example a dropdown list or a number range. A list read from cells skips blank cells and repeats.
 - **Remove Duplicates** and **Text to Columns…** tidy imported data.
 
 ## Charts
@@ -48,7 +48,7 @@ Number formats (general, number, currency, percent, date, time, scientific and t
 
 A chart can plot a table by its column names instead of cell ranges. It then follows the table: rows added at the bottom show up in the chart, and renaming the table or a column header doesn't break it. Removing the table leaves the chart on the cells it last plotted.
 
-Rows that repeat a category label, such as several sales for one region, show as one bar or slice. The chart adds them up by default; it can show their average, count, smallest or largest value instead. Scatter and bubble charts plot every row.
+Rows that repeat a category label, such as several sales for one region, show as one bar or slice. The chart adds them up by default; it can show their average, count, smallest or largest value instead. Empty rows are left out, and rows with a blank label share one "(blank)" category. Scatter and bubble charts plot every row that has data.
 
 Hovering a chart shows what is under the pointer. On a column, bar, line, area or radar chart that is the category nearest the pointer with every series' value there (the hovered bar in bold, a stack's total, and each share on a 100% chart); on a pie or doughnut the slice's value and share; on a scatter or bubble chart the nearest point's X, Y and size. A category that merged repeated rows says so, for example "Sum of 3 rows". On a touch screen, tap to see it.
 
