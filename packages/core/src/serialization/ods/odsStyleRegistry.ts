@@ -145,7 +145,8 @@ export class StyleRegistry {
 
   /** A column style for a width, with `fo:break-before="page"` when a manual page break comes before the column. */
   columnStyle(width: number, pageBreak = false): string {
-    const key = `${width}|${pageBreak}`;
+    // Keyed by the size as written, so two widths that save alike share a style (and reopen alike).
+    const key = `${formatCm(pxToCm(width))}|${pageBreak}`;
     const existing = this.columnStyleNames.get(key);
     if (existing !== undefined) return existing;
 
@@ -169,7 +170,8 @@ export class StyleRegistry {
    * own rows are.
    */
   rowStyle(height: number, pageBreak = false): string {
-    const key = `${height}|${pageBreak}`;
+    // Keyed by the size as written, as columns are.
+    const key = `${formatCm(pxToCm(height))}|${height === Defaults.rowHeight}|${pageBreak}`;
     const existing = this.rowStyleNames.get(key);
     if (existing !== undefined) return existing;
 

@@ -2,6 +2,7 @@ import { Defaults } from '../../defaults.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import { StylePool } from '../../styling/stylePool.ts';
 import { XmlElement } from '../../xml/index.ts';
+import { formatUpTo3, pxToCm } from './odsContentShared.ts';
 import { isHidden, readRowVisibility, writeVisibility } from './odsHiddenLines.ts';
 import type { LineContainers } from './odsLineContainers.ts';
 import { isSpanned } from './odsMerges.ts';
@@ -176,10 +177,10 @@ export function writeRowLayout(
   }
 }
 
-/** What decides how an empty row is written: its height, visibility and default style. */
+/** What decides how an empty row is written: its height as saved, visibility and default style. */
 export function rowModelLayout(model: RowModel | undefined): string {
   return model
-    ? `${model.height}|${model.manuallyHidden}|${model.filtered}|${model.pageBreak}|${model.styleId}`
+    ? `${formatUpTo3(pxToCm(model.height))}|${model.height === Defaults.rowHeight}|${model.manuallyHidden}|${model.filtered}|${model.pageBreak}|${model.styleId}`
     : '';
 }
 
