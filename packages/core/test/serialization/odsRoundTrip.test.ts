@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { EditCommands } from '../../src/editing/editCommands.ts';
 import { DateConversion } from '../../src/formulas/evaluation/dateConversion.ts';
 import { CellRange } from '../../src/model/cellRange.ts';
 import { MergedRegion } from '../../src/model/mergedRegion.ts';
@@ -171,6 +172,14 @@ describe('OdsRoundTrip', () => {
     expect(Math.abs(sheet.getRowHeight(0) - 30)).toBeLessThanOrEqual(0.5);
     expect(sheet.isColumnHidden(2)).toBe(true);
     expect(sheet.isRowHidden(3)).toBe(true);
+  });
+
+  it('a typed date keeps its format code when reopened', () => {
+    const workbook = Workbook.createNew();
+    EditCommands.setInput('Sheet1', 0, 0, '2026-03-31', 'en-US', workbook).apply(workbook);
+    const code = (wb: Workbook) => wb.styles.get(wb.activeSheet.find(0, 0)!.styleId).numberFormat.code;
+
+    expect(code(roundTrip(workbook))).toBe(code(workbook));
   });
 
   it('merges survive', () => {

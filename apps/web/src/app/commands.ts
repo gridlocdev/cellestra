@@ -801,7 +801,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
       group: 'Format',
       shortcut: 'mod+shift+3',
       icon: 'calendar',
-      run: numberFormat('YYYY-MM-DD', 'Date Format'),
+      run: numberFormat('yyyy-mm-dd', 'Date Format'),
     },
     {
       id: 'format.asTime',
@@ -809,7 +809,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
       description: '13:45:00',
       group: 'Format',
       shortcut: 'mod+shift+2',
-      run: numberFormat('HH:MM:SS', 'Time Format'),
+      run: numberFormat('hh:mm:ss', 'Time Format'),
     },
     {
       id: 'format.asScientific',

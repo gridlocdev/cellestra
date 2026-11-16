@@ -44,7 +44,7 @@ function tryParseDate(text: string, locale: string): { serial: number; format: N
     const parts = trimmed.split('-');
     if (parts.length === 3) {
       const serial = civilSerial(Number(parts[0]), Number(parts[1]), Number(parts[2]));
-      if (serial !== null) return { serial, format: NumberFormats.of('YYYY-MM-DD') };
+      if (serial !== null) return { serial, format: NumberFormats.of('yyyy-mm-dd') };
     }
   }
   if (trimmed.includes('/')) {
