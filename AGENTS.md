@@ -4,8 +4,11 @@ A TypeScript spreadsheet editor. The `.ods` engine runs entirely in the browser;
 
 ## Gates
 
-- `just check` (= `pnpm check`) must pass before you commit: Prettier check, ESLint, `tsc -b`, Vitest, and the build.
+- `just check` (= `pnpm check`) must pass before you commit: Prettier check, ESLint, `tsc -b`, Vitest (including the architecture rules in `test/architecture.test.ts`), and the build.
 - When you change behaviour, add or update a test in the package's `test/` folder.
+- When the owner corrects something, turn the correction into a rule in `test/architecture.test.ts` or a test, not a comment or a line here.
+- Never add to `test/architecture-baseline.json`. Fix the violation; lower or delete its entry when you do. A comment is never permission: a deliberate exception (`ignoreError(promise, 'why')`, an `eslint-disable`, a `@ts-expect-error`) goes in `test/architecture-exceptions.json` only after the owner agrees.
+- Page timers go through `packages/ui/src/schedule.ts` (`wait`, `after`, `every`, `nextFrame`, `debounce`), never `setTimeout` directly.
 
 ## Layout
 
@@ -34,7 +37,7 @@ A TypeScript spreadsheet editor. The `.ods` engine runs entirely in the browser;
 
 - Strict mode with `noUncheckedIndexedAccess` and `erasableSyntaxOnly`. That means no enums, no parameter properties and no namespaces: use union types and `const` objects instead.
 - Relative imports end in `.ts`. Use `import type` for types only.
-- Each package's `src/index.ts` names its exports one by one (no `export *`). Other packages and apps import only through `@cellestra/<package>`; ESLint rejects imports into another package's source files.
+- Each package's `src/index.ts` names its exports one by one (no `export *`). Other packages and apps import only through `@cellestra/<package>`; ESLint and the architecture test reject imports into another package's source files.
 - Edits that the app and the CLI share are core edit commands, so both make the same change.
 - Spreadsheet errors are values (`CellValue` with kind `error`), never thrown exceptions.
 - Pin dependencies to exact versions and keep the list short.

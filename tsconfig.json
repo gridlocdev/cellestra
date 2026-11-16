@@ -7,6 +7,7 @@
     { "path": "apps/web" },
     { "path": "apps/server" },
     { "path": "apps/desktop" },
-    { "path": "apps/cli" }
+    { "path": "apps/cli" },
+    { "path": "test" }
   ]
 }

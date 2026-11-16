@@ -1,0 +1,6 @@
+{
+  "lint-disable: apps/cli/test/cli.test.ts -> @typescript-eslint/no-explicit-any": 1,
+  "lint-disable: apps/desktop/src/preload.cts -> @typescript-eslint/no-require-imports, @typescript-eslint/consistent-type-imports": 1,
+  "lint-disable: packages/charts/src/ods/chartDocument.ts -> no-control-regex": 1,
+  "lint-disable: packages/core/src/xml/xmlWriter.ts -> no-control-regex": 1
+}

@@ -7,4 +7,5 @@ release/
 coverage/
 .nas-data/
 .types/
+.types-test/
 /build/
