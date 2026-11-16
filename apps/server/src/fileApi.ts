@@ -235,13 +235,13 @@ export class FileApi {
   /** Run `fn` after every earlier write to `key` has settled, so the If-Match check and the rename are atomic. */
   private async serialized<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.writeQueue.get(key) ?? Promise.resolve();
+    // Runs after the one before it either way; that one's failure went to its own caller.
     const run = prev.then(fn, fn);
-    const tail = run.catch(() => {});
-    this.writeQueue.set(key, tail);
+    this.writeQueue.set(key, run);
     try {
       return await run;
     } finally {
-      if (this.writeQueue.get(key) === tail) this.writeQueue.delete(key);
+      if (this.writeQueue.get(key) === run) this.writeQueue.delete(key);
     }
   }
 

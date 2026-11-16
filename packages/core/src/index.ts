@@ -382,3 +382,4 @@ export {
   type PrintRange,
   usedRange,
 } from './printing/printHtml.ts';
+export { ignoreError } from './errors.ts';

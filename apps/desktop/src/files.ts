@@ -204,13 +204,13 @@ export async function withFileLock<T>(p: string, fn: () => Promise<T>): Promise<
   const abs = path.resolve(p);
   const key = process.platform === 'linux' ? abs : abs.normalize('NFC').toLowerCase();
   const prev = fileLocks.get(key) ?? Promise.resolve();
+  // Runs after the one before it either way; that one's failure went to its own caller.
   const run = prev.then(fn, fn);
-  const tail = run.catch(() => {});
-  fileLocks.set(key, tail);
+  fileLocks.set(key, run);
   try {
     return await run;
   } finally {
-    if (fileLocks.get(key) === tail) fileLocks.delete(key);
+    if (fileLocks.get(key) === run) fileLocks.delete(key);
   }
 }
 
