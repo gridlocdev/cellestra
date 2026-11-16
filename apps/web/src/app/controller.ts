@@ -81,6 +81,9 @@ import {
   fitCsvColumns,
   fittedColumnWidths,
   saveRecovery,
+  after,
+  debounce,
+  every,
   type CellestraNative,
   type DocumentRef,
   type GridController,
@@ -326,7 +329,7 @@ export class AppController {
   #clipboard: { block: ClipboardBlock; text: string; generation: number } | null = null;
   /** Set while reloading the same document, so the cursor stays put. */
   #keepSelection = false;
-  #toastTimer: ReturnType<typeof setTimeout> | null = null;
+  #cancelToast: (() => void) | null = null;
   /** The session version the last recovery snapshot was taken at. */
   #snapshotVersion = -1;
   /** Opening, saving, auto-save, reloading and closing the document. */
@@ -436,14 +439,13 @@ export class AppController {
         });
       }
       void this.refreshRecents();
-      setInterval(() => void this.snapshot(), RECOVERY_INTERVAL_MS);
+      every(RECOVERY_INTERVAL_MS, () => void this.snapshot());
       // Snapshot once editing pauses, and when the tab is hidden or closed (the last moment a
       // write to IndexedDB still reliably lands), so a crash loses seconds, not half a minute.
-      let idle: ReturnType<typeof setTimeout> | null = null;
+      const idle = debounce(RECOVERY_IDLE_MS, () => void this.snapshot());
       effect(() => {
         void this.session.version.value;
-        if (idle) clearTimeout(idle);
-        idle = setTimeout(() => void this.snapshot(), RECOVERY_IDLE_MS);
+        idle.call();
       });
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') void this.snapshot();
@@ -840,8 +842,8 @@ export class AppController {
 
   #showToast(text: string, tone: 'info' | 'error'): void {
     this.toast.value = { text, tone };
-    if (this.#toastTimer) clearTimeout(this.#toastTimer);
-    this.#toastTimer = setTimeout(() => (this.toast.value = null), tone === 'error' ? 6000 : 2500);
+    this.#cancelToast?.();
+    this.#cancelToast = after(tone === 'error' ? 6000 : 2500, () => (this.toast.value = null));
   }
 
   // ── Selection helpers ────────────────────────────────────────────────────

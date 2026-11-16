@@ -1,3 +1,4 @@
+import { after } from '../schedule.ts';
 import {
   ACCEPT,
   ConflictError,
@@ -165,5 +166,5 @@ export function download(name: string, bytes: Uint8Array): void {
   a.href = url;
   a.download = name;
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  after(10_000, () => URL.revokeObjectURL(url));
 }

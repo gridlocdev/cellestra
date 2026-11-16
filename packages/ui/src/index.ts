@@ -169,3 +169,4 @@ export { ConditionalFormatDialog } from './components/ConditionalFormatDialog.ts
 export { printInFrame } from './print/printFrame.ts';
 export { draftOf, type PageSetupDraft, setupOf } from './components/pageSetupForm.ts';
 export { PageSetupDialog } from './components/PageSetupDialog.tsx';
+export { after, debounce, every, nextFrame, wait } from './schedule.ts';

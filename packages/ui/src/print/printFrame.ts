@@ -1,3 +1,5 @@
+import { after } from '../schedule.ts';
+
 /**
  * Print a document from a plain browser: load it in an off-screen frame and open the browser's
  * print dialog for it (which also offers Save as PDF). Resolves once the dialog has closed.
@@ -26,11 +28,11 @@ export function printInFrame(html: string): Promise<void> {
     frame.onload = () => {
       const win = frame.contentWindow;
       if (!win) return finish();
-      win.addEventListener('afterprint', () => setTimeout(finish, 0));
+      win.addEventListener('afterprint', () => after(0, finish));
       win.focus();
       // print() blocks until the dialog closes in most browsers; afterprint covers the rest.
       win.print();
-      setTimeout(finish, 60_000);
+      after(60_000, finish);
     };
     frame.srcdoc = html;
     document.body.append(frame);

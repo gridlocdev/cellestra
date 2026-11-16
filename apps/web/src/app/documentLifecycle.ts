@@ -1,5 +1,6 @@
 import { effect, type ReadonlySignal } from '@preact/signals';
 import {
+  after,
   ConflictError,
   csvLosses,
   lockWarning,
@@ -108,7 +109,7 @@ export class DocumentLifecycle {
   #saving: Promise<SaveOutcome> | null = null;
   /** A close request is showing its prompt; repeated requests don't stack dialogs. */
   #closing = false;
-  #autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  #cancelAutoSave: (() => void) | null = null;
   /**
    * The document generation in which an auto-save write failed: auto-save stays down for that
    * document until a save of any kind succeeds. Opening another document starts afresh.
@@ -117,7 +118,7 @@ export class DocumentLifecycle {
   /** Bumped by every open and New: an open whose number is no longer current lost the race. */
   #openSeq = 0;
   /** A file change on disk waiting for a better moment to be looked at. */
-  #externalRetry: ReturnType<typeof setTimeout> | null = null;
+  #cancelExternalRetry: (() => void) | null = null;
 
   constructor(host: LifecycleHost) {
     this.#host = host;
@@ -364,10 +365,10 @@ export class DocumentLifecycle {
   /** (Re)start auto-save's countdown, when it is on and there is something to save. */
   #armAutoSave(): void {
     const seconds = this.#host.autoSaveSeconds.peek();
-    if (this.#autoSaveTimer) clearTimeout(this.#autoSaveTimer);
-    this.#autoSaveTimer = null;
+    this.#cancelAutoSave?.();
+    this.#cancelAutoSave = null;
     if (seconds <= 0 || this.#autoSaveSuspended || !this.#session.modified.peek()) return;
-    this.#autoSaveTimer = setTimeout(() => void this.autoSave(), seconds * 1000);
+    this.#cancelAutoSave = after(seconds * 1000, () => void this.autoSave());
   }
 
   get #autoSaveSuspended(): boolean {
@@ -383,8 +384,8 @@ export class DocumentLifecycle {
    */
   async autoSave(): Promise<boolean> {
     const session = this.#session;
-    if (this.#autoSaveTimer) clearTimeout(this.#autoSaveTimer);
-    this.#autoSaveTimer = null;
+    this.#cancelAutoSave?.();
+    this.#cancelAutoSave = null;
     if (this.#host.autoSaveSeconds.peek() <= 0 || this.#autoSaveSuspended) return false;
     if (this.#saving) {
       // A save is running: try again once it is done, in case edits landed meanwhile.
@@ -455,11 +456,11 @@ export class DocumentLifecycle {
    * again; repeat events meanwhile fold into one.
    */
   async externalChange(generation = this.#session.generation): Promise<void> {
-    if (this.#externalRetry) clearTimeout(this.#externalRetry);
-    this.#externalRetry = null;
+    this.#cancelExternalRetry?.();
+    this.#cancelExternalRetry = null;
     if (generation !== this.#session.generation) return; // another document is open now
     if (this.busy) {
-      this.#externalRetry = setTimeout(() => void this.externalChange(generation), EXTERNAL_CHANGE_RETRY_MS);
+      this.#cancelExternalRetry = after(EXTERNAL_CHANGE_RETRY_MS, () => void this.externalChange(generation));
       return;
     }
     if (!this.#session.modified.peek()) return this.reloadFromStore(true, true);

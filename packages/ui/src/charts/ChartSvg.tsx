@@ -2,6 +2,7 @@ import type { ResolvedChart } from '@cellestra/core';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { type Hover, hitTest, type Point, placeTooltip } from './chartHover.ts';
 import { seriesColor } from './chartMath.ts';
+import { nextFrame } from '../schedule.ts';
 import { buildChartScene, type ChartScene, type Paint, type Shape } from './chartScene.ts';
 
 export interface ChartSvgProps {
@@ -149,19 +150,19 @@ function ChartTooltip(props: { hover: Hover; box: { width: number; height: numbe
  */
 function useChartHover(scene: ChartScene) {
   const [hover, setHover] = useState<Hover | null>(null);
-  const frame = useRef(0);
+  const cancelFrame = useRef<(() => void) | null>(null);
   const pending = useRef<Point | null>(null);
   const sceneRef = useRef(scene);
   sceneRef.current = scene;
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  useEffect(() => () => cancelFrame.current?.(), []);
   useEffect(() => setHover(null), [scene]);
 
   const track = (e: PointerEvent) => {
     const rect = (e.currentTarget as Element).getBoundingClientRect();
     pending.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    if (frame.current) return;
-    frame.current = requestAnimationFrame(() => {
-      frame.current = 0;
+    if (cancelFrame.current) return;
+    cancelFrame.current = nextFrame(() => {
+      cancelFrame.current = null;
       const p = pending.current;
       if (p) setHover(hitTest(sceneRef.current, p.x, p.y));
     });

@@ -1,4 +1,5 @@
 import {
+  after,
   toAccelerator,
   type CommandCatalog,
   type CommandGroup,
@@ -117,18 +118,15 @@ export function menuSender(send: (menu: readonly NativeMenuItem[]) => void): Men
  * every step. `refresh` builds and sends the menu.
  */
 export function menuSchedule(refresh: () => void, settleMs: number): (soon: boolean) => void {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancel: (() => void) | undefined;
   let urgent = false;
   return (soon) => {
     urgent ||= soon;
-    clearTimeout(timer);
-    timer = setTimeout(
-      () => {
-        urgent = false;
-        refresh();
-      },
-      urgent ? 0 : settleMs,
-    );
+    cancel?.();
+    cancel = after(urgent ? 0 : settleMs, () => {
+      urgent = false;
+      refresh();
+    });
   };
 }
 

@@ -22,6 +22,7 @@ import { ClickCounter } from './clickCounter.ts';
 import { Viewport, HEADER_HEIGHT, HEADER_WIDTH, type Rect } from './viewport.ts';
 import type { GridPalette } from './palette.ts';
 import { MAX_COLUMN, MAX_ROW, rangeOf, type GridRange, type Selection } from '../session/selection.ts';
+import { after, every } from '../schedule.ts';
 
 /** What the grid needs from the document. The grid never edits the model itself. */
 export interface GridHost {
@@ -161,7 +162,8 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     phase: 0,
     /** The last pointer position over the grid (for the cursor when ⌘ goes down or up). */
     pointer: null as { x: number; y: number } | null,
-    tipTimer: 0,
+    /** Cancels the hover tip waiting to show. */
+    cancelTip: null as (() => void) | null,
     tipCell: null as { row: number; column: number } | null,
     /** The Tab presses along the current row, so Enter can go back to where they started. */
     tabRun: null as TabRun | null,
@@ -338,22 +340,22 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   useEffect(() => {
     const m = host.marquee;
     if (!m || reducedMotion()) return;
-    let timer = 0;
+    let stopMarching: (() => void) | null = null;
     const stop = effect(() => {
       const on = m.value !== null;
-      if (on && !timer)
-        timer = window.setInterval(() => {
+      if (on && !stopMarching)
+        stopMarching = every(MARQUEE_STEP_MS, () => {
           state.current.phase = (state.current.phase + 1) % (MARQUEE_DASH[0] + MARQUEE_DASH[1]);
           draw();
-        }, MARQUEE_STEP_MS);
-      else if (!on && timer) {
-        clearInterval(timer);
-        timer = 0;
+        });
+      else if (!on && stopMarching) {
+        stopMarching();
+        stopMarching = null;
       }
     });
     return () => {
       stop();
-      if (timer) clearInterval(timer);
+      stopMarching?.();
     };
   }, [host, size, editing]);
 
@@ -523,7 +525,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   };
 
   // The hover tip's pending timer must not fire into an unmounted grid.
-  useEffect(() => () => clearTimeout(state.current.tipTimer), []);
+  useEffect(() => () => state.current.cancelTip?.(), []);
 
   const pageRows = () => {
     const v = state.current.viewport ?? viewport();
@@ -707,7 +709,8 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   // --- hover tooltip -------------------------------------------------------------------------------
   const hideTip = () => {
     const s = state.current;
-    clearTimeout(s.tipTimer);
+    s.cancelTip?.();
+    s.cancelTip = null;
     s.tipCell = null;
     setTip(null);
   };
@@ -722,11 +725,11 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     if (s.tipCell && s.tipCell.row === cell.top && s.tipCell.column === cell.left) return;
     hideTip();
     s.tipCell = { row: cell.top, column: cell.left };
-    s.tipTimer = window.setTimeout(() => {
+    s.cancelTip = after(TIP_DELAY_MS, () => {
       const text = host.hoverTip?.(cell.top, cell.left);
       const r = rootRef.current!.getBoundingClientRect();
       if (text) setTip({ text, x: clientX - r.left + 12, y: clientY - r.top + 16 });
-    }, TIP_DELAY_MS);
+    });
   };
 
   const onPointerDown = (e: PointerEvent) => {

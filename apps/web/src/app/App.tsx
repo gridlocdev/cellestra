@@ -13,6 +13,7 @@ import {
   NasBrowser,
   QuickPick,
   SheetTabs,
+  after,
   calculationBadge,
   saveStateText,
   type CommandCatalog,
@@ -496,8 +497,7 @@ function Footer({ app }: { readonly app: AppController }) {
       summary.value = selectionSummary(app, scope);
       return;
     }
-    const timer = setTimeout(() => (summary.value = selectionSummary(app, scope)), 120);
-    return () => clearTimeout(timer);
+    return after(120, () => (summary.value = selectionSummary(app, scope)));
   });
   const inputMessage = useComputed(() => {
     void s.version.value;
@@ -591,9 +591,9 @@ function SheetMenu(props: {
 }) {
   useEffect(() => {
     const close = () => props.onClose();
-    const t = setTimeout(() => addEventListener('pointerdown', close, { once: true }));
+    const cancel = after(0, () => addEventListener('pointerdown', close, { once: true }));
     return () => {
-      clearTimeout(t);
+      cancel();
       removeEventListener('pointerdown', close);
     };
   }, []);

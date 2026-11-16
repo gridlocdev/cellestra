@@ -1,3 +1,5 @@
+import { after } from '../schedule.ts';
+
 /** How often an open NAS document's version is checked while the page is visible. */
 export const NAS_POLL_MS = 30_000;
 
@@ -24,8 +26,8 @@ export interface ChangePollerOptions {
 }
 
 const systemClock: PollClock = {
-  setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-  clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
+  setTimeout: (fn, ms) => after(ms, fn),
+  clearTimeout: (cancel) => (cancel as () => void)(),
 };
 
 /**
