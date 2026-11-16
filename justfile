@@ -155,6 +155,18 @@ e2e-update *args: build-web-nas
 drive *steps: build-web-nas
     node e2e/drive.ts "$@"
 
+# Long random runs on new seeds, on this machine: before a release, or while you're away. No CI.
+[group('quality')]
+soak runs="1000": build-web-nas
+    #!/usr/bin/env bash
+    set -euo pipefail
+    base=$(date +%s)
+    echo "Seeds start at $base (FUZZ_SEED=<n> replays one)."
+    FUZZ_RUNS={{ runs }} FUZZ_SEED_BASE=$base pnpm vitest run -t random --testTimeout=0 --silent=passed-only
+    # Its own folder: a replay or the next soak clears .e2e-results, not this run's screenshots and traces.
+    echo "Random-use failures keep their screenshots and traces in .e2e-soak/$base."
+    FUZZ_RUNS=25 FUZZ_SEED_BASE=$base pnpm exec playwright test -c e2e/playwright.config.ts --project=web -g random --output=".e2e-soak/$base"
+
 # Start the built desktop app headless on a throwaway profile and check it shows a fixture workbook.
 [group('quality')]
 e2e-desktop: build-desktop

@@ -1,5 +1,5 @@
 // Random use of the whole app: seeded runs of commands from the ⌘K menu, typing and keys on a fixture workbook,
-// checking after every step that nothing broke. `just e2e` runs a few seeds; FUZZ_RUNS and FUZZ_SEED_BASE try more.
+// checking after every step that nothing broke. `just e2e` runs a few seeds; `just soak` tries 25 new ones.
 // A failure prints its seed: `FUZZ_SEED=<n> just e2e -g random` replays it, with every step. Keep a found bug
 // as its own scenario.
 import { readFileSync } from 'node:fs';
