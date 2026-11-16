@@ -8,7 +8,7 @@ const DEEP_IMPORTS = {
 };
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/out/**', '**/release/**', '**/.types/**', '**/node_modules/**'] },
+  { ignores: ['**/dist/**', '**/out/**', '**/release/**', '**/.types/**', '.types-test/**', '**/node_modules/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -16,6 +16,15 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': 'error',
       'no-restricted-imports': ['error', { patterns: [DEEP_IMPORTS] }],
+    },
+  },
+  {
+    // Typed rules: every promise is handled, and a switch over a union names every case.
+    files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx,cts}'],
+    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
     },
   },
   {
