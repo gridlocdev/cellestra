@@ -1909,6 +1909,10 @@ export class AppController {
       this.formatPainter.value = null;
       return;
     }
+    if (FormatBlock.tooLarge(this.sheet, this.range)) {
+      this.info('That selection is too big to copy formats from. Select fewer cells.');
+      return;
+    }
     this.formatPainter.value = FormatBlock.capture(this.session.workbook.peek(), this.sheet, this.range);
     this.info('Select cells to paint the format onto.');
   }

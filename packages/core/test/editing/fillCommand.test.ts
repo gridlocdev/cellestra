@@ -20,6 +20,16 @@ describe('FillCommand', () => {
     for (const row of [1, 2, 3]) expect(CellValue.asNumber(sheet.getValue(row, 0))).toBe(5);
   });
 
+  it('fill down over whole columns stops at the end of the used cells', () => {
+    const { history, sheet } = setup();
+    sheet.setValue(0, 0, CellValue.number(5));
+    sheet.setValue(3, 2, CellValue.text('last used row'));
+    history.execute(new FillCommand(sheet.name, R('A1:B1'), R('A1:B1048576')));
+    for (const row of [1, 2, 3]) expect(CellValue.asNumber(sheet.getValue(row, 0))).toBe(5);
+    expect(sheet.find(4, 0)).toBeUndefined();
+    expect(sheet.getUsedRange()!.bottom).toBe(3);
+  });
+
   it('fill down shifts relative references', () => {
     const { history, sheet } = setup();
     sheet.setValue(0, 0, CellValue.number(10));

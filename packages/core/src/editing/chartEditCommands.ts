@@ -7,6 +7,7 @@ import { SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import { ActionCommand, type EditCommand, EditResult, requireSheet } from './editCommand.ts';
+import { clampToUsed, OVERSIZED_CELL_CAP } from './editCommands.ts';
 
 const letters = (column: number): string => SheetDimensions.columnToLetters(column);
 
@@ -19,10 +20,13 @@ function columnRef(sheet: string, column: number, fromRow: number, toRow: number
  * Seed `definition` from a range that looks tabular: the first column labels the categories (the X
  * values, for a scatter or bubble chart) and each other column becomes a series, named from a text
  * header row when present. A single column becomes one unnamed series with no categories. Nothing
- * when fewer than two rows are given. Insert ▸ Chart Sheet and the CLI's `chart --from` share it.
+ * when fewer than two rows are given. A huge range (whole columns, the whole sheet) is cut to the
+ * used cells first, or it would chart every row. Insert ▸ Chart Sheet and the CLI's `chart --from`
+ * share it.
  */
-export function seedChartFromRange(definition: ChartDefinition, sheet: Worksheet, range: CellRange): void {
-  if (range.rowCount < 2) return;
+export function seedChartFromRange(definition: ChartDefinition, sheet: Worksheet, selected: CellRange): void {
+  const range = selected.cellCount < OVERSIZED_CELL_CAP ? selected : clampToUsed(sheet, selected);
+  if (!range || range.rowCount < 2) return;
   const xy = ChartTypes.isXY(definition.type);
   const { top, bottom, left, right } = range;
   // A header row has a text label over the value columns (the top-left corner is often blank).

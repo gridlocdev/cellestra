@@ -45,7 +45,16 @@ export class FormatBlock {
     this.mergeSpans = mergeSpans;
   }
 
-  static capture(workbook: Workbook, sheet: Worksheet, range: CellRange): FormatBlock {
+  /** Whether `range` is too big to read a pattern from, even trimmed to the used cells. */
+  static tooLarge(sheet: Worksheet, range: CellRange): boolean {
+    return sourceRange(sheet, range).cellCount > OVERSIZED_CELL_CAP;
+  }
+
+  /** Read the pattern of `selection`. Check `tooLarge` first: a style per cell may not fit in memory. */
+  static capture(workbook: Workbook, sheet: Worksheet, selection: CellRange): FormatBlock {
+    const range = sourceRange(sheet, selection);
+    if (range.cellCount > OVERSIZED_CELL_CAP)
+      throw new RangeError(`${selection.toString()} is too big to copy formats from.`);
     const styles: CellStyle[][] = [];
     for (let r = 0; r < range.rowCount; r++) {
       const row: CellStyle[] = [];
@@ -112,6 +121,19 @@ export class FormatBlock {
       Math.max(anchorColumn, column),
     );
   }
+}
+
+/**
+ * The cells a pattern is read from. A source past the oversized cap (a whole sheet: 17 billion cells)
+ * is read from its top-left corner to the end of the used cells, which keeps the tiling anchored
+ * where it was; a style per cell of the whole source would not fit in memory.
+ */
+function sourceRange(sheet: Worksheet, range: CellRange): CellRange {
+  if (range.cellCount < OVERSIZED_CELL_CAP) return range;
+  const used = sheet.getUsedRange();
+  const bottom = Math.min(range.bottom, Math.max(range.top, used?.bottom ?? range.top));
+  const right = Math.min(range.right, Math.max(range.left, used?.right ?? range.left));
+  return CellRange.fromBounds(range.top, range.left, bottom, right);
 }
 
 /** The most lines a painter pattern is laid onto one by one, before it paints the used area only. */

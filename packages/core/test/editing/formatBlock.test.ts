@@ -50,6 +50,26 @@ describe('FormatBlock', () => {
     expect(sheet.getValue(0, 0)).toEqual(CellValue.text('source'));
   });
 
+  it('a whole-sheet source is read from its corner to the end of the used cells', () => {
+    const { workbook, sheet } = setup();
+    sheet.setValue(2, 1, CellValue.text('used'));
+    sheet.getOrCreate(2, 1).styleId = internBold(workbook);
+    const stamp = FormatBlock.capture(workbook, sheet, R('A1:XFD1048576'));
+    expect([stamp.rows, stamp.columns]).toEqual([3, 2]);
+    expect(stamp.styles[2]![1]!.font.bold).toBe(true);
+    const empty = Workbook.createNew().activeSheet;
+    const one = FormatBlock.capture(workbook, empty, R('A1:XFD1048576'));
+    expect([one.rows, one.columns]).toEqual([1, 1]);
+  });
+
+  it('a source still too big after trimming to the used cells is refused', () => {
+    const { workbook, sheet } = setup();
+    sheet.setValue(1_048_575, 3, CellValue.text('last row'));
+    expect(FormatBlock.tooLarge(sheet, R('A1:XFD1048576'))).toBe(true);
+    expect(() => FormatBlock.capture(workbook, sheet, R('A1:XFD1048576'))).toThrow(RangeError);
+    expect(FormatBlock.tooLarge(sheet, R('A1:A1048576')), 'one whole column is fine').toBe(false);
+  });
+
   it('painting tiles a multi-cell pattern over the target', () => {
     const { workbook, history, sheet } = setup();
     sheet.getOrCreate(0, 0).styleId = internBold(workbook);

@@ -63,6 +63,13 @@ describe('ChartEditCommands.chartFromRange', () => {
     ]);
   });
 
+  it('the whole sheet selected charts only the used cells', () => {
+    const whole = ChartEditCommands.chartFromRange(data(), 'Sheet1', R('A1:XFD1048576'));
+    const used = ChartEditCommands.chartFromRange(data(), 'Sheet1', R('A1:C4'));
+    expect(whole.series).toEqual(used.series);
+    expect(whole.categoriesReference).toBe(used.categoriesReference);
+  });
+
   it('without a text header every selected row is data', () => {
     const chart = ChartEditCommands.chartFromRange(data(), 'Sheet1', R('B2:C4'));
     expect(chart.categoriesReference).toBe('Sheet1.B2:B4');

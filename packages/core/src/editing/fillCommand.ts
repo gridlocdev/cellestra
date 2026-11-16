@@ -6,12 +6,15 @@ import type { Worksheet } from '../model/worksheet.ts';
 import { cellKey } from '../model/sheetDimensions.ts';
 import { ClipboardBlock, type ClipboardCell } from './clipboardBlock.ts';
 import { EditResult, requireSheet, type EditCommand } from './editCommand.ts';
+import { clampToUsed, OVERSIZED_CELL_CAP } from './editCommands.ts';
 import { rewriteFormula } from './formulaRewrite.ts';
 import type { ProjectedWrite } from './pasteBlockCommand.ts';
 
 /**
  * Fill handle: tile the source block over the fill range (the source itself stays as is), shifting
- * relative formula references by each target's offset from its source cell.
+ * relative formula references by each target's offset from its source cell. A fill range past the
+ * oversized cap (whole columns or rows) stops at the end of the used cells, like the other edits on
+ * such ranges: a copy in each of a million rows would freeze the app.
  */
 export class FillCommand implements EditCommand {
   readonly label = 'Fill';
@@ -61,7 +64,8 @@ export class FillCommand implements EditCommand {
   private *targets(sheet: Worksheet) {
     const block = ClipboardBlock.capture(sheet, this.source, false).cells;
     const s = this.source;
-    for (const [row, column] of this.fill.positions()) {
+    const fill = this.fill.cellCount < OVERSIZED_CELL_CAP ? this.fill : (clampToUsed(sheet, this.fill) ?? s);
+    for (const [row, column] of fill.positions()) {
       if (s.contains(row, column)) continue;
       const sourceRow = s.top + mod(row - s.top, s.rowCount);
       const sourceColumn = s.left + mod(column - s.left, s.columnCount);

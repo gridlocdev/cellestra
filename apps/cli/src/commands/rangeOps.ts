@@ -87,6 +87,8 @@ export function paint(
   toSheet: Worksheet,
   to: CellRange,
 ): void {
+  if (FormatBlock.tooLarge(fromSheet, from))
+    throw new CliError(`${from.toString()} is too big to copy formats from; give a smaller range.`);
   const block = FormatBlock.capture(session.workbook, fromSheet, from);
   session.apply(block.applyTo(toSheet.name, to));
   for (const [row, column] of to.positions()) session.touched(toSheet.name, row, column);
