@@ -9,15 +9,15 @@ A TypeScript spreadsheet editor. The `.ods` engine runs entirely in the browser;
 
 ## Layout
 
-| Path              | What it is                                                                                                                                                                                                         |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `packages/core`   | The pure engine: values, model, formulas, recalc, editing and undo commands, data tools, styling, conditional format rules, print HTML, and `.ods`/CSV I/O. Must not touch the DOM or Node (ESLint enforces this). |
-| `packages/charts` | The chart model and the ODF chart XML.                                                                                                                                                                             |
-| `packages/ui`     | Preact and signals building blocks: the canvas grid, formula bar, sheet tabs, the `CommandCatalog` type, ⌘K, dialogs, `WorkbookSession`, and the `FileStore` adapters (browser, NAS, native).                      |
-| `apps/web`        | The app shell and the Vite entry point: `App`, the ribbon, the controller, the list of commands, `DocumentStores`, and the static build for the server and the desktop app.                                        |
-| `apps/cli`        | The `cellestra` command line (Node, run from source). It depends on `packages/core` only.                                                                                                                          |
-| `apps/server`     | The NAS server (`node:http`): serves the client and `/api` for the configured roots. No framework.                                                                                                                 |
-| `apps/desktop`    | The Electron shell: main process, sandboxed preload bridge, native menus, file associations.                                                                                                                       |
+| Path | What it is |
+| --- | --- |
+| `packages/core` | The pure engine: values, model, formulas, recalc, editing and undo commands, data tools, styling, conditional format rules, print HTML, and `.ods`/CSV I/O. Must not touch the DOM or Node (ESLint enforces this). |
+| `packages/charts` | The chart model and the ODF chart XML. |
+| `packages/ui` | Preact and signals building blocks: the canvas grid, formula bar, sheet tabs, the `CommandCatalog` type, ⌘K, dialogs, `WorkbookSession`, and the `FileStore` adapters (browser, NAS, native). |
+| `apps/web` | The app shell and the Vite entry point: `App`, the ribbon, the controller, the list of commands, `DocumentStores`, and the static build for the server and the desktop app. |
+| `apps/cli` | The `cellestra` command line (Node, run from source). It depends on `packages/core` only. |
+| `apps/server` | The NAS server (`node:http`): serves the client and `/api` for the configured roots. No framework. |
+| `apps/desktop` | The Electron shell: main process, sandboxed preload bridge, native menus, file associations. |
 
 ## Golden rules
 

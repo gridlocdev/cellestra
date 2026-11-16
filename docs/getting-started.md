@@ -65,15 +65,15 @@ docker run -d -p 8787:8787 -e CELLESTRA_TOKEN=<a-long-secret> -v /volume1/Docume
 
 Then open `http://<nas>:8787`. A small server shows the folders you choose, so you can open and save spreadsheets on the NAS from any browser on your network. The browser asks for the token once. To expose several folders, use a reverse proxy, or run as your NAS user, see [compose.example.yaml](../compose.example.yaml).
 
-| Variable            | Default           | Meaning                                                                                                           |
-| ------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `CELLESTRA_ROOTS`   | `Documents=/data` | The folders to show, as `Name=/path;Other=/path2`                                                                 |
-| `CELLESTRA_TOKEN`   | unset             | The browser asks for this token before it shows any files. Required unless `CELLESTRA_HOST` is a loopback address |
-| `CELLESTRA_NO_AUTH` | unset             | `1` runs without a token on a network address. Only use it when a reverse proxy in front requires a login         |
-| `CELLESTRA_HOST`    | `0.0.0.0`         | The address to listen on                                                                                          |
-| `CELLESTRA_HOSTS`   | unset             | Without a token, the extra host names to answer (comma-separated)                                                 |
-| `PORT`              | `8787`            | The port to listen on                                                                                             |
-| `CELLESTRA_MAX_MB`  | `64`              | The largest file you can save, in MB                                                                              |
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `CELLESTRA_ROOTS` | `Documents=/data` | The folders to show, as `Name=/path;Other=/path2` |
+| `CELLESTRA_TOKEN` | unset | The browser asks for this token before it shows any files. Required unless `CELLESTRA_HOST` is a loopback address |
+| `CELLESTRA_NO_AUTH` | unset | `1` runs without a token on a network address. Only use it when a reverse proxy in front requires a login |
+| `CELLESTRA_HOST` | `0.0.0.0` | The address to listen on |
+| `CELLESTRA_HOSTS` | unset | Without a token, the extra host names to answer (comma-separated) |
+| `PORT` | `8787` | The port to listen on |
+| `CELLESTRA_MAX_MB` | `64` | The largest file you can save, in MB |
 
 The server refuses to start on a network address (such as the default `0.0.0.0`) without `CELLESTRA_TOKEN`, because anyone who could reach it could read and overwrite your files. On `CELLESTRA_HOST=127.0.0.1` (or `localhost`, `::1`) it runs without one. If your NAS's reverse proxy already asks for a login and forwards to the container, set `CELLESTRA_NO_AUTH=1` instead.
 

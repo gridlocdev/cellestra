@@ -2,47 +2,47 @@
 
 ## Commands
 
-|                                | macOS                    | Windows and Linux                                |
-| ------------------------------ | ------------------------ | ------------------------------------------------ |
-| Command menu                   | `⌘K`                     | `Ctrl+K`                                         |
-| Next / previous in ⌘K or ⇧⌘P   | `↓` / `↑`, or `⇥` / `⇧⇥` | `Down` / `Up`, or `Tab` / `Shift+Tab`            |
-| Go to sheet                    | `⇧⌘P`                    | `Ctrl+Shift+P`                                   |
-| Next / previous sheet          | `⌃⇟` / `⌃⇞`              | `Ctrl+Page Down` / `Ctrl+Page Up`                |
-| Keyboard shortcuts             | `⌘/`                     | `Ctrl+/`                                         |
-| New / open / save              | `⌘N` / `⌘O` / `⌘S`       | `Ctrl+N` / `Ctrl+O` / `Ctrl+S`                   |
-| Save as                        | `⇧⌘S`                    | `Ctrl+Shift+S`                                   |
-| Close                          | `⌘W`                     | `Ctrl+W`                                         |
-| Print                          | `⌘P`                     | `Ctrl+P`                                         |
-| Settings                       | `⌘,`                     | `Ctrl+,`                                         |
-| Undo / redo                    | `⌘Z` / `⇧⌘Z`             | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y`            |
-| Cut / copy / paste             | `⌘X` / `⌘C` / `⌘V`       | `Ctrl+X` / `Ctrl+C` / `Ctrl+V`                   |
-| Paste values                   | `⇧⌘V`                    | `Ctrl+Shift+V`                                   |
-| Select all                     | `⌘A`                     | `Ctrl+A`                                         |
-| Find / find and replace / next | `⌘F` / `⌘H` / `⌘G`       | `Ctrl+F` / `Ctrl+H` / `F3`                       |
-| Go to (the Name Box)           | `⌃G`                     | `Ctrl+G`                                         |
-| AutoSum                        | `⌥=`                     | `Alt+=`                                          |
-| Fill down / fill right         | `⌘D` / `⌘R`              | `Ctrl+D` / `Ctrl+R`                              |
-| Insert rows above              | `⇧⌘=`                    | `Ctrl+Shift+=`                                   |
-| Delete rows                    | `⌥⌘-`                    | `Ctrl+Alt+-`                                     |
-| Move rows up / down            | `⌥↑` / `⌥↓`              | `Alt+↑` / `Alt+↓`                                |
-| Move columns left / right      | `⌥←` / `⌥→`              | `Alt+←` / `Alt+→`                                |
-| Insert sheet                   | `⇧F11`                   | `Shift+F11`                                      |
-| Insert function                | `⌃⌥F`                    | `Ctrl+Alt+F`                                     |
-| Hyperlink                      | `⌥⌘K`                    | `Ctrl+Alt+K`                                     |
-| Today's date / current time    | `⌘;` / `⇧⌘;`             | `Ctrl+;` / `Ctrl+Shift+;`                        |
-| Bold / italic / underline      | `⌘B` / `⌘I` / `⌘U`       | `Ctrl+B` / `Ctrl+I` / `Ctrl+U`                   |
-| Strikethrough                  | `⇧⌘X`                    | `Ctrl+Shift+X`                                   |
-| Align left / center / right    | `⇧⌘L` / `⇧⌘E` / `⇧⌘R`    | `Ctrl+Shift+L` / `Ctrl+Shift+E` / `Ctrl+Shift+R` |
-| General / number format        | `⇧⌘6` / `⇧⌘1`            | `Ctrl+Shift+6` / `Ctrl+Shift+1`                  |
-| Currency / percent format      | `⇧⌘4` / `⇧⌘5`            | `Ctrl+Shift+4` / `Ctrl+Shift+5`                  |
-| Date / time format             | `⇧⌘3` / `⇧⌘2`            | `Ctrl+Shift+3` / `Ctrl+Shift+2`                  |
-| Format cells                   | `⌘1`                     | `Ctrl+1`                                         |
-| Hide / unhide rows             | `⌘9` / `⇧⌘9`             | `Ctrl+9` / `Ctrl+Shift+9`                        |
-| Sort & filter                  | `⇧⌘F`                    | `Ctrl+Shift+F`                                   |
-| Create table                   | `⌘T`                     | `Ctrl+T`                                         |
-| Recalculate                    | `F9`                     | `F9`                                             |
-| Zoom in / out / actual size    | `⌘=` / `⌘-` / `⌘0`       | `Ctrl+=` / `Ctrl+-` / `Ctrl+0`                   |
-| Show formulas                  | `` ⌘` ``                 | `` Ctrl+` ``                                     |
+|  | macOS | Windows and Linux |
+| --- | --- | --- |
+| Command menu | `⌘K` | `Ctrl+K` |
+| Next / previous in ⌘K or ⇧⌘P | `↓` / `↑`, or `⇥` / `⇧⇥` | `Down` / `Up`, or `Tab` / `Shift+Tab` |
+| Go to sheet | `⇧⌘P` | `Ctrl+Shift+P` |
+| Next / previous sheet | `⌃⇟` / `⌃⇞` | `Ctrl+Page Down` / `Ctrl+Page Up` |
+| Keyboard shortcuts | `⌘/` | `Ctrl+/` |
+| New / open / save | `⌘N` / `⌘O` / `⌘S` | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` |
+| Save as | `⇧⌘S` | `Ctrl+Shift+S` |
+| Close | `⌘W` | `Ctrl+W` |
+| Print | `⌘P` | `Ctrl+P` |
+| Settings | `⌘,` | `Ctrl+,` |
+| Undo / redo | `⌘Z` / `⇧⌘Z` | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` |
+| Cut / copy / paste | `⌘X` / `⌘C` / `⌘V` | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` |
+| Paste values | `⇧⌘V` | `Ctrl+Shift+V` |
+| Select all | `⌘A` | `Ctrl+A` |
+| Find / find and replace / next | `⌘F` / `⌘H` / `⌘G` | `Ctrl+F` / `Ctrl+H` / `F3` |
+| Go to (the Name Box) | `⌃G` | `Ctrl+G` |
+| AutoSum | `⌥=` | `Alt+=` |
+| Fill down / fill right | `⌘D` / `⌘R` | `Ctrl+D` / `Ctrl+R` |
+| Insert rows above | `⇧⌘=` | `Ctrl+Shift+=` |
+| Delete rows | `⌥⌘-` | `Ctrl+Alt+-` |
+| Move rows up / down | `⌥↑` / `⌥↓` | `Alt+↑` / `Alt+↓` |
+| Move columns left / right | `⌥←` / `⌥→` | `Alt+←` / `Alt+→` |
+| Insert sheet | `⇧F11` | `Shift+F11` |
+| Insert function | `⌃⌥F` | `Ctrl+Alt+F` |
+| Hyperlink | `⌥⌘K` | `Ctrl+Alt+K` |
+| Today's date / current time | `⌘;` / `⇧⌘;` | `Ctrl+;` / `Ctrl+Shift+;` |
+| Bold / italic / underline | `⌘B` / `⌘I` / `⌘U` | `Ctrl+B` / `Ctrl+I` / `Ctrl+U` |
+| Strikethrough | `⇧⌘X` | `Ctrl+Shift+X` |
+| Align left / center / right | `⇧⌘L` / `⇧⌘E` / `⇧⌘R` | `Ctrl+Shift+L` / `Ctrl+Shift+E` / `Ctrl+Shift+R` |
+| General / number format | `⇧⌘6` / `⇧⌘1` | `Ctrl+Shift+6` / `Ctrl+Shift+1` |
+| Currency / percent format | `⇧⌘4` / `⇧⌘5` | `Ctrl+Shift+4` / `Ctrl+Shift+5` |
+| Date / time format | `⇧⌘3` / `⇧⌘2` | `Ctrl+Shift+3` / `Ctrl+Shift+2` |
+| Format cells | `⌘1` | `Ctrl+1` |
+| Hide / unhide rows | `⌘9` / `⇧⌘9` | `Ctrl+9` / `Ctrl+Shift+9` |
+| Sort & filter | `⇧⌘F` | `Ctrl+Shift+F` |
+| Create table | `⌘T` | `Ctrl+T` |
+| Recalculate | `F9` | `F9` |
+| Zoom in / out / actual size | `⌘=` / `⌘-` / `⌘0` | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
+| Show formulas | `` ⌘` `` | `` Ctrl+` `` |
 
 `⌥⌘→` / `⌥⌘←` (`Ctrl+Alt+→` / `Ctrl+Alt+←` on Windows and Linux) also move to the next and previous sheet.
 
