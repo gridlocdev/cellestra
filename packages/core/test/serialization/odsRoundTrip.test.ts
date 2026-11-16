@@ -174,6 +174,16 @@ describe('OdsRoundTrip', () => {
     expect(sheet.isRowHidden(3)).toBe(true);
   });
 
+  it('a resized row with no cells survives when it is the last row', () => {
+    const workbook = Workbook.createNew();
+    workbook.activeSheet.setValue(0, 0, CellValue.number(1));
+    workbook.activeSheet.getOrCreateRow(3).height = 30;
+
+    const sheet = roundTrip(workbook).activeSheet;
+
+    expect(Math.abs(sheet.getRowHeight(3) - 30)).toBeLessThanOrEqual(0.5);
+  });
+
   it('a typed date keeps its format code when reopened', () => {
     const workbook = Workbook.createNew();
     EditCommands.setInput('Sheet1', 0, 0, '2026-03-31', 'en-US', workbook).apply(workbook);

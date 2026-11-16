@@ -1,8 +1,9 @@
+import { Defaults } from '../../defaults.ts';
 import { OpenFormulaTranslator } from '../../formulas/openFormulaTranslator.ts';
 import type { Cell } from '../../model/cell.ts';
-import type { CellRange } from '../../model/cellRange.ts';
 import type { MergedRegion } from '../../model/mergedRegion.ts';
-import { cellKey } from '../../model/sheetDimensions.ts';
+import { CellRange } from '../../model/cellRange.ts';
+import { cellKey, SheetDimensions } from '../../model/sheetDimensions.ts';
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import { XmlElement, XmlText } from '../../xml/index.ts';
@@ -79,6 +80,7 @@ export function writeTable(
   const rowContainers = new LineContainers(table, 'row', outline.rowGroups, outline.headerRows);
   lastColumn = Math.max(lastColumn, columnContainers.lastLine);
   lastRow = Math.max(lastRow, rowContainers.lastLine);
+  if (needsRowAfter(sheet, lastRow, lastColumn)) lastRow++;
 
   writeColumns(columnContainers, sheet, lastColumn, registry);
   const merges = new MergeSweep(sheet.merges);
@@ -90,6 +92,17 @@ export function writeTable(
   addLocalNamedExpressions(table, workbook, sheet, preserved?.namedExpressions ?? []);
   for (const child of preserved?.after ?? []) table.add(child.clone());
   return table;
+}
+
+/**
+ * Whether the last row needs a plain row written after it. A reader takes the blank rows that end a
+ * table for LibreOffice's padding and ignores their height, so a resized row with no cells would
+ * reopen at the default height if it came last.
+ */
+function needsRowAfter(sheet: Worksheet, lastRow: number, lastColumn: number): boolean {
+  const model = sheet.findRow(lastRow);
+  if (!model || model.height === Defaults.rowHeight || lastRow + 1 >= SheetDimensions.maxRows) return false;
+  return sheet.cellsIn(CellRange.fromBounds(lastRow, 0, lastRow, lastColumn)).length === 0;
 }
 
 /**
