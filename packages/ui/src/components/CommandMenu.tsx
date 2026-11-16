@@ -21,6 +21,7 @@ export function CommandMenu({
   };
   return (
     <ListPopup
+      name="Command menu"
       placeholder="Type a command…"
       query={query}
       onQuery={(q) => {
@@ -36,6 +37,7 @@ export function CommandMenu({
       {results.map((c, i) => (
         <li
           key={c.id}
+          role="option"
           aria-selected={i === index}
           aria-disabled={!catalog.isEnabled(c)}
           style={catalog.isEnabled(c) ? undefined : { opacity: 0.45 }}
@@ -56,6 +58,8 @@ export function CommandMenu({
 export function QuickPick<T>(props: {
   readonly items: readonly T[];
   readonly label: (item: T) => string;
+  /** The popup's accessible name, such as "Go to sheet". */
+  readonly name: string;
   readonly placeholder: string;
   readonly onPick: (item: T) => void;
   readonly onClose: () => void;
@@ -72,6 +76,7 @@ export function QuickPick<T>(props: {
   };
   return (
     <ListPopup
+      name={props.name}
       placeholder={props.placeholder}
       query={query}
       onQuery={(v) => {
@@ -87,6 +92,7 @@ export function QuickPick<T>(props: {
       {results.map((item, i) => (
         <li
           key={props.label(item)}
+          role="option"
           aria-selected={i === index}
           onPointerMove={() => setIndex(i)}
           onClick={() => pick(i)}
@@ -99,6 +105,7 @@ export function QuickPick<T>(props: {
 }
 
 function ListPopup(props: {
+  readonly name: string;
   readonly placeholder: string;
   readonly query: string;
   readonly onQuery: (q: string) => void;
@@ -136,7 +143,7 @@ function ListPopup(props: {
         if (e.target === e.currentTarget) props.onClose();
       }}
     >
-      <div class="cs-dialog cs-palette" role="dialog" aria-modal="true">
+      <div class="cs-dialog cs-palette" role="dialog" aria-modal="true" aria-label={props.name}>
         <input
           ref={input}
           value={props.query}

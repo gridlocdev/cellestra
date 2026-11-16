@@ -14,7 +14,7 @@ COPY apps/web apps/web
 RUN VITE_CELLESTRA_NAS=1 pnpm --filter @cellestra/web build
 
 FROM node:22-alpine
-ENV NODE_ENV=production PORT=8787 CELLESTRA_STATIC=/app/web CELLESTRA_ROOTS="Documents=/data"
+ENV NODE_ENV=production CELLESTRA_PORT=8787 CELLESTRA_STATIC=/app/web CELLESTRA_ROOTS="Documents=/data"
 WORKDIR /app
 COPY apps/server/package.json server/
 COPY apps/server/src server/src

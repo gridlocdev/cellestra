@@ -286,7 +286,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       )}
       <FormulaBarConnected app={app} draft={draft} />
       {app.chartPick.value && <ChartPickBanner app={app} />}
-      <div class="cs-main" onPointerUp={() => app.selectionDone()}>
+      <main class="cs-main" onPointerUp={() => app.selectionDone()}>
         {s.activeSheet.value.isChartSheet ? (
           <ChartPane app={app} />
         ) : (
@@ -299,7 +299,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
             controller={app.grid}
           />
         )}
-      </div>
+      </main>
       <GridContextMenu app={app} catalog={catalog} />
       <Footer app={app} />
       <Overlays app={app} catalog={catalog} />
@@ -753,6 +753,7 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
         <QuickPick
           items={s.sheetNames.value.map((name, index) => ({ name, index }))}
           label={(i) => i.name}
+          name="Go to sheet"
           placeholder="Go to sheet…"
           onPick={(i) => s.setActiveSheet(i.index)}
           onClose={() => {
@@ -765,6 +766,7 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
         <QuickPick<RecentEntry>
           items={app.recents.value}
           label={(e) => `${e.ref.name} — ${storeLabel(e.ref.store)}`}
+          name="Open recent"
           placeholder="Open recent…"
           onPick={(e) => void app.openRecent(e)}
           onClose={() => {

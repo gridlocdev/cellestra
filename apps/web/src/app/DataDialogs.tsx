@@ -684,6 +684,7 @@ export function FunctionPicker({ app }: { app: AppController }) {
     <QuickPick<FunctionMetadata>
       items={functions}
       label={(f) => `${f.signature} — ${f.summary}`}
+      name="Insert function"
       placeholder="Insert function…"
       onPick={(f) => queueMicrotask(() => app.grid.current?.beginEdit(`=${f.name}(`))}
       onClose={() => {

@@ -157,13 +157,19 @@ export function NasBrowser(props: {
       {root && (
         <ul class="cs-file-list" role="listbox" aria-label="Files">
           {path && (
-            <li onDblClick={() => setPath(crumbs.slice(0, -1).join('/'))} onClick={() => setSelected(null)}>
+            <li
+              role="option"
+              aria-selected={false}
+              onDblClick={() => setPath(crumbs.slice(0, -1).join('/'))}
+              onClick={() => setSelected(null)}
+            >
               <Icon name="arrow-left" /> ..
             </li>
           )}
           {entries.map((e) => (
             <li
               key={e.path}
+              role="option"
               aria-selected={selected === e.path}
               onClick={() => {
                 setSelected(e.path);
@@ -176,7 +182,11 @@ export function NasBrowser(props: {
               {e.kind === 'file' && <span class="cs-meta">{new Date(e.modified).toLocaleString()}</span>}
             </li>
           ))}
-          {entries.length === 0 && <li style={{ opacity: 0.6 }}>No spreadsheets here</li>}
+          {entries.length === 0 && (
+            <li role="option" aria-disabled="true" aria-selected={false} style={{ opacity: 0.6 }}>
+              No spreadsheets here
+            </li>
+          )}
         </ul>
       )}
       {mode === 'save' && (

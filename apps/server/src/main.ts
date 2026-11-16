@@ -9,7 +9,8 @@ import { bindAuthProblem, createServer, defaultStaticDir, parseHosts } from './s
  *   CELLESTRA_TOKEN   shared bearer token; required unless CELLESTRA_HOST is a loopback address
  *   CELLESTRA_NO_AUTH 1 = run on a non-loopback address without a token (a reverse proxy in front
  *                     must authenticate)
- *   CELLESTRA_HOST    bind address (default 0.0.0.0)    PORT  (default 8787)
+ *   CELLESTRA_HOST    bind address (default 0.0.0.0)
+ *   CELLESTRA_PORT    port (default 8787); plain PORT still works when it is unset
  *   CELLESTRA_HOSTS   extra Host names (comma-separated) served when there is no token; IP
  *                     literals and localhost are always accepted, anything else gets 421
  *   CELLESTRA_MAX_MB  largest upload in MiB (default 64)
@@ -26,7 +27,7 @@ const staticDir =
     : env.CELLESTRA_STATIC !== undefined
       ? path.resolve(env.CELLESTRA_STATIC)
       : defaultStaticDir(import.meta.url);
-const port = Number(env.PORT ?? 8787);
+const port = Number(env.CELLESTRA_PORT ?? env.PORT ?? 8787);
 const host = env.CELLESTRA_HOST ?? '0.0.0.0';
 const token = env.CELLESTRA_TOKEN || null;
 const authProblem = bindAuthProblem(host, token, env.CELLESTRA_NO_AUTH === '1');

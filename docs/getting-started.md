@@ -72,7 +72,7 @@ Then open `http://<nas>:8787`. A small server shows the folders you choose, so y
 | `CELLESTRA_NO_AUTH` | unset | `1` runs without a token on a network address. Only use it when a reverse proxy in front requires a login |
 | `CELLESTRA_HOST` | `0.0.0.0` | The address to listen on |
 | `CELLESTRA_HOSTS` | unset | Without a token, the extra host names to answer (comma-separated) |
-| `PORT` | `8787` | The port to listen on |
+| `CELLESTRA_PORT` | `8787` | The port to listen on. Plain `PORT` also works when this is unset |
 | `CELLESTRA_MAX_MB` | `64` | The largest file you can save, in MB |
 
 The server refuses to start on a network address (such as the default `0.0.0.0`) without `CELLESTRA_TOKEN`, because anyone who could reach it could read and overwrite your files. On `CELLESTRA_HOST=127.0.0.1` (or `localhost`, `::1`) it runs without one. If your NAS's reverse proxy already asks for a login and forwards to the container, set `CELLESTRA_NO_AUTH=1` instead.

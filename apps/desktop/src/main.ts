@@ -1,5 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from 'electron';
-import type { MenuItemConstructorOptions } from 'electron';
+import type {
+  MenuItemConstructorOptions,
+  MessageBoxOptions,
+  OpenDialogOptions,
+  OpenDialogReturnValue,
+  SaveDialogOptions,
+  SaveDialogReturnValue,
+} from 'electron';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -38,6 +45,37 @@ const FILTERS = [
 ];
 /** How long the renderer has to acknowledge a close request before we offer to force it. */
 const CLOSE_ACK_MS = 3000;
+
+/**
+ * CELLESTRA_HEADLESS=1 (automated checks): render offscreen, and never show a window, a Dock icon,
+ * a system dialog or an entry in the system's recent documents.
+ */
+const headless = process.env.CELLESTRA_HEADLESS === '1';
+if (headless) app.dock?.hide();
+
+/** Ask with a system message box; returns the button chosen. A headless run answers Cancel. */
+async function askBox(win: BrowserWindow | null, opts: MessageBoxOptions): Promise<number> {
+  if (headless) return opts.cancelId ?? 0;
+  const { response } = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+  return response;
+}
+
+/** The system's open dialog. A headless run cancels it. */
+function pickToOpen(win: BrowserWindow | null, opts: OpenDialogOptions): Promise<OpenDialogReturnValue> {
+  if (headless) return Promise.resolve({ canceled: true, filePaths: [] });
+  return win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts);
+}
+
+/** The system's save dialog. A headless run cancels it. */
+function pickToSave(win: BrowserWindow | null, opts: SaveDialogOptions): Promise<SaveDialogReturnValue> {
+  if (headless) return Promise.resolve({ canceled: true, filePath: '' });
+  return win ? dialog.showSaveDialog(win, opts) : dialog.showSaveDialog(opts);
+}
+
+/** Add a file to the system's recent documents, except in a headless run. */
+function addRecent(p: string): void {
+  if (!headless) app.addRecentDocument(p);
+}
 
 // The web client loads from app://cellestra/ — a standard, secure scheme so fetch, modules and
 // CSP behave like https, without file:// quirks.
@@ -106,6 +144,7 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       nodeIntegration: false,
       spellcheck: false,
+      offscreen: headless,
     },
   });
   const state: WindowState = {
@@ -117,7 +156,7 @@ function createWindow(): BrowserWindow {
   };
   windows.set(win.id, state);
 
-  win.once('ready-to-show', () => win.show());
+  if (!headless) win.once('ready-to-show', () => win.show());
   win.on('close', (e) => {
     // A dead renderer cannot answer; its last recovery snapshot is all there is to keep.
     if (state.allowClose || state.rendererGone) return;
@@ -166,14 +205,17 @@ function createWindow(): BrowserWindow {
 /** The renderer is hung or never answered the close request: let the user force it. */
 async function offerForceClose(win: BrowserWindow, state: WindowState): Promise<void> {
   if (win.isDestroyed()) return;
-  const { response } = await dialog.showMessageBox(win, {
-    type: 'warning',
-    buttons: ['Close Anyway', 'Wait'],
-    defaultId: 1,
-    cancelId: 1,
-    message: 'Cellestra is not responding.',
-    detail: 'Closing now loses changes made since the last recovery snapshot.',
-  });
+  // A headless run has nobody to ask, so it closes.
+  const response = headless
+    ? 0
+    : await askBox(win, {
+        type: 'warning',
+        buttons: ['Close Anyway', 'Wait'],
+        defaultId: 1,
+        cancelId: 1,
+        message: 'Cellestra is not responding.',
+        detail: 'Closing now loses changes made since the last recovery snapshot.',
+      });
   if (win.isDestroyed()) return;
   if (response === 0) {
     state.allowClose = true;
@@ -198,7 +240,7 @@ async function readNative(p: string): Promise<NativeFile> {
   const [bytes, s, lock] = await Promise.all([readFile(p), stat(p), readLockFile(p)]);
   grants.grant(p);
   knownMtime.set(p, s.mtimeMs);
-  app.addRecentDocument(p);
+  addRecent(p);
   return {
     path: p,
     name: path.basename(p),
@@ -225,8 +267,7 @@ async function allowRead(win: BrowserWindow | null, p: unknown): Promise<string>
     message: `Open “${path.basename(p)}”?`,
     detail: p,
   };
-  const { response } = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
-  if (response !== 0) throw new Error('Opening the file was cancelled');
+  if ((await askBox(win, opts)) !== 0) throw new Error('Opening the file was cancelled');
   grants.grant(p);
   return p;
 }
@@ -252,7 +293,7 @@ async function writeNative(
     const s = await stat(p);
     grants.grant(p);
     knownMtime.set(p, s.mtimeMs);
-    app.addRecentDocument(p);
+    addRecent(p);
     return { path: p, name: path.basename(p), modified: s.mtimeMs, version: contentVersion(bytes) };
   });
 }
@@ -328,7 +369,7 @@ function registerIpc(): void {
       defaultPath: String(suggestedName),
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     };
-    const result = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+    const result = await pickToSave(win, opts);
     if (result.canceled || !result.filePath) return null;
     const { path: target, askOverwrite } = await pdfExportTarget(result.filePath);
     if (askOverwrite) {
@@ -340,10 +381,7 @@ function registerIpc(): void {
         message: `“${path.basename(target)}” already exists. Do you want to replace it?`,
         detail: target,
       };
-      const { response } = win
-        ? await dialog.showMessageBox(win, confirm)
-        : await dialog.showMessageBox(confirm);
-      if (response !== 0) return null;
+      if ((await askBox(win, confirm)) !== 0) return null;
     }
     const pdf = await withPrintWindow(html, (w) =>
       w.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true }),
@@ -355,9 +393,7 @@ function registerIpc(): void {
   ipcMain.handle(Channels.openDialog, async (e) => {
     if (!trusted(e)) forbidden();
     const win = fromEvent(e);
-    const result = win
-      ? await dialog.showOpenDialog(win, { properties: ['openFile'], filters: FILTERS })
-      : await dialog.showOpenDialog({ properties: ['openFile'], filters: FILTERS });
+    const result = await pickToOpen(win, { properties: ['openFile'], filters: FILTERS });
     const p = result.filePaths[0];
     return result.canceled || !p ? null : readNative(p);
   });
@@ -376,7 +412,7 @@ function registerIpc(): void {
     const format = spreadsheetFormat(name);
     const filters = format ? [{ name: format.toUpperCase(), extensions: [format] }] : FILTERS;
     const opts = { defaultPath: name, filters };
-    const result = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+    const result = await pickToSave(win, opts);
     if (result.canceled || !result.filePath) return null;
     const refused = saveAsMismatch(name, result.filePath);
     if (refused) throw new Error(refused);
