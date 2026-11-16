@@ -45,6 +45,14 @@ describe('ODS value types', () => {
     expect(cell).toContain('office:value="1.5"');
   });
 
+  it('keeps a number too large to be a date when its cell has a date format', () => {
+    const workbook = withFormat('yyyy-mm-dd');
+    workbook.activeSheet.setValue(0, 0, CellValue.number(1e9));
+
+    expect(firstCell(workbook)).toContain('office:value-type="float"');
+    expect(roundTrip(workbook).activeSheet.getValue(0, 0)).toEqual(CellValue.number(1e9));
+  });
+
   it('writes a formula error the way LibreOffice does and reads it back as an error', () => {
     const workbook = Workbook.createNew();
     workbook.settings.calculationMode = 'manual';

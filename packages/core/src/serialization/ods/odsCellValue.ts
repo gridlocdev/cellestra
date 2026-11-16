@@ -144,14 +144,17 @@ export function writeCellValue(
   switch (value.kind) {
     case 'number': {
       const kind = NumberFormats.kind(format);
+      // A number too large or small to be a date is written as a plain float.
+      const when =
+        kind === 'date' || kind === 'dateTime' ? DateConversion.tryToDateTime(value.value, false) : null;
       if (kind === 'time') {
         // A time format stores the serial as an ISO-8601 duration so the whole value (days *and*
         // time-of-day fraction) survives, including elapsed times past 24h.
         element.setAttr(Office('value-type'), 'time');
         element.setAttr(Office('time-value'), durationText(value.value));
-      } else if (kind === 'date' || kind === 'dateTime') {
+      } else if (when) {
         element.setAttr(Office('value-type'), 'date');
-        element.setAttr(Office('date-value'), dateValueText(value.value));
+        element.setAttr(Office('date-value'), dateValueText(when));
       } else if (kind === 'currency') {
         element.setAttr(Office('value-type'), 'currency');
         element.setAttr(Office('currency'), currencyCode(format.code));
@@ -205,11 +208,10 @@ function floatValueText(n: number): string {
 
 /**
  * An ODF `office:date-value`. Pure dates stay `yyyy-MM-dd`; values with a time-of-day fraction emit
- * the full ISO-8601 timestamp. Out-of-range serials fall back to a plain date string.
+ * the full ISO-8601 timestamp. A number too large or small to be a date is written as a plain
+ * float instead: a date-value no reader takes back would lose it.
  */
-function dateValueText(serial: number): string {
-  const when = DateConversion.tryToDateTime(serial, false);
-  if (!when) return datePart(DateConversion.dateFromSerial(serial));
+function dateValueText(when: CivilDateTime): string {
   const midnight = when.hour === 0 && when.minute === 0 && when.second === 0 && when.millisecond === 0;
   if (midnight) return datePart(when);
   // Sub-second time is part of the value: 12:00:00.5 must not come back as 12:00:00.
