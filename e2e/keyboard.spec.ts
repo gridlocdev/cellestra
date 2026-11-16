@@ -65,6 +65,19 @@ test.describe('The keyboard', () => {
     await expect(contents(page)).toHaveValue('=ABS(-5)');
   });
 
+  test('⌘Z in a dialog does not put old typing back into a cell editor behind it', async ({ page }) => {
+    await openFile(page, 'budget.ods');
+    await goTo(page, 'E1');
+    await page.keyboard.type('typed');
+    await page.keyboard.press('Enter');
+    await runCommand(page, 'Settings');
+    await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+    await page.keyboard.press('ControlOrMeta+KeyZ');
+    await page.keyboard.press('Escape');
+    await goTo(page, 'B1');
+    await expect(contents(page)).toHaveValue('Rent');
+  });
+
   test('the Keyboard Shortcuts window lists the shortcuts', async ({ page }) => {
     await page.keyboard.press('ControlOrMeta+Slash');
     const shortcuts = page.getByRole('dialog', { name: 'Keyboard Shortcuts' });

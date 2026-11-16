@@ -211,12 +211,19 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       e.preventDefault();
       app.paste(e.clipboardData?.getData('text/plain') ?? null);
     };
+    // The browser's own ⌘Z undoes the last typing in any field, even one without focus (from a
+    // dialog's button, say): it would put old text back into a hidden editor as a draft.
+    const onHistory = (e: InputEvent) => {
+      if (e.inputType.startsWith('history') && e.target !== document.activeElement) e.preventDefault();
+    };
     addEventListener('keydown', onKey);
+    document.addEventListener('beforeinput', onHistory, true);
     document.addEventListener('copy', onCopy);
     document.addEventListener('cut', onCopy);
     document.addEventListener('paste', onPaste);
     return () => {
       removeEventListener('keydown', onKey);
+      document.removeEventListener('beforeinput', onHistory, true);
       document.removeEventListener('copy', onCopy);
       document.removeEventListener('cut', onCopy);
       document.removeEventListener('paste', onPaste);
