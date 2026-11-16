@@ -87,6 +87,12 @@ export function createRandom(seed: number): Random {
   return random;
 }
 
+/**
+ * The time limit for a random test: a minute for the few seeds `just check` runs, none when
+ * FUZZ_RUNS asks for more. A limit given to the test itself beats `--testTimeout`.
+ */
+export const RANDOM_TIMEOUT = process.env.FUZZ_RUNS ? 0 : 60_000;
+
 function seeds(): number[] {
   const one = process.env.FUZZ_SEED;
   if (one) return [Number(one)];

@@ -30,7 +30,7 @@ import {
   type PasteMode,
   type Worksheet,
 } from '../src/index.ts';
-import { runRandomOps, type Op, type Random } from './support/randomOps.ts';
+import { RANDOM_TIMEOUT, runRandomOps, type Op, type Random } from './support/randomOps.ts';
 
 const LOCALE = 'en-US';
 /** Edits stay in a small corner so they meet each other: merges, formulas and moves overlap. */
@@ -380,5 +380,5 @@ describe('the engine', () => {
         expect(snapshot(readOds(writeOds(s.workbook))), 'the saved file opens back the same').toBe(saved);
       },
     });
-  }, 60_000);
+  }, RANDOM_TIMEOUT);
 });

@@ -5,7 +5,7 @@ import { ConflictError, WorkbookSession, type DocumentRef, type OpenedDocument }
 import { DocumentLifecycle } from '../src/app/documentLifecycle.ts';
 import type { LifecycleHost } from '../src/app/lifecycleHost.ts';
 import type { DocumentStores } from '../src/app/documentStores.ts';
-import { runRandomOps, type Op, type Random } from './support/randomOps.ts';
+import { RANDOM_TIMEOUT, runRandomOps, type Op, type Random } from './support/randomOps.ts';
 
 function odsWith(text: string): Uint8Array {
   const wb = Workbook.createNew();
@@ -282,5 +282,5 @@ describe('the document lifecycle', () => {
           );
       },
     });
-  }, 60_000);
+  }, RANDOM_TIMEOUT);
 });
