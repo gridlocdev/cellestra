@@ -8,7 +8,16 @@ const DEEP_IMPORTS = {
 };
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/out/**', '**/release/**', '**/.types/**', '.types-test/**', '**/node_modules/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/out/**',
+      '**/release/**',
+      '**/.types/**',
+      '.types-test/**',
+      '**/node_modules/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -25,6 +34,10 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/switch-exhaustiveness-check': [
+        'error',
+        { considerDefaultExhaustiveForUnions: false },
+      ],
     },
   },
   {

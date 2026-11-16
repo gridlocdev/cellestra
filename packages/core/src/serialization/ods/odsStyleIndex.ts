@@ -92,6 +92,7 @@ export class OdsStyleIndex {
           if (height !== null) this.rowHeights.set(name, cmToPx(height));
           break;
         }
+        case null:
         default:
           this.preservedAutomaticStyles.push(element.clone());
       }

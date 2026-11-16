@@ -221,6 +221,9 @@ export class Evaluator implements FunctionEvaluator {
           }
         return shared.length > 0 ? shared : CellValue.error(CellError.null());
       }
+      case 'array':
+      case 'literal':
+      case 'unary':
       default:
         break;
     }
@@ -323,6 +326,10 @@ export class Evaluator implements FunctionEvaluator {
         const target = fn.reference(expr.args, this);
         return target instanceof CellRange ? new RangeValues(target, this.context) : null;
       }
+      case 'literal':
+      case 'refError':
+      case 'sheetSpan':
+      case 'unary':
       default:
         return null;
     }

@@ -438,6 +438,9 @@ function dateTimeStyle(name: string, section: string, kind: NumberFormatKind): X
       case 'digit':
         pendingText += tk.ch;
         break;
+      case 'exponent':
+      case 'general':
+      case 'text':
       default:
         break;
     }

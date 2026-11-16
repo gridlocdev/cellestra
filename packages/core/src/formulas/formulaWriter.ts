@@ -39,6 +39,12 @@ export function binaryPrecedence(op: BinaryOperator): number {
       return 8;
     case 'intersect':
       return 9;
+    case 'equal':
+    case 'greater':
+    case 'greaterEqual':
+    case 'less':
+    case 'lessEqual':
+    case 'notEqual':
     default:
       return 1; // comparisons
   }

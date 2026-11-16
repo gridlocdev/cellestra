@@ -31,6 +31,10 @@ function rewrite(expr: Expr, mapAddress: MapAddress, mapRange: MapRange, mapSpan
       return Expr.binary(expr.operator, recurse(expr.left), recurse(expr.right));
     case 'call':
       return Expr.call(expr.name, expr.args.map(recurse));
+    case 'array':
+    case 'literal':
+    case 'name':
+    case 'refError':
     default:
       return expr; // literals, names, ref-errors are unchanged
   }

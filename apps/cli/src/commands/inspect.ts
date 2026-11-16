@@ -202,6 +202,10 @@ function collectReads(expr: Expr, home: string, workbook: Workbook, into: Node[]
     case 'call':
       for (const a of expr.args) collectReads(a, home, workbook, into);
       break;
+    case 'array':
+    case 'literal':
+    case 'refError':
+    case 'sheetSpan':
     default:
       break;
   }
@@ -553,6 +557,12 @@ function collectNames(expr: Expr, into: Set<string>): void {
     case 'call':
       for (const a of expr.args) collectNames(a, into);
       break;
+    case 'array':
+    case 'literal':
+    case 'range':
+    case 'reference':
+    case 'refError':
+    case 'sheetSpan':
     default:
       break;
   }

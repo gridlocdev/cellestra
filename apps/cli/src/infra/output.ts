@@ -29,6 +29,7 @@ export function render(format: OutputFormat, sheetName: string, range: CellRange
       return delimited(cells, '\t', false);
     case 'json':
       return toJson({ sheet: sheetName, range: range.toString(), rows: cells }) + '\n';
+    case 'table':
     default:
       return table(range, cells);
   }

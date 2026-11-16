@@ -429,6 +429,15 @@ function browserCandidates(): string[] {
       ];
       return roots.flatMap((r) => (r ? rel.map((x) => join(r, x)) : []));
     }
+    case 'aix':
+    case 'android':
+    case 'cygwin':
+    case 'freebsd':
+    case 'haiku':
+    case 'linux':
+    case 'netbsd':
+    case 'openbsd':
+    case 'sunos':
     default:
       return [
         'google-chrome',

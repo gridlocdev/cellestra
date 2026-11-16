@@ -61,6 +61,8 @@ function compareText(value: CellValue, op: Operator, operand: string): boolean {
       return cmp < 0;
     case '<=':
       return cmp <= 0;
+    case '<>':
+    case '=':
     default:
       return false;
   }
@@ -150,6 +152,7 @@ export class CriteriaMatcher {
         const m = textMatcher(operand);
         return new CriteriaMatcher((v) => !m(v));
       }
+      case '=':
       default:
         return new CriteriaMatcher(textMatcher(operand));
     }

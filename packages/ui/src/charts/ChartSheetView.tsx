@@ -50,6 +50,10 @@ export function chartFamily(type: ChartType): ChartFamily {
     case 'radar':
     case 'filledRadar':
       return 'radar';
+    case 'area':
+    case 'bar':
+    case 'column':
+    case 'line':
     default:
       return 'cartesian';
   }
@@ -499,6 +503,8 @@ function categoryCopy(family: ChartFamily): { label: string; tip: string } {
         label: 'Spoke labels',
         tip: 'The cells naming each spoke of the radar — one per value, e.g. Sheet1.A2:A7.',
       };
+    case 'cartesian':
+    case 'xy':
     default:
       return {
         label: 'Category labels',

@@ -5,6 +5,7 @@ import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
 import { Expr, type BinaryOperator } from '../ast/expr.ts';
 import { Lexer, type Token, type TokenType } from '../lexing/lexer.ts';
+import { isReferenceExpr, treeDepth } from './exprTree.ts';
 import { FormulaParseException, type ParseError } from './parseError.ts';
 
 export type ParseResult =
@@ -303,6 +304,27 @@ export class Parser {
         return this.parseNameOperand();
       case 'leftBrace':
         return this.parseArray();
+      case 'ampersand':
+      case 'bang':
+      case 'caret':
+      case 'colon':
+      case 'comma':
+      case 'endOfInput':
+      case 'equal':
+      case 'greater':
+      case 'greaterEqual':
+      case 'less':
+      case 'lessEqual':
+      case 'minus':
+      case 'notEqual':
+      case 'percent':
+      case 'plus':
+      case 'rightBrace':
+      case 'rightParen':
+      case 'semicolon':
+      case 'slash':
+      case 'star':
+      case 'tilde':
       default:
         throw new FormulaParseException(`Unexpected ${describe(token.type)}.`, token.position);
     }
@@ -368,6 +390,29 @@ export class Parser {
         }
         return CellValue.boolean(upper === 'TRUE');
       }
+      case 'ampersand':
+      case 'bang':
+      case 'caret':
+      case 'colon':
+      case 'comma':
+      case 'endOfInput':
+      case 'equal':
+      case 'greater':
+      case 'greaterEqual':
+      case 'leftBrace':
+      case 'leftParen':
+      case 'less':
+      case 'lessEqual':
+      case 'minus':
+      case 'notEqual':
+      case 'percent':
+      case 'plus':
+      case 'rightBrace':
+      case 'rightParen':
+      case 'semicolon':
+      case 'slash':
+      case 'star':
+      case 'tilde':
       default:
         break;
     }
@@ -478,38 +523,6 @@ export class Parser {
     this.leave();
     return Expr.call(nameToken.text.toUpperCase(), args);
   }
-}
-
-/** Whether `expr` can stand for cells: a reference, range, name, broken reference, reference operator or call. */
-function isReferenceExpr(expr: Expr): boolean {
-  switch (expr.kind) {
-    case 'reference':
-    case 'range':
-    case 'sheetSpan':
-    case 'name':
-    case 'refError':
-      return true;
-    case 'binary':
-      return expr.operator === 'union' || expr.operator === 'intersect';
-    case 'call':
-      return true; // a reference-returning function (INDEX); any other is #VALUE! when evaluated
-    default:
-      return false;
-  }
-}
-
-/** How deep `expr` nests, counted without recursion (long operator chains build deep trees). */
-function treeDepth(expr: Expr): number {
-  let deepest = 0;
-  const stack: [Expr, number][] = [[expr, 1]];
-  for (let item = stack.pop(); item; item = stack.pop()) {
-    const [node, depth] = item;
-    if (depth > deepest) deepest = depth;
-    if (node.kind === 'unary') stack.push([node.operand, depth + 1]);
-    else if (node.kind === 'binary') stack.push([node.left, depth + 1], [node.right, depth + 1]);
-    else if (node.kind === 'call') for (const a of node.args) stack.push([a, depth + 1]);
-  }
-  return deepest;
 }
 
 interface Line {

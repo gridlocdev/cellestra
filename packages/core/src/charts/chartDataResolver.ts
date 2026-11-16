@@ -65,6 +65,8 @@ function labelOf(value: CellValue): string {
       return invariantLabel(value.value);
     case 'boolean':
       return value.value ? 'TRUE' : 'FALSE';
+    case 'empty':
+    case 'error':
     default:
       return '';
   }

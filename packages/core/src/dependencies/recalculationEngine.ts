@@ -217,6 +217,13 @@ export class RecalculationEngine {
         return this.#callsUnknown(expr.operand);
       case 'binary':
         return this.#callsUnknown(expr.left) || this.#callsUnknown(expr.right);
+      case 'array':
+      case 'literal':
+      case 'name':
+      case 'range':
+      case 'reference':
+      case 'refError':
+      case 'sheetSpan':
       default:
         return false;
     }

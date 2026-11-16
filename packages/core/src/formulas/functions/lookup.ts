@@ -35,6 +35,8 @@ function exactMatcher(lookup: CellValue): (v: CellValue) => boolean {
         return n.kind === 'number' && approxEqual(n.value, target);
       };
     }
+    case 'empty':
+    case 'error':
     default:
       // A blank lookup value takes the shape of each cell it meets (0, "" or FALSE), as before.
       return (v) => v.kind !== 'error' && ValueComparer.compare(v, lookup) === 0;

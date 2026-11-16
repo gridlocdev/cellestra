@@ -150,6 +150,10 @@ export function buildChartScene(chart: ResolvedChart | null, width: number, heig
       case 'filledRadar':
         drawRadar(shapes, hits, chart, plot, chart.type === 'filledRadar');
         break;
+      case 'area':
+      case 'bar':
+      case 'column':
+      case 'line':
       default:
         drawCartesian(shapes, hits, chart, plot);
         break;

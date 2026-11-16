@@ -56,6 +56,7 @@ export function readCellValue(element: XmlElement, paragraphs: readonly XmlEleme
       const value = element.attr(Office('string-value'));
       return CellValue.text(value ?? paragraphs.map(paragraphText).join('\n'));
     }
+    case null:
     default: {
       // No value type, but text: a string cell from a writer that left the type out (ODF 19.385
       // makes it optional), which LibreOffice reads as text too.
@@ -73,6 +74,8 @@ export function parseDouble(text: string | null): number | null {
       return -Infinity;
     case 'NaN':
       return NaN;
+    case null:
+      break;
   }
   return parseInvariantFloat(text);
 }

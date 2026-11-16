@@ -252,6 +252,8 @@ export function parseArgs(root: CommandSpec, argv: readonly string[]): Invocatio
         } else parsed.addOption(option.name, '');
         break;
       }
+      case 'multi':
+      case 'value':
       default: {
         if (inline !== null) parsed.addOption(option.name, inline);
         else {

@@ -417,6 +417,10 @@ function formatNumberSection(
       case 'general':
         text += NumberFormatter.formatGeneral(abs, info.locale);
         break;
+      case 'ampm':
+      case 'date':
+      case 'elapsed':
+      case 'text':
       default:
         break; // '@' and stray date tokens do not apply to numbers
     }
@@ -562,6 +566,9 @@ function formatDateSection(serial: number, tokens: readonly FormatToken[], info:
       case 'date':
         text += dateField(tk.field, tk.length, when, twelveHour, info);
         break;
+      case 'exponent':
+      case 'general':
+      case 'text':
       default:
         break;
     }

@@ -97,6 +97,9 @@ export const ReferenceCollector = {
         for (const range of extra) expand(range, homeSheet, destination, largeRanges);
         break;
       }
+      case 'array':
+      case 'literal':
+      case 'refError':
       default:
         break;
     }
@@ -112,6 +115,13 @@ export const ReferenceCollector = {
         return volatile(expr.operand);
       case 'binary':
         return volatile(expr.left) || volatile(expr.right);
+      case 'array':
+      case 'literal':
+      case 'name':
+      case 'range':
+      case 'reference':
+      case 'refError':
+      case 'sheetSpan':
       default:
         return false;
     }

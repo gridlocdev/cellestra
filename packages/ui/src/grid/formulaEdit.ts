@@ -80,6 +80,11 @@ export function formulaReferences(text: string, sheetName: string): { range: Gri
       case 'call':
         e.args.forEach(walk);
         return;
+      case 'array':
+      case 'literal':
+      case 'name':
+      case 'refError':
+      case 'sheetSpan':
       default:
         return;
     }

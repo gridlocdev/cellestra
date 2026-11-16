@@ -251,6 +251,11 @@ export function sampleValueFor(code: string): CellValue {
       return CellValue.text('Sample text');
     case 'percent':
       return CellValue.number(0.1234);
+    case 'currency':
+    case 'fraction':
+    case 'general':
+    case 'number':
+    case 'scientific':
     default:
       return CellValue.number(SAMPLE_NUMBER);
   }
