@@ -115,6 +115,8 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
           else app.cancelChartPick();
           return true;
         }
+        // A dialog or menu open over the grid keeps the shortcuts to itself.
+        if (app.modalOpen()) return false;
         // Copy/cut/paste use the native clipboard events below (no permission prompt).
         const command = catalog.forEvent(e, inText);
         if (!command || ['edit.copy', 'edit.cut', 'edit.paste'].includes(command.id)) return false;
@@ -184,7 +186,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
   // Shortcuts that fire anywhere (outside the grid too): ⌘K, ⌘S, ⌘O…
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || app.dialog.peek() || app.paletteOpen.peek()) return;
+      if (e.defaultPrevented || app.modalOpen()) return;
       const target = e.target as HTMLElement | null;
       const inText = !!target?.closest('input, textarea, select, [contenteditable]');
       const inGrid = !!target?.closest('.cs-grid');

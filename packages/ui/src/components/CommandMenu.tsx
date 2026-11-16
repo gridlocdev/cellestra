@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { compact, type CommandCatalog } from '../commands/command.ts';
 import { Icon } from './Icon.tsx';
 import { listStep } from './listStep.ts';
@@ -116,9 +116,10 @@ function ListPopup(props: {
   readonly onClose: () => void;
   readonly children: preact.ComponentChildren;
 }) {
-  // `autoFocus` only works at page load; focus the field once it is in the DOM.
+  // `autoFocus` only works at page load; focus the field once it is in the DOM, before the next key
+  // event, so keys typed right after it opens don't reach what is behind it.
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => input.current?.focus(), []);
+  useLayoutEffect(() => input.current?.focus(), []);
   const onKeyDown = (e: KeyboardEvent) => {
     const step = listStep(e, props.index, props.count);
     if (step !== undefined) {

@@ -115,7 +115,7 @@ export function Ribbon({
             readOnly
             onFocus={(e) => {
               e.currentTarget.blur();
-              app.paletteOpen.value = true;
+              if (!app.modalOpen()) app.paletteOpen.value = true;
             }}
           />
           <kbd>⌘K</kbd>

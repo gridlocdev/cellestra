@@ -294,6 +294,15 @@ export class AppController {
   readonly paletteOpen = signal(false);
   readonly sheetPickerOpen = signal(false);
   readonly recentOpen = signal(false);
+  /** Whether a dialog, menu or picker is open over the grid, which keeps the keyboard to itself. */
+  modalOpen(): boolean {
+    return !!(
+      this.dialog.peek() ||
+      this.paletteOpen.peek() ||
+      this.sheetPickerOpen.peek() ||
+      this.recentOpen.peek()
+    );
+  }
   readonly recents = signal<RecentEntry[]>([]);
   /** The zoom the user sees and sets: 1 is 100%. */
   readonly zoom = signal(1);

@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
+import { useLayoutEffect, useRef } from 'preact/hooks';
 import { trapTab } from './focusTrap.ts';
 
 /**
@@ -15,7 +15,8 @@ export function Dialog(props: {
   readonly onSubmit?: () => void;
 }) {
   const ref = useRef<HTMLFormElement>(null);
-  useEffect(() => {
+  // Before the next key event: keys typed right after the dialog opens must not reach what is behind it.
+  useLayoutEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const first = ref.current?.querySelector<HTMLElement>('[autofocus], input, select, button');
     first?.focus();

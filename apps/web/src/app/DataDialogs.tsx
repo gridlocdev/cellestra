@@ -689,7 +689,10 @@ export function FunctionPicker({ app }: { app: AppController }) {
       onPick={(f) => queueMicrotask(() => app.grid.current?.beginEdit(`=${f.name}(`))}
       onClose={() => {
         app.dialog.value = null;
-        queueMicrotask(() => app.grid.current?.focus());
+        // After a pick the cell editor is open with the function in it: leave the focus there.
+        queueMicrotask(() => {
+          if (!app.grid.current?.isEditing()) app.grid.current?.focus();
+        });
       }}
     />
   );
