@@ -1,4 +1,4 @@
-import { effect, type ReadonlySignal } from '@preact/signals';
+import { effect, untracked } from '@preact/signals';
 import {
   after,
   ConflictError,
@@ -8,94 +8,23 @@ import {
   type OpenedDocument,
   type WorkbookSession,
 } from '@cellestra/ui';
-import type { DocumentStores } from './documentStores.ts';
-
-/** How a save ended: written, handed to the browser as a download, or not done. */
-export type SaveOutcome = 'saved' | 'downloaded' | false;
+import {
+  autoSaveFailure,
+  isNotFound,
+  message,
+  type LifecycleHost,
+  type SaveOutcome,
+} from './lifecycleHost.ts';
+import { step, type Effect, type SaveEvent, type SaveState } from './saveChart.ts';
 
 /** How often a file change on disk that arrived at a bad moment (a dialog, an edit) is tried again. */
 const EXTERNAL_CHANGE_RETRY_MS = 1_000;
-
-/** The Electron calls the lifecycle makes: which file to watch, and the answer to a close request. */
-export interface LifecycleNative {
-  watch(path: string | null): void;
-  confirmClose(): void;
-  cancelClose(): void;
-}
-
-/** The questions the lifecycle asks the user, through the app's own dialogs. */
-export interface LifecycleQuestions {
-  /** Unsaved changes are about to be replaced: save them, discard them, or stay. */
-  discard(): Promise<'save' | 'discard' | 'cancel'>;
-  /**
-   * Saving `name` as CSV keeps one sheet's values: keep CSV, save as .ods instead, or stay.
-   * Resolves 'csv' without asking when nothing would be lost.
-   */
-  csvLoss(name: string): Promise<'csv' | 'ods' | 'cancel'>;
-  /** The file changed or is locked elsewhere. */
-  conflict(e: ConflictError): Promise<'overwrite' | 'saveAs' | 'reload' | 'cancel'>;
-}
-
-/** Everything outside the lifecycle it needs: the session, the stores, the UI's answers and notices. */
-export interface LifecycleHost {
-  readonly session: WorkbookSession;
-  readonly stores: DocumentStores;
-  /** Seconds between an edit and its auto-save; 0 turns auto-save off. */
-  readonly autoSaveSeconds: ReadonlySignal<number>;
-  /** Electron's bridge; null in a browser. Read at each call. */
-  native(): LifecycleNative | null;
-  readonly questions: LifecycleQuestions;
-  /** Commit the open cell edit. False when the value was refused and the editor stays open. */
-  commitOpenEdit(): boolean;
-  /** Whether a cell is being edited. */
-  isEditing(): boolean;
-  /** Whether a dialog is open. */
-  dialogOpen(): boolean;
-  info(text: string): void;
-  /** A problem worth an error toast: an exception, or a warning's text. */
-  error(e: unknown): void;
-  /** Crash-recovery storage. */
-  readonly recovery: {
-    clear(): Promise<void>;
-    keepAside(title: string, ref: DocumentRef | null, bytes: Uint8Array): Promise<void>;
-  };
-  /** Add a file to the recent files. */
-  remember(ref: DocumentRef): Promise<void>;
-  /** Another document is on screen (opened or new): reset per-document UI and focus the grid. */
-  replaced(): void;
-  /** Reload the same document's new bytes, keeping the cursor where it was. */
-  reloadInPlace(run: () => void): void;
-}
 
 /** What the document looked like when an open began, to tell whether it changed meanwhile. */
 interface OpenTicket {
   readonly seq: number;
   readonly generation: number;
   readonly edits: number;
-}
-
-/** An error's text, for a toast. */
-export function message(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
-
-/** The file is gone (not just unreadable right now): browser NotFoundError, NAS 404, native ENOENT. */
-export function isNotFound(e: unknown): boolean {
-  if (!(e instanceof Error) && !(e instanceof DOMException)) return false;
-  return e.name === 'NotFoundError' || /\bENOENT\b/.test(e.message);
-}
-
-/** What the one message for a failed auto-save says: why it stopped and what restarts it. */
-export function autoSaveFailure(e: unknown): string {
-  const resume = 'Auto-save is paused until you save with ⌘S.';
-  if (e instanceof ConflictError) {
-    const why =
-      e.reason === 'locked' ? 'the file is locked by another app' : 'the file was changed by another app';
-    return `Auto-save stopped: ${why}. ${resume}`;
-  }
-  if (e instanceof DOMException && e.name === 'NotAllowedError')
-    return `Auto-save needs your permission to write the file. ${resume}`;
-  return `Auto-save couldn't write the file: ${message(e)}. ${resume}`;
 }
 
 /**
@@ -119,15 +48,27 @@ export class DocumentLifecycle {
   #openSeq = 0;
   /** A file change on disk waiting for a better moment to be looked at. */
   #cancelExternalRetry: (() => void) | null = null;
+  /** Where the open document is in the save chart. */
+  #state: SaveState = 'clean';
+  /** The document generation and edit count the chart last heard about. */
+  #seenGeneration = -1;
+  #seenEdits = 0;
+  /** Bumped when reads are dropped: a read that started under an older number is ignored. */
+  #readSeq = 0;
+  /** A close waits for the write in progress, then goes ahead. */
+  #closeHeld = false;
 
   constructor(host: LifecycleHost) {
     this.#host = host;
-    // Every edit (and every change of interval) restarts auto-save's countdown, so the save lands
-    // in the pause after a burst of typing rather than in the middle of one.
+    // Every edit tells the chart, which restarts auto-save's countdown, so the save lands in the
+    // pause after a burst of typing rather than in the middle of one.
     effect(() => {
       void host.session.version.value;
+      untracked(() => this.#noticeChanges());
+    });
+    effect(() => {
       void host.autoSaveSeconds.value;
-      this.#armAutoSave();
+      untracked(() => this.#armAutoSave());
     });
   }
 
@@ -252,7 +193,7 @@ export class DocumentLifecycle {
    * `generation` the session's document generation then: when another document has been opened
    * since, the file is only remembered, not made the open document's.
    */
-  saved(ref: DocumentRef, edits = this.#session.editCount, generation = this.#session.generation): void {
+  #recordSaved(ref: DocumentRef, edits: number, generation: number): void {
     if (generation !== this.#session.generation) {
       void this.#host.remember(ref);
       this.#host.info(`Saved ${ref.name}`);
@@ -264,6 +205,7 @@ export class DocumentLifecycle {
     void this.#host.remember(ref);
     this.#host.native()?.watch(ref.store === 'native' ? ref.id : null);
     this.#host.info(`Saved ${ref.name}`);
+    this.#fire('saved');
   }
 
   /**
@@ -276,12 +218,20 @@ export class DocumentLifecycle {
       const result = await this.#saving.catch((): SaveOutcome => false);
       if (!always && !this.#session.modified.peek()) return result;
     }
-    const p = run();
+    return this.#turn(run());
+  }
+
+  /** Hold the save turn while `p` runs; a close that waited for it goes ahead afterwards. */
+  async #turn(p: Promise<SaveOutcome>): Promise<SaveOutcome> {
     this.#saving = p;
     try {
       return await p;
     } finally {
       if (this.#saving === p) this.#saving = null;
+      if (this.#closeHeld && !this.#saving) {
+        this.#closeHeld = false;
+        void this.#close();
+      }
     }
   }
 
@@ -292,33 +242,63 @@ export class DocumentLifecycle {
     if (!ref) return this.#saveAs(session.format.peek());
     // Without a handle, a browser file (uploaded, dropped) cannot be written back: ask where.
     if (!this.#host.stores.canSaveInPlace(ref)) return this.#saveAs(session.format.peek());
-    const store = this.#host.stores.storeFor(ref);
     if (session.format.peek() === 'csv') {
       const keep = await this.#host.questions.csvLoss(ref.name);
-      if (keep === 'cancel') return false;
+      if (keep === 'cancel') return this.#gaveUp();
       if (keep === 'ods') return this.#saveAs('ods');
     }
+    // Nothing unsaved: there is nothing to write.
+    if (!this.#fire('save').includes('writeFile')) return this.#state === 'clean' ? 'saved' : false;
+    return this.#writeInPlace(ref, { force, ignoreLock });
+  }
+
+  /**
+   * Write the document to its own file (the chart said `writeFile`). A conflict asks the user
+   * unless the write is auto-save's, which only stands down.
+   */
+  async #writeInPlace(
+    ref: DocumentRef,
+    options: { force: boolean; ignoreLock: boolean; background?: boolean },
+  ): Promise<SaveOutcome> {
+    const session = this.#session;
+    const store = this.#host.stores.storeFor(ref);
     const edits = session.editCount;
     const generation = session.generation;
     const bytes = session.serialize();
     try {
-      const saved = await store.save(ref, bytes, { force, ignoreLock });
+      const saved = await store.save(ref, bytes, options);
       if (saved.downloaded) {
         this.#host.info(`Downloaded ${saved.name}`);
+        this.#ended(generation, 'failed');
         return 'downloaded';
       }
-      this.saved(saved, edits, generation);
+      this.#recordSaved(saved, edits, generation);
       return 'saved';
     } catch (e) {
-      if (!(e instanceof ConflictError)) {
-        this.#host.error(e);
+      if (options.background) {
+        this.#autoSaveSuspendedIn = generation;
+        this.#host.error(new Error(autoSaveFailure(e)));
+        this.#ended(generation, 'failed');
         return false;
       }
+      if (!(e instanceof ConflictError) || generation !== session.generation) {
+        this.#host.error(e);
+        this.#ended(generation, 'failed');
+        return false;
+      }
+      this.#fire('versionChanged');
       const choice = await this.#host.questions.conflict(e);
-      if (choice === 'overwrite')
-        return e.reason === 'locked' ? this.#save(force, true) : this.#save(true, ignoreLock);
+      if (choice === 'overwrite') {
+        this.#fire('overwrite');
+        const again = e.reason === 'locked' ? { ...options, ignoreLock: true } : { ...options, force: true };
+        return this.#writeInPlace(ref, again);
+      }
       if (choice === 'saveAs') return this.#saveAs(session.format.peek());
-      if (choice === 'reload') await this.reloadFromStore(true);
+      if (choice === 'reload') {
+        if (this.#fire('reload').includes('readFile')) await this.#read(ref);
+        return false;
+      }
+      this.#fire('cancel');
       return false;
     }
   }
@@ -330,19 +310,20 @@ export class DocumentLifecycle {
     const isExport = format === 'csv' && session.format.peek() === 'ods';
     if (format === 'csv' && !isExport) {
       const keep = await this.#host.questions.csvLoss(session.title.peek());
-      if (keep === 'cancel') return false;
+      if (keep === 'cancel') return this.#gaveUp();
       if (keep === 'ods') format = 'ods';
     }
     const name = `${base}.${format}`;
+    if (isExport) return this.#export(name);
+    if (!this.#fire('saveAs').includes('pickFile')) return false;
     const edits = session.editCount;
     const generation = session.generation;
     const bytes = session.serialize(format, name);
     try {
       const saved = await this.#host.stores.primary.saveAs(name, bytes);
-      if (!saved) return false;
-      if (isExport) {
-        this.#host.info(`Exported ${saved.name}`);
-        return 'saved';
+      if (!saved) {
+        this.#ended(generation, 'failed');
+        return false;
       }
       if (saved.downloaded) {
         // The browser can't confirm the download was kept: keep the changes marked unsaved and
@@ -350,14 +331,107 @@ export class DocumentLifecycle {
         this.#host.info(
           `Downloaded ${saved.name}. This browser can't save in place, so it stays marked unsaved.`,
         );
+        this.#ended(generation, 'failed');
         return 'downloaded';
       }
-      this.saved(saved, edits, generation);
+      this.#recordSaved(saved, edits, generation);
+      return 'saved';
+    } catch (e) {
+      this.#host.error(e);
+      this.#ended(generation, 'failed');
+      return false;
+    }
+  }
+
+  /** Export a CSV copy. It isn't the document's file, so the save chart doesn't see it. */
+  async #export(name: string): Promise<SaveOutcome> {
+    try {
+      const saved = await this.#host.stores.primary.saveAs(name, this.#session.serialize('csv', name));
+      if (!saved) return false;
+      this.#host.info(`Exported ${saved.name}`);
       return 'saved';
     } catch (e) {
       this.#host.error(e);
       return false;
     }
+  }
+
+  /** A question before writing was cancelled: a conflict or close question waiting on it is answered Cancel. */
+  #gaveUp(): false {
+    if (this.#state === 'conflict' || this.#state === 'askingClose') this.#fire('cancel');
+    return false;
+  }
+
+  /** A write or read for `generation` ended; a newer document has its own chart and ignores it. */
+  #ended(generation: number, event: SaveEvent): void {
+    if (generation === this.#session.generation) this.#fire(event);
+  }
+
+  // ── The save chart ────────────────────────────────────────────────────────
+
+  /** Where the open document is in the save chart (`saveChart.ts`). */
+  get saveState(): SaveState {
+    return this.#state;
+  }
+
+  /**
+   * Tell the chart what the session did since it last looked: another document means a new chart,
+   * and a new edit count an `edit`.
+   */
+  #noticeChanges(): void {
+    const session = this.#session;
+    if (session.generation !== this.#seenGeneration) {
+      this.#seenGeneration = session.generation;
+      this.#seenEdits = session.editCount;
+      this.#readSeq++;
+      this.#state = session.modified.peek() ? 'dirty' : 'clean';
+      this.#armAutoSave();
+    } else if (session.editCount !== this.#seenEdits) {
+      this.#seenEdits = session.editCount;
+      this.#fire('edit');
+    }
+  }
+
+  /**
+   * Move the chart and run the effects that need nothing from the caller. Returns every effect, so
+   * the caller runs the ones that do (writing, reading, asking).
+   */
+  #fire(event: SaveEvent): readonly Effect[] {
+    const { to, effects } = step(this.#state, event);
+    this.#state = to;
+    for (const effect of effects) {
+      switch (effect) {
+        case 'startTimer':
+          this.#armAutoSave();
+          break;
+        case 'dropRead':
+          this.#readSeq++;
+          break;
+        case 'warnChanged':
+          this.#host.info('The file changed on disk. Saving will ask before overwriting it.');
+          break;
+        case 'retryLater':
+          this.#retryExternalChange(this.#session.generation);
+          break;
+        case 'closeLater':
+          this.#closeHeld = true;
+          break;
+        case 'cancelClose':
+          this.#host.native()?.cancelClose();
+          break;
+        // The caller runs these: they need its file, its read, or its question.
+        case 'writeFile':
+        case 'pickFile':
+        case 'showConflict':
+        case 'readFile':
+        case 'takeFile':
+        case 'replaceWithFile':
+        case 'askClose':
+        case 'closeWindow':
+          break;
+      }
+    }
+    return effects;
   }
 
   // ── Auto-save ─────────────────────────────────────────────────────────────
@@ -367,7 +441,7 @@ export class DocumentLifecycle {
     const seconds = this.#host.autoSaveSeconds.peek();
     this.#cancelAutoSave?.();
     this.#cancelAutoSave = null;
-    if (seconds <= 0 || this.#autoSaveSuspended || !this.#session.modified.peek()) return;
+    if (seconds <= 0 || this.#autoSaveSuspended || this.#state !== 'dirty') return;
     this.#cancelAutoSave = after(seconds * 1000, () => void this.autoSave());
   }
 
@@ -393,61 +467,60 @@ export class DocumentLifecycle {
       return false;
     }
     const ref = session.document.peek();
-    if (!ref || !session.modified.peek()) return false;
+    if (!ref) return false;
     // A CSV that would lose formatting or other sheets asks first; one that wouldn't is fine.
     if (session.format.peek() === 'csv' && csvLosses(session.workbook.peek(), session.csvSheet()).length > 0)
       return false;
     if (!this.#host.stores.canSaveInPlace(ref)) return false;
-    const store = this.#host.stores.storeFor(ref);
-    const run = async (): Promise<SaveOutcome> => {
-      const edits = session.editCount;
-      const generation = session.generation;
-      const bytes = session.serialize();
-      try {
-        this.saved(await store.save(ref, bytes, { force: false, background: true }), edits, generation);
-        return 'saved';
-      } catch (e) {
-        this.#autoSaveSuspendedIn = generation;
-        this.#host.error(new Error(autoSaveFailure(e)));
-        return false;
-      }
-    };
-    const p = run();
-    this.#saving = p;
-    try {
-      return (await p) !== false;
-    } finally {
-      if (this.#saving === p) this.#saving = null;
-    }
+    if (!this.#fire('timer').includes('writeFile')) return false;
+    const done = await this.#turn(
+      this.#writeInPlace(ref, { force: false, ignoreLock: false, background: true }),
+    );
+    return done === 'saved';
   }
 
   // ── Changes elsewhere ─────────────────────────────────────────────────────
 
   /**
-   * Re-read the document from its store. `onlyIfClean` (external changes) gives up when edits
-   * landed while the file was being read, instead of throwing them away.
+   * Re-read the document from its store. `onlyIfClean` (a change elsewhere) is a refresh: it takes
+   * the file only when nothing is unsaved and gives up when edits land while it reads. Otherwise
+   * (Revert to Saved) it asks about unsaved changes unless `force`, then replaces them.
    */
   async reloadFromStore(force = false, onlyIfClean = false): Promise<void> {
-    const session = this.#session;
-    const ref = session.document.peek();
+    const ref = this.#session.document.peek();
     if (!ref) return;
-    if (!force && !(await this.confirmDiscard())) return;
-    const edits = session.editCount;
-    const generation = session.generation;
-    try {
-      const opened = await this.#host.stores.storeFor(ref).reload(ref);
-      // Another document was opened meanwhile: this reload is for a file no longer on screen.
-      if (session.generation !== generation) return;
-      // Same contents (a sync client rewrote it, `touch`): nothing to reload, and undo stays.
-      if (onlyIfClean && opened.ref.version !== null && opened.ref.version === ref.version) return;
-      if (onlyIfClean && (session.editCount !== edits || session.document.peek() !== ref)) {
-        this.#host.info('The file changed on disk. Saving will ask before overwriting it.');
-        return;
-      }
-      this.#host.reloadInPlace(() => session.reload(opened.bytes, opened.ref));
-    } catch (e) {
-      this.#host.error(e);
+    if (onlyIfClean) {
+      if (this.#fire('refresh').includes('readFile')) await this.#read(ref);
+      return;
     }
+    if (!force && !(await this.confirmDiscard())) return;
+    await this.#exclusive(async () => {
+      const now = this.#session.document.peek();
+      if (now && this.#fire('reload').includes('readFile')) await this.#read(now);
+      return false;
+    }, true);
+  }
+
+  /** Read the file (the chart said `readFile`) and take it if the chart still wants it. */
+  async #read(ref: DocumentRef): Promise<void> {
+    const session = this.#session;
+    const seq = this.#readSeq;
+    const generation = session.generation;
+    let opened: OpenedDocument;
+    try {
+      opened = await this.#host.stores.storeFor(ref).reload(ref);
+    } catch (e) {
+      if (seq === this.#readSeq) this.#ended(generation, 'readFailed');
+      this.#host.error(e);
+      return;
+    }
+    // Dropped (an edit or Save As came first), or another document is open now.
+    if (seq !== this.#readSeq || generation !== session.generation) return;
+    const effects = this.#fire('readDone');
+    // Same contents (a sync client rewrote it, `touch`): nothing to reload, and undo stays.
+    const same = opened.ref.version !== null && opened.ref.version === ref.version;
+    if (effects.includes('replaceWithFile') || (effects.includes('takeFile') && !same))
+      this.#host.reloadInPlace(() => session.reload(opened.bytes, opened.ref));
   }
 
   /**
@@ -459,12 +532,13 @@ export class DocumentLifecycle {
     this.#cancelExternalRetry?.();
     this.#cancelExternalRetry = null;
     if (generation !== this.#session.generation) return; // another document is open now
-    if (this.busy) {
-      this.#cancelExternalRetry = after(EXTERNAL_CHANGE_RETRY_MS, () => void this.externalChange(generation));
-      return;
-    }
-    if (!this.#session.modified.peek()) return this.reloadFromStore(true, true);
-    this.#host.info('The file changed on disk. Saving will ask before overwriting it.');
+    if (this.#host.dialogOpen() || this.#host.isEditing()) return this.#retryExternalChange(generation);
+    return this.reloadFromStore(true, true);
+  }
+
+  #retryExternalChange(generation: number): void {
+    this.#cancelExternalRetry?.();
+    this.#cancelExternalRetry = after(EXTERNAL_CHANGE_RETRY_MS, () => void this.externalChange(generation));
   }
 
   // ── Closing ───────────────────────────────────────────────────────────────
@@ -474,13 +548,32 @@ export class DocumentLifecycle {
     if (this.#closing) return;
     this.#closing = true;
     try {
-      if (await this.confirmDiscard()) {
-        await this.#host.recovery.clear();
-        this.#host.native()?.confirmClose();
-      } else this.#host.native()?.cancelClose();
+      if (!this.#host.commitOpenEdit()) this.#host.native()?.cancelClose();
+      else await this.#close();
     } finally {
       this.#closing = false;
     }
+  }
+
+  /** Send `close` to the chart and carry out what it says: close, ask first, or wait for the write. */
+  async #close(): Promise<void> {
+    const effects = this.#fire('close');
+    if (effects.includes('closeWindow')) return this.#closeWindow();
+    if (!effects.includes('askClose')) return;
+    const choice = await this.#host.questions.discard();
+    if (choice === 'discard') {
+      if (this.#fire('discard').includes('closeWindow')) await this.#closeWindow();
+    } else if (choice === 'cancel') this.#fire('cancel');
+    else {
+      // The save holds the close and closes once it is written; a refused CSV question cancels.
+      await this.save();
+      if (this.#state === 'askingClose') this.#fire('cancel');
+    }
+  }
+
+  async #closeWindow(): Promise<void> {
+    await this.#host.recovery.clear();
+    this.#host.native()?.confirmClose();
   }
 
   /**

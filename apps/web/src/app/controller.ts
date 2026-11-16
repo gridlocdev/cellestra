@@ -94,7 +94,8 @@ import {
 
 import type { ChartDefinition } from '@cellestra/charts';
 import { DocumentStores } from './documentStores.ts';
-import { DocumentLifecycle, message } from './documentLifecycle.ts';
+import { DocumentLifecycle } from './documentLifecycle.ts';
+import { message } from './lifecycleHost.ts';
 import { findMatches, nextMatch, replaceIn, replaceableText, type FindMatch } from './find.ts';
 
 /**
@@ -230,7 +231,7 @@ export function autoSaveFromInput(text: string, current: number): number {
 /** The command chrome: a tabbed ribbon (the default) or the single compact toolbar. */
 export type Layout = 'ribbon' | 'bar';
 
-export { autoSaveFailure, message } from './documentLifecycle.ts';
+export { autoSaveFailure, message } from './lifecycleHost.ts';
 
 /** PRD §8.7: clearing or deleting more non-empty cells than this asks first. */
 export const LARGE_REMOVAL_CELLS = 100;
@@ -697,11 +698,6 @@ export class AppController {
   /** Close the document (⌘W): the window on desktop, back to a blank workbook in a browser. */
   closeDocument(): Promise<void> {
     return this.lifecycle.closeDocument();
-  }
-
-  /** Record a save (see `DocumentLifecycle.saved`). */
-  saved(ref: DocumentRef, edits = this.session.editCount, generation = this.session.generation): void {
-    this.lifecycle.saved(ref, edits, generation);
   }
 
   async remember(ref: DocumentRef): Promise<void> {

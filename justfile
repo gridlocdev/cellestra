@@ -128,8 +128,14 @@ test *args:
     pnpm vitest run {{ args }}
 
 # Run the random-operation tests with more seeds; a failure prints FUZZ_SEED=<n> to replay it.
+[group('quality')]
 fuzz runs="500":
     FUZZ_RUNS={{ runs }} pnpm vitest run -t random --testTimeout=0
+
+# Redraw the save chart in docs/architecture.md from the table in saveChart.ts.
+[group('quality')]
+diagram:
+    WRITE_DIAGRAM=1 pnpm vitest run apps/web/test/saveChart.test.ts -t "is drawn"
 
 # Run the tests in watch mode.
 [group('quality')]

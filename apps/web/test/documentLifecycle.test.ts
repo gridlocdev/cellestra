@@ -2,7 +2,8 @@ import { CellValue, OdsWriter, Workbook } from '@cellestra/core';
 import { signal } from '@preact/signals';
 import { describe, expect, it, vi } from 'vitest';
 import { WorkbookSession, type DocumentRef, type FileStore, type OpenedDocument } from '@cellestra/ui';
-import { DocumentLifecycle, type LifecycleHost } from '../src/app/documentLifecycle.ts';
+import { DocumentLifecycle } from '../src/app/documentLifecycle.ts';
+import type { LifecycleHost } from '../src/app/lifecycleHost.ts';
 import type { DocumentStores } from '../src/app/documentStores.ts';
 
 /** A store whose saves finish (or fail) when the test says so. */

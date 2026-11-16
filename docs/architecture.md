@@ -68,6 +68,64 @@ Cellestra is one TypeScript code base with three hosts and a command line. The b
 ## App shell (`apps/web`)
 
 - `App.tsx` lays out the ribbon, grid, formula bar, sheet tabs and dialogs. `AppController` owns the open document, saving, autosave and the dialogs' state. `commands.ts` builds the command catalog from the controller, and `nativeMenu.ts` sends it to the Electron menu bar.
+- `DocumentLifecycle` opens, saves, auto-saves, reloads and closes the open document. The rules for saving are a table in `saveChart.ts`; the lifecycle keeps the state, runs the writes, reads and questions the table asks for, and sends their results back as events.
+
+### The save chart
+
+Every move the save session can make, from `toMermaid()` in `apps/web/src/app/saveChart.ts`; a test checks this drawing matches the table. An event with no arrow from the current state changes nothing. To review a change to saving, read this diagram's diff and ask what happens to the user's edits in each state. After changing the table, run `just diagram` to redraw it.
+
+```mermaid
+stateDiagram-v2
+  [*] --> clean
+  clean --> dirty : edit / startTimer
+  clean --> copying : saveAs / pickFile
+  clean --> refreshing : reload / readFile
+  clean --> refreshing : refresh / readFile
+  clean --> closed : close / closeWindow
+  dirty --> dirty : edit / startTimer
+  dirty --> saving : save / writeFile
+  dirty --> saving : timer / writeFile
+  dirty --> saving : saveAs / pickFile
+  dirty --> reloading : reload / readFile
+  dirty --> dirty : refresh / warnChanged
+  dirty --> askingClose : close / askClose
+  saving --> savingDirty : edit
+  saving --> clean : saved
+  saving --> dirty : failed / startTimer
+  saving --> conflict : versionChanged / showConflict
+  saving --> saving : refresh / retryLater
+  saving --> saving : close / closeLater
+  savingDirty --> savingDirty : edit
+  savingDirty --> dirty : saved / startTimer
+  savingDirty --> dirty : failed / startTimer
+  savingDirty --> conflict : versionChanged / showConflict
+  savingDirty --> savingDirty : refresh / retryLater
+  savingDirty --> savingDirty : close / closeLater
+  copying --> savingDirty : edit
+  copying --> clean : saved
+  copying --> clean : failed
+  copying --> copying : refresh / retryLater
+  copying --> copying : close / closeLater
+  conflict --> saving : overwrite / writeFile
+  conflict --> saving : saveAs / pickFile
+  conflict --> reloading : reload / readFile
+  conflict --> dirty : cancel / startTimer
+  conflict --> conflict : refresh / retryLater
+  conflict --> conflict : close / closeLater
+  refreshing --> dirty : edit / dropRead, startTimer
+  refreshing --> copying : saveAs / dropRead, pickFile
+  refreshing --> refreshing : refresh / dropRead, readFile
+  refreshing --> clean : readDone / takeFile
+  refreshing --> clean : readFailed
+  refreshing --> closed : close / dropRead, closeWindow
+  reloading --> clean : readDone / replaceWithFile
+  reloading --> dirty : readFailed / startTimer
+  reloading --> reloading : close / closeLater
+  askingClose --> saving : save / writeFile, closeLater
+  askingClose --> saving : saveAs / pickFile, closeLater
+  askingClose --> closed : discard / closeWindow
+  askingClose --> dirty : cancel / cancelClose, startTimer
+```
 
 ## CLI (`apps/cli`)
 
