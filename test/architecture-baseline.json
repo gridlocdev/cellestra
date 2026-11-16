@@ -16,8 +16,6 @@
   "empty-catch: packages/core/src/serialization/csv/csvReader.ts": 2,
   "empty-catch: packages/ui/src/platform/localDb.ts": 1,
   "empty-catch: packages/ui/src/platform/nasStore.ts": 1,
-  "engine-import: packages/core/test/serialization/odsLibreOfficeSample.test.ts -> node:fs": 1,
-  "engine-import: packages/core/test/serialization/odsStructuralRoundTrip.test.ts -> node:fs": 1,
   "fetch-timeout: apps/cli/src/infra/pdfPrinter.ts": 1,
   "key-listener: apps/web/src/app/App.tsx": 1,
   "key-listener: apps/web/src/app/ContextMenu.tsx": 1,

@@ -216,7 +216,8 @@ function imports(source: ts.SourceFile): { spec: string; node: ts.Node }[] {
 function checkImports(file: string, source: ts.SourceFile, report: Report): void {
   const part = partOf(file);
   if (!part) return;
-  const engine = ENGINE.includes(part);
+  // The engine's own tests run in Node and may use it; the rules guard the code that ships.
+  const engine = ENGINE.includes(part) && !isTest(file);
   for (const { spec, node } of imports(source)) {
     const line = report.line(node);
     if (engine && ENGINE_BANNED.some((pattern) => pattern.test(spec))) {
@@ -328,9 +329,9 @@ function fetchWithoutSignal(call: ts.CallExpression): boolean {
 
 function checkCode(file: string, source: ts.SourceFile, report: Report): void {
   const part = partOf(file) ?? '';
-  const engine = ENGINE.includes(part);
-  const renderer = RENDERER.includes(part);
   const test = isTest(file);
+  const engine = ENGINE.includes(part) && !test;
+  const renderer = RENDERER.includes(part);
   const declared = declaredNames(source);
   const confined = (rule: Rule, node: ts.Node, what: string) => {
     const allowed = CONFINED.find((c) => c.rule === rule)?.allowed ?? [];
