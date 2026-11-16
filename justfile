@@ -137,6 +137,29 @@ fuzz runs="500":
 diagram:
     WRITE_DIAGRAM=1 pnpm vitest run apps/web/test/saveChart.test.ts -t "is drawn"
 
+# Browser scenarios against the built client and the NAS server, on fixture data in ./.e2e-data.
+# (`--project=web` with the `=`: `--project` takes several names, so `just e2e saving` would read "saving" as one.)
+[group('quality')]
+[positional-arguments]
+e2e *args: build-web-nas
+    pnpm exec playwright test -c e2e/playwright.config.ts --project=web "$@"
+
+# Accept the current screenshots as the new baseline (macOS; look at the diff in .e2e-results first).
+[group('quality')]
+e2e-update *args: build-web-nas
+    pnpm exec playwright test -c e2e/playwright.config.ts --project=web --update-snapshots {{ args }}
+
+# Drive the app headlessly for a quick look: just drive click:budget.ods cmd:"Bold" shot:after aria
+[group('quality')]
+[positional-arguments]
+drive *steps: build-web-nas
+    node e2e/drive.ts "$@"
+
+# Start the built desktop app headless on a throwaway profile and check it shows a fixture workbook.
+[group('quality')]
+e2e-desktop: build-desktop
+    pnpm exec playwright test -c e2e/playwright.config.ts --project=desktop
+
 # Run the tests in watch mode.
 [group('quality')]
 test-watch *args:
@@ -183,7 +206,7 @@ setup:
 # Remove build output.
 [group('housekeeping')]
 clean:
-    rm -rf apps/web/dist apps/desktop/out "{{ release }}" apps/desktop/node_modules/.cache/cellestra-dev .types-test
+    rm -rf apps/web/dist apps/desktop/out "{{ release }}" apps/desktop/node_modules/.cache/cellestra-dev .types-test .e2e-data .e2e-results .e2e-report .e2e-soak .types-e2e
     find . -name '*.tsbuildinfo' -not -path '*/node_modules/*' -delete
 
 # Remove build output and every node_modules (run `just setup` after).

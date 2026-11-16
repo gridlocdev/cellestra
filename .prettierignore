@@ -6,3 +6,9 @@ docs/plans/prd.md
 packages/ui/src/icons
 .types
 .types-test
+.e2e-data
+.e2e-results
+.e2e-report
+.e2e-soak
+.types-e2e
+e2e/__screenshots__

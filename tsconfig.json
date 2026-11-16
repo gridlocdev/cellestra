@@ -8,6 +8,7 @@
     { "path": "apps/server" },
     { "path": "apps/desktop" },
     { "path": "apps/cli" },
-    { "path": "test" }
+    { "path": "test" },
+    { "path": "e2e" }
   ]
 }
