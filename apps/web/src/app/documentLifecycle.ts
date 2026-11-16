@@ -519,8 +519,11 @@ export class DocumentLifecycle {
     const effects = this.#fire('readDone');
     // Same contents (a sync client rewrote it, `touch`): nothing to reload, and undo stays.
     const same = opened.ref.version !== null && opened.ref.version === ref.version;
-    if (effects.includes('replaceWithFile') || (effects.includes('takeFile') && !same))
+    if (effects.includes('replaceWithFile') || (effects.includes('takeFile') && !same)) {
       this.#host.reloadInPlace(() => session.reload(opened.bytes, opened.ref));
+      // What is on screen is the file now (Revert to Saved): no recovery copy to offer next time.
+      void this.#host.recovery.clear();
+    }
   }
 
   /**

@@ -181,6 +181,18 @@ describe('closing', () => {
   });
 });
 
+describe('Revert to Saved', () => {
+  it('drops the recovery copy, since what is on screen is the file again', async () => {
+    const { lifecycle, host, session, edit } = setup();
+    lifecycle.adopt(openedDoc('a.ods'));
+    edit('unsaved');
+    vi.mocked(host.recovery.clear).mockClear();
+    await lifecycle.reloadFromStore();
+    expect(session.activeSheet.peek().getValue(0, 0)).toEqual(CellValue.text('on disk'));
+    expect(host.recovery.clear).toHaveBeenCalled();
+  });
+});
+
 describe('a file changed on disk', () => {
   it('waits while a dialog is open, then reloads a clean document', async () => {
     vi.useFakeTimers();
