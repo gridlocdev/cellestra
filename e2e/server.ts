@@ -1,6 +1,6 @@
 // Where the scenarios and the driver find the app: the NAS server serving the built client over fixture data.
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, rmSync, utimesSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -10,6 +10,8 @@ export const PORT = 8791;
 export const BASE_URL = `http://127.0.0.1:${PORT}`;
 /** The page's clock in every scenario and in the driver, so dates and "Saved" times read the same on every run. */
 export const NOW = new Date('2027-01-15T09:00:00Z');
+/** Every fixture file's modified time, so the Open dialog's dates look the same in every run and screenshot. */
+const FIXTURE_TIME = new Date(NOW.getTime() - 2 * 24 * 60 * 60 * 1000);
 
 export const SERVER_COMMAND = ['apps/server/src/main.ts'];
 export const SERVER_ENV: Record<string, string> = {
@@ -24,6 +26,9 @@ export function seedData(fixture: string): void {
   rmSync(DATA, { recursive: true, force: true });
   mkdirSync(DATA, { recursive: true });
   cpSync(fileURLToPath(new URL(`./fixtures/${fixture}`, import.meta.url)), DATA, { recursive: true });
+  for (const file of readdirSync(DATA, { recursive: true, encoding: 'utf8' })) {
+    utimesSync(`${DATA}/${file}`, FIXTURE_TIME, FIXTURE_TIME);
+  }
 }
 
 const CLI = `${ROOT}apps/cli/src/main.ts`;

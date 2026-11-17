@@ -4,7 +4,17 @@
 // as its own scenario.
 import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
-import { contents, DATA, expect, goTo, openApp, openFile, runCommand, test } from './fixtures.ts';
+import {
+  contents,
+  DATA,
+  expect,
+  goTo,
+  openApp,
+  openFile,
+  runCommand,
+  test,
+  watchErrors,
+} from './fixtures.ts';
 import { createRandom } from './randomOps.ts';
 
 const STEPS = 40;
@@ -77,7 +87,8 @@ async function runRandomCommand(page: Page, pick: (count: number) => number): Pr
       () => true,
       () => false,
     );
-  // Another window that is open (a dialog, a menu) can keep ⌘K to itself.
+  // ⌘K opens over no dialog but its own kind, so with one open this is expected: the per-step check makes sure
+  // that dialog kept the keyboard.
   if (!opened) return 'command menu did not open';
   const options = menu.getByRole('option');
   const entries = await options.evaluateAll((items) =>
@@ -95,12 +106,49 @@ async function runRandomCommand(page: Page, pick: (count: number) => number): Pr
     await page.keyboard.press('Escape');
     return 'no command to run';
   }
-  await options.nth(chosen.i).click();
+  // A dialog a command opens a moment later (a confirmation) can replace the menu before the click lands.
+  const clicked = await options
+    .nth(chosen.i)
+    .click({ timeout: 1000 })
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!clicked && (await menu.count()) === 0) return `command menu was replaced before ${chosen.label}`;
+  if (!clicked) throw new Error(`could not click ${chosen.label} in the command menu`);
   return `command ${chosen.label}`;
 }
 
 /** Longer than any animation before a change is made. Auto-save waits 30 seconds, so the end check saves itself. */
 const SETTLE_MS = 2000;
+
+/** The pause between random steps, on the page's clock. */
+const STEP_PAUSE_MS = 50;
+
+/**
+ * `text` as a person could type it where the keyboard is. Playwright types a character that has no key on its
+ * keyboard (é, 漢字, and a tab: Tab is a key, but `\t` isn't one of its characters) by inserting it as text,
+ * which lands in the last text field, and takes the keyboard there, even when a button has it. No keyboard does
+ * that, so outside a text field only the characters with keys are typed.
+ */
+async function typeable(page: Page, text: string): Promise<string> {
+  const inText = await page.evaluate(() => {
+    const active = document.activeElement as HTMLElement | null;
+    return !!active && (active.matches('input, textarea') || active.isContentEditable);
+  });
+  return inText ? text : text.replace(/[^\x20-\x7e\n\r]/g, '');
+}
+
+/** Where the keyboard is, when a dialog is open and the keyboard is not in it; null otherwise. */
+async function focusOutsideDialog(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const dialogs = [...document.querySelectorAll('[role=dialog], [role=alertdialog]')];
+    const active = document.activeElement;
+    if (dialogs.length === 0 || dialogs.some((dialog) => dialog.contains(active))) return null;
+    const label = active?.getAttribute('aria-label') ?? '';
+    return `${active?.tagName.toLowerCase()} ${label} while ${dialogs.map((d) => d.getAttribute('aria-label')).join(', ')} is open`;
+  });
+}
 
 /** The cells compared before and after a reload: the fixture's data and a little around it. */
 const CELLS = ['A', 'B', 'C', 'D', 'E'].flatMap((column) => [1, 2, 3, 4, 5].map((row) => `${column}${row}`));
@@ -120,7 +168,14 @@ async function shown(page: Page): Promise<{ tabs: string[]; cells: string[] }> {
 
 /** After a run: Save writes every change, and opening the file again shows the same and writes nothing. */
 async function checkSettled(page: Page): Promise<void> {
-  for (let i = 0; i < 4; i++) await page.keyboard.press('Escape');
+  // A dialog a command opens a moment later (a confirmation) can come up after the first Escape.
+  const dialogs = page.locator('[role=dialog], [role=alertdialog]');
+  for (let i = 0; i < 6; i++) {
+    await page.clock.runFor(STEP_PAUSE_MS);
+    if ((await dialogs.count()) === 0) break;
+    await page.keyboard.press('Escape');
+  }
+  await expect(dialogs, 'Escape closes every dialog').toHaveCount(0);
   await page.clock.runFor(SETTLE_MS);
   // Auto-save waits 30 seconds, so save the way a user would.
   await runCommand(page, 'Save');
@@ -140,11 +195,7 @@ for (const runSeed of seeds) {
     // A step that hangs fails here, with the steps that led to it, instead of at the test's own timeout,
     // which would end the test before the seed and the steps are printed.
     page.setDefaultTimeout(5000);
-    const errors: string[] = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    page.on('console', (message) => {
-      if (message.type() === 'error') errors.push(message.text());
-    });
+    const errors = watchErrors(page);
     await openApp(page);
     await openFile(page, FILE);
 
@@ -156,7 +207,7 @@ for (const runSeed of seeds) {
         if (roll < 4) {
           log.push(await runRandomCommand(page, (count) => random.int(count)));
         } else if (roll < 7) {
-          const text = random.text(8);
+          const text = await typeable(page, random.text(8));
           log.push(`type ${JSON.stringify(text)}`);
           await page.keyboard.type(text);
         } else {
@@ -164,7 +215,11 @@ for (const runSeed of seeds) {
           log.push(`key ${key}`);
           await page.keyboard.press(key);
         }
+        // A person takes longer than this between keys. Without it, focus the app moves a moment after a command
+        // (back to the grid, say) lands after the next key has opened a dialog, which no one could do.
+        await page.clock.runFor(STEP_PAUSE_MS);
         expect(errors, 'console errors').toEqual([]);
+        expect(await focusOutsideDialog(page), 'an open dialog has the keyboard').toBeNull();
       }
       log.push('settle');
       await checkSettled(page);

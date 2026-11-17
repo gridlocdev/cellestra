@@ -29,6 +29,37 @@ export async function openApp(page: Page): Promise<void> {
 }
 
 /**
+ * Failed requests the app expects and handles, by status, method and URL. Everything else that fails is an error.
+ */
+const EXPECTED: readonly { status: number; method: string; url: RegExp }[] = [];
+
+/**
+ * Collect what went wrong on the page: uncaught errors, console errors and failed requests. The browser's own
+ * "Failed to load resource" line names no URL, so the request is reported instead, with its URL.
+ */
+export function watchErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error' && !message.text().startsWith('Failed to load resource')) {
+      errors.push(message.text());
+    }
+  });
+  page.on('response', (response) => {
+    const status = response.status();
+    const method = response.request().method();
+    const url = response.url();
+    if (
+      status >= 400 &&
+      !EXPECTED.some((e) => e.status === status && e.method === method && e.url.test(url))
+    ) {
+      errors.push(`${status} ${method} ${url}`);
+    }
+  });
+  return errors;
+}
+
+/**
  * Run a command from ⌘K by its name. Type the way a person does: wait until focus is in the field, then use the
  * keyboard. `fill()` right after a field appears can land before the component has set itself up, and be lost.
  */
