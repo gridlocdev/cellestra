@@ -136,6 +136,8 @@ const FIX: Record<Rule, string> = {
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'out', 'release', '.types', 'demo']);
 const SOURCE = /\.(ts|tsx|mts|cts)$/;
+/** A fetch passed in for tests (`this.fetchImpl(…)`) sends requests all the same, so it needs a timeout too. */
+const FETCH_NAMES = ['fetchImpl'];
 const TIMERS = new Set(['setTimeout', 'setInterval', 'requestAnimationFrame', 'requestIdleCallback']);
 const NATIVE_DIALOGS = new Set(['alert', 'confirm', 'prompt']);
 const EFFECT_HOOKS = new Set(['useEffect', 'useLayoutEffect']);
@@ -318,12 +320,14 @@ function stringArg(node: ts.Expression | undefined): string | null {
   return node && ts.isStringLiteralLike(node) ? node.text : null;
 }
 
-/** `fetch(url)` or `fetch(url, { … })` with no `signal`. An options value built elsewhere can't be checked here. */
+/**
+ * `fetch(url)` or `fetch(url, { … })` with no `signal` of its own. Spreading the caller's options doesn't count:
+ * the caller rarely passes one. An options value built elsewhere can't be checked here.
+ */
 function fetchWithoutSignal(call: ts.CallExpression): boolean {
   const options = call.arguments[1];
   if (!options) return true;
   if (!ts.isObjectLiteralExpression(options)) return false;
-  if (options.properties.some((p) => ts.isSpreadAssignment(p))) return false;
   return !options.properties.some((p) => p.name && ts.isIdentifier(p.name) && p.name.text === 'signal');
 }
 
@@ -349,11 +353,14 @@ function checkCode(file: string, source: ts.SourceFile, report: Report): void {
         confined('effect', node, `uses ${effectNames.get(node.expression.text)}`);
       }
       const first = node.arguments[0];
-      if (name === 'fetch' && isGlobalCall(node, declared)) {
-        confined('fetch', node, 'calls fetch');
-        if (!test && fetchWithoutSignal(node)) {
-          report.add('fetch-timeout', null, 'calls fetch with no timeout', report.line(node));
-        }
+      const globalFetch = name === 'fetch' && isGlobalCall(node, declared);
+      if (globalFetch) confined('fetch', node, 'calls fetch');
+      if (
+        (globalFetch || (name !== 'fetch' && name && FETCH_NAMES.includes(name))) &&
+        !test &&
+        fetchWithoutSignal(node)
+      ) {
+        report.add('fetch-timeout', null, `calls ${name} with no timeout`, report.line(node));
       }
       if (name && TIMERS.has(name) && isGlobalCall(node, declared)) confined('timer', node, `calls ${name}`);
       if (renderer && !test && name && NATIVE_DIALOGS.has(name) && isGlobalCall(node, declared)) {

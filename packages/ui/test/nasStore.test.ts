@@ -61,6 +61,21 @@ describe('latestOnly', () => {
   });
 });
 
+describe('NasStore requests', () => {
+  it('fails a request the server never answers, instead of waiting forever', async () => {
+    // A server that dropped off: the request hangs until its signal gives up.
+    const hang: typeof fetch = (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason as Error));
+      });
+    const store = new NasStore('/api', hang, 20);
+    await expect(store.open('docs', 'a.ods')).rejects.toThrow("The server didn't answer within 0 seconds.");
+    const ref = { store: 'nas', name: 'a.ods', id: 'docs:a.ods', version: '"e1"' } as const;
+    await expect(store.save(ref, new Uint8Array([1]))).rejects.toThrow("didn't answer");
+    await expect(store.info()).resolves.toBeNull();
+  });
+});
+
 describe('NasStore.save', () => {
   it('asks the server to skip the lock only when told to, separately from the version check', async () => {
     const urls: string[] = [];

@@ -23,6 +23,10 @@ export class AuthError extends Error {}
 const TOKEN_KEY = 'cellestra.nasToken';
 /** The server sends LibreOffice's lock file beside an opened file in this header, percent-encoded. */
 const LOCK_HEADER = 'X-Cellestra-Lock';
+/** A server that dropped off fails the request instead of leaving a save or an open waiting forever. */
+const REQUEST_TIMEOUT_MS = 20_000;
+/** The check at start for a server only decides whether NAS is offered, so it gives up sooner. */
+const INFO_TIMEOUT_MS = 5000;
 
 /**
  * Files in the NAS folders the Cellestra server exposes (`/api`). Conflict detection uses the
@@ -36,10 +40,17 @@ export class NasStore implements FileStore {
   readonly capabilities = { saveInPlace: true, browse: true, watch: false };
   private readonly base: string;
   private readonly fetchImpl: typeof fetch;
+  /** How long a request may take, body included, before it fails. */
+  readonly timeoutMs: number;
 
-  constructor(base = './api', fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
+  constructor(
+    base = './api',
+    fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis),
+    timeoutMs = REQUEST_TIMEOUT_MS,
+  ) {
     this.base = base.replace(/\/$/, '');
     this.fetchImpl = fetchImpl;
+    this.timeoutMs = timeoutMs;
   }
 
   get token(): string | null {
@@ -62,7 +73,10 @@ export class NasStore implements FileStore {
   /** Null when no server answers (a plain static deployment, or file://). */
   async info(): Promise<NasInfo | null> {
     try {
-      const res = await this.fetchImpl(`${this.base}/info`, { headers: this.headers() });
+      const res = await this.fetchImpl(`${this.base}/info`, {
+        headers: this.headers(),
+        signal: AbortSignal.timeout(Math.min(INFO_TIMEOUT_MS, this.timeoutMs)),
+      });
       if (!res.ok || !res.headers.get('content-type')?.includes('json')) return null;
       return (await res.json()) as NasInfo;
     } catch {
@@ -162,6 +176,12 @@ export class NasStore implements FileStore {
     const res = await this.fetchImpl(this.base + path, {
       ...init,
       headers: { ...this.headers(), ...(init.headers as Record<string, string> | undefined) },
+      signal: init.signal ?? AbortSignal.timeout(this.timeoutMs),
+    }).catch((e: unknown) => {
+      if (e instanceof DOMException && e.name === 'TimeoutError') {
+        throw new Error(`The server didn't answer within ${Math.round(this.timeoutMs / 1000)} seconds.`);
+      }
+      throw e;
     });
     if (res.ok) return res;
     const message = await res
