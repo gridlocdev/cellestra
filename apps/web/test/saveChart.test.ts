@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SAVE_TRANSITIONS, step, toMermaid, type SaveEvent, type SaveState } from '../src/app/saveChart.ts';
-import { runRandomOps, type Op } from './support/randomOps.ts';
+import { RANDOM_TIMEOUT, runRandomOps, type Op } from './support/randomOps.ts';
 
 /** The chart's state, plus a model of the file, the timers and the user's answers around it. */
 interface World {
@@ -188,33 +188,39 @@ const ops: Op<World>[] = [
 ];
 
 describe('the save chart', () => {
-  it('random events never write twice at once or during a conflict, and never lose an edit unasked', async () => {
-    await runRandomOps<World>({
-      steps: 200,
-      setup: () => ({
-        state: 'clean',
-        writes: 0,
-        inPlace: false,
-        writesDone: 0,
-        reads: [],
-        unsaved: false,
-        editedSinceWrite: false,
-        timer: false,
-        conflictAsked: false,
-        closeHeld: false,
-        agreedToLose: false,
-      }),
-      ops,
-      check: (w) => {
-        if (w.state === 'clean' || w.state === 'refreshing')
-          expect(w.unsaved, 'saved means the file has every edit').toBe(false);
-        if (w.state === 'saving' || w.state === 'savingDirty' || w.state === 'copying')
-          expect(w.writes, 'a write is running').toBe(1);
-        if (w.state === 'closed')
-          expect(!w.unsaved || w.agreedToLose, 'closed with nothing unsaved, or the user agreed').toBe(true);
-      },
-    });
-  });
+  it(
+    'random events never write twice at once or during a conflict, and never lose an edit unasked',
+    async () => {
+      await runRandomOps<World>({
+        steps: 200,
+        setup: () => ({
+          state: 'clean',
+          writes: 0,
+          inPlace: false,
+          writesDone: 0,
+          reads: [],
+          unsaved: false,
+          editedSinceWrite: false,
+          timer: false,
+          conflictAsked: false,
+          closeHeld: false,
+          agreedToLose: false,
+        }),
+        ops,
+        check: (w) => {
+          if (w.state === 'clean' || w.state === 'refreshing')
+            expect(w.unsaved, 'saved means the file has every edit').toBe(false);
+          if (w.state === 'saving' || w.state === 'savingDirty' || w.state === 'copying')
+            expect(w.writes, 'a write is running').toBe(1);
+          if (w.state === 'closed')
+            expect(!w.unsaved || w.agreedToLose, 'closed with nothing unsaved, or the user agreed').toBe(
+              true,
+            );
+        },
+      });
+    },
+    RANDOM_TIMEOUT,
+  );
 
   it('lists each move once', () => {
     const keys = SAVE_TRANSITIONS.map((t) => `${t.from} ${t.on}`);

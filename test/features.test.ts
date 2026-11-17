@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const ROOT = new URL('../../../', import.meta.url);
+const ROOT = new URL('../', import.meta.url);
 const doc = readFileSync(new URL('docs/features.md', ROOT), 'utf8');
 const features = [...doc.matchAll(/^## (.+)$/gm)].map((match) => (match[1] ?? '').trim());
 

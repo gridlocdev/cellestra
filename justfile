@@ -159,13 +159,16 @@ drive *steps: build-web-nas
 [group('quality')]
 soak runs="1000": build-web-nas
     #!/usr/bin/env bash
-    set -euo pipefail
+    # Not -e: a failure in the unit half still runs random use, and the recipe fails at the end.
+    set -uo pipefail
+    status=0
     base=$(date +%s)
     echo "Seeds start at $base (FUZZ_SEED=<n> replays one)."
-    FUZZ_RUNS={{ runs }} FUZZ_SEED_BASE=$base pnpm vitest run -t random --testTimeout=0 --silent=passed-only
+    FUZZ_RUNS={{ runs }} FUZZ_SEED_BASE=$base pnpm vitest run -t random --testTimeout=0 --silent=passed-only || status=1
     # Its own folder: a replay or the next soak clears .e2e-results, not this run's screenshots and traces.
     echo "Random-use failures keep their screenshots and traces in .e2e-soak/$base."
-    FUZZ_RUNS=25 FUZZ_SEED_BASE=$base pnpm exec playwright test -c e2e/playwright.config.ts --project=web -g random --output=".e2e-soak/$base"
+    FUZZ_RUNS=25 FUZZ_SEED_BASE=$base pnpm exec playwright test -c e2e/playwright.config.ts --project=web -g random --output=".e2e-soak/$base" || status=1
+    exit $status
 
 # Start the built desktop app headless on a throwaway profile and check it shows a fixture workbook.
 [group('quality')]

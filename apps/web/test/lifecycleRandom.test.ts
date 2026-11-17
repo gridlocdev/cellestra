@@ -253,34 +253,38 @@ const ops: Op<GatedWorld>[] = [
 ];
 
 describe('the document lifecycle', () => {
-  it('random edits, saves, outside writes and answers never lose an edit unasked or go back a version', async () => {
-    await runRandomOps<GatedWorld>({
-      steps: 120,
-      setup: () => new GatedWorld(),
-      ops,
-      check: async (w) => {
-        await settle();
-        expect(w.thrown, 'no lifecycle call throws').toEqual([]);
-        const unexpected = w.errors.filter(
-          (e) => !/disk full|read failed|^Auto-save|changed elsewhere/.test(e),
-        );
-        expect(unexpected, 'only the store’s own failures are shown').toEqual([]);
-        const writes = w.parked.filter((p) => p.kind !== 'reload').length;
-        expect(writes, 'at most one write at a time').toBeLessThanOrEqual(1);
-        const ref = w.session.document.peek();
-        if (!ref) return;
-        const version = Number(ref.version);
-        expect(version, 'the window never goes back to an older version').toBeGreaterThanOrEqual(
-          w.shown.get(ref.id) ?? 0,
-        );
-        w.shown.set(ref.id, version);
-        if (w.lifecycle.saveState === 'clean')
-          expect(w.session.modified.peek(), 'the chart says saved only when the session is').toBe(false);
-        if (!w.session.modified.peek())
-          expect(w.text(), 'saved means the window shows the file at its version').toBe(
-            w.files.get(ref.id)!.history.get(version),
+  it(
+    'random edits, saves, outside writes and answers never lose an edit unasked or go back a version',
+    async () => {
+      await runRandomOps<GatedWorld>({
+        steps: 120,
+        setup: () => new GatedWorld(),
+        ops,
+        check: async (w) => {
+          await settle();
+          expect(w.thrown, 'no lifecycle call throws').toEqual([]);
+          const unexpected = w.errors.filter(
+            (e) => !/disk full|read failed|^Auto-save|changed elsewhere/.test(e),
           );
-      },
-    });
-  }, RANDOM_TIMEOUT);
+          expect(unexpected, 'only the store’s own failures are shown').toEqual([]);
+          const writes = w.parked.filter((p) => p.kind !== 'reload').length;
+          expect(writes, 'at most one write at a time').toBeLessThanOrEqual(1);
+          const ref = w.session.document.peek();
+          if (!ref) return;
+          const version = Number(ref.version);
+          expect(version, 'the window never goes back to an older version').toBeGreaterThanOrEqual(
+            w.shown.get(ref.id) ?? 0,
+          );
+          w.shown.set(ref.id, version);
+          if (w.lifecycle.saveState === 'clean')
+            expect(w.session.modified.peek(), 'the chart says saved only when the session is').toBe(false);
+          if (!w.session.modified.peek())
+            expect(w.text(), 'saved means the window shows the file at its version').toBe(
+              w.files.get(ref.id)!.history.get(version),
+            );
+        },
+      });
+    },
+    RANDOM_TIMEOUT,
+  );
 });

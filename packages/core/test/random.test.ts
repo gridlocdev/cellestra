@@ -364,21 +364,25 @@ const ops: Op<State>[] = [
 ];
 
 describe('the engine', () => {
-  it('random edits save and reopen unchanged, and undo back to the start', async () => {
-    await runRandomOps<State>({
-      steps: 60,
-      setup: () => {
-        const workbook = Workbook.createNew();
-        workbook.addSheet('Sheet2');
-        const s = { steps: 0 } as State;
-        adopt(s, workbook);
-        return s;
-      },
-      ops,
-      check: (s) => {
-        const saved = snapshot(s.workbook);
-        expect(snapshot(readOds(writeOds(s.workbook))), 'the saved file opens back the same').toBe(saved);
-      },
-    });
-  }, RANDOM_TIMEOUT);
+  it(
+    'random edits save and reopen unchanged, and undo back to the start',
+    async () => {
+      await runRandomOps<State>({
+        steps: 60,
+        setup: () => {
+          const workbook = Workbook.createNew();
+          workbook.addSheet('Sheet2');
+          const s = { steps: 0 } as State;
+          adopt(s, workbook);
+          return s;
+        },
+        ops,
+        check: (s) => {
+          const saved = snapshot(s.workbook);
+          expect(snapshot(readOds(writeOds(s.workbook))), 'the saved file opens back the same').toBe(saved);
+        },
+      });
+    },
+    RANDOM_TIMEOUT,
+  );
 });

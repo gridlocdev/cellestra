@@ -88,10 +88,10 @@ export function createRandom(seed: number): Random {
 }
 
 /**
- * The time limit for a random test: a minute for the few seeds `just check` runs, none when
- * FUZZ_RUNS asks for more. A limit given to the test itself beats `--testTimeout`.
+ * The time limit for a random test: a minute for the few seeds `just check` runs, none when FUZZ_RUNS asks for
+ * more or FUZZ_SEED replays one with every step. A limit given to the test itself beats `--testTimeout`.
  */
-export const RANDOM_TIMEOUT = process.env.FUZZ_RUNS ? 0 : 60_000;
+export const RANDOM_TIMEOUT = process.env.FUZZ_RUNS || process.env.FUZZ_SEED ? 0 : 60_000;
 
 function seeds(): number[] {
   const one = process.env.FUZZ_SEED;
