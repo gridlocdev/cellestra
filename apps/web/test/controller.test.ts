@@ -1007,6 +1007,25 @@ describe('list chips', () => {
     expect(app.sheet.findValidation(2, 1)).toBeUndefined();
     expect(app.chipColors(3, 1).size).toBe(0);
   });
+
+  it('reads a list from the sheet its range names, not the active one', async () => {
+    const app = await makeApp();
+    const wb = app.session.workbook.peek();
+    app.session.addSheet();
+    app.session.setActiveSheet(0);
+    const other = wb.worksheets[1]!;
+    other.setValue(0, 0, CellValue.text('Unclear'));
+    other.setValue(1, 0, CellValue.text('Yes'));
+    app.sheet.setValue(0, 0, CellValue.text('Month'));
+    const fromOther = CellRange.parse(`${other.name}.A1:A2`);
+    const rule = dataValidation('list', CellRange.parse('B2'), { listSource: fromOther });
+    expect(app.listItems(rule)).toEqual(['Unclear', 'Yes']);
+    expect(
+      app.listItems(
+        dataValidation('list', CellRange.parse('B2'), { listSource: CellRange.parse('Gone.A1:A2') }),
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe('double-click on a column edge', () => {

@@ -8,6 +8,10 @@
 - **CLI reads `.xlsx`.** Every command that reads a workbook reads `.xlsx` and `.xlsm` too, and prints what was left out on stderr. `convert book.xlsx book.ods` converts one. Writing to an `.xlsx` (`--in-place`, `-o`, or `convert` to `.xlsx`) is refused, and the file stays as it was.
 - **Dropdown lists look like chips.** Every cell with a list rule shows its value in a rounded, coloured chip with a chevron, and an empty one shows the chevron. Pick each item's colour in **Data Validation…**: new items get a colour of their own. Click the chevron, or run **Choose from List**, to pick an item from a list of chips. The colours are saved as conditional formats, so LibreOffice shows them as cell fills.
 
+### Bugs fixed
+
+- **A dropdown list taken from another sheet offers that sheet's items.** It used to read the same cells on the sheet you were on, in the dropdown, in **Data Validation…** and when checking what you typed.
+
 ## 0.3.0
 
 ### Before you update

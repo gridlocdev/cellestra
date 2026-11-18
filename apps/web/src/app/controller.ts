@@ -1035,12 +1035,14 @@ export class AppController {
     return true;
   }
 
-  /** Reads a list rule's source range on the active sheet. */
+  /** Reads a list rule's source range: on the sheet it names, else on the active sheet. */
   readonly resolver = (r: CellRange): Iterable<CellValue> => {
-    const sheet = this.sheet;
+    const named = r.start.sheet;
+    const sheet = named === null ? this.sheet : this.session.workbook.peek().findSheet(named);
+    if (!sheet) return [];
     const version = this.session.version.peek();
-    if (this.#listCache.version !== version || this.#listCache.sheet !== sheet)
-      this.#listCache = { version, sheet, ranges: new Map() };
+    if (this.#listCache.version !== version || this.#listCache.sheet !== this.sheet)
+      this.#listCache = { version, sheet: this.sheet, ranges: new Map() };
     const key = r.toString();
     const hit = this.#listCache.ranges.get(key);
     if (hit) return hit;

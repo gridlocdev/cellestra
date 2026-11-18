@@ -151,12 +151,22 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
+  /* A fieldset is as wide as its content by default; long items wrap inside the dialog instead. */
+  min-width: 0;
   border: 1px solid var(--cs-border);
   border-radius: var(--cs-radius);
   padding: 6px 10px 10px;
 }
-.cs-chip-colors .cs-form-row {
-  justify-content: space-between;
+.cs-chip-colors .cs-chip {
+  margin-right: auto;
+  border-radius: 12px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.cs-chip-colors .cs-chip {
+  min-width: 0;
+}
+.cs-dialog .cs-chip-colors .cs-form-row select {
+  flex: none;
+  width: 8.5em;
 }

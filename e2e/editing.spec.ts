@@ -92,6 +92,33 @@ test.describe('Data tools', () => {
     await save(page);
     expect(readCell('budget.ods', 'F3')).toBe('No - not on Steam');
   });
+  test('A list from another sheet offers that sheet’s items, and long ones wrap in the dialog', async ({
+    page,
+  }) => {
+    const long =
+      'Catalog: every game in the subscription as listed on the day, plus the additions announced since then';
+    await runCommand(page, 'Insert Sheet');
+    await enter(page, 'A1', 'Unclear');
+    await enter(page, 'A2', long);
+    await page.getByRole('tab', { name: 'Sheet1' }).click();
+    await goTo(page, 'F2:F4');
+    await runCommand(page, 'Data Validation');
+    const dialog = page.getByRole('dialog', { name: 'Data Validation' });
+    await dialog.getByLabel('…or take them from a range').fill('Sheet2.A1:A2');
+    await expect(dialog.getByLabel('Colour of Unclear')).toBeVisible();
+    await expect(dialog.getByLabel(`Colour of ${long}`)).toBeVisible();
+    await expect(dialog.getByLabel('Colour of Month'), 'not the active sheet’s cells').toHaveCount(0);
+    const colours = dialog.locator('.cs-chip-colors');
+    const fits = await colours.evaluate((el) => ({
+      scrolls: el.scrollHeight > el.clientHeight + 1,
+      inside:
+        el.getBoundingClientRect().right <=
+        el.closest('dialog, [role=dialog]')!.getBoundingClientRect().right,
+    }));
+    expect(fits).toEqual({ scrolls: false, inside: true });
+    const widths = await colours.locator('select').evaluateAll((els) => els.map((el) => el.clientWidth));
+    expect(new Set(widths).size, 'every colour menu is the same width').toBe(1);
+  });
 });
 
 test.describe('Charts', () => {
