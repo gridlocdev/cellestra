@@ -19,6 +19,11 @@ export interface GridPalette {
   readonly overflowMarker: string;
   /** An unticked checkbox's outline. */
   readonly checkboxBorder: string;
+  /** A dropdown chip whose item has no colour (PRD §8.13). */
+  readonly chipFill: string;
+  readonly chipText: string;
+  /** A dark theme draws a coloured chip in its dark colour with its light colour as the text. */
+  readonly dark: boolean;
 }
 
 export const lightPalette: GridPalette = {
@@ -38,6 +43,9 @@ export const lightPalette: GridPalette = {
   hyperlink: '#0b5fcc',
   overflowMarker: '#e53935',
   checkboxBorder: '#8a8a8a',
+  chipFill: '#ececec',
+  chipText: '#3c3c3c',
+  dark: false,
 };
 
 export const darkPalette: GridPalette = {
@@ -57,4 +65,7 @@ export const darkPalette: GridPalette = {
   hyperlink: '#6bb0ff',
   overflowMarker: '#ff5252',
   checkboxBorder: '#9a9a9a',
+  chipFill: '#3a3a3c',
+  chipText: '#e0e0e0',
+  dark: true,
 };

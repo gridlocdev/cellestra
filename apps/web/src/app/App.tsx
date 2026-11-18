@@ -135,7 +135,8 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
             anchor,
           };
         } else {
-          const { row, column } = app.selection.active.peek();
+          const { row, column } = button;
+          app.selection.select(row, column);
           app.dialog.value = { kind: 'validationList', rule: button.rule, row, column, anchor };
         }
       },

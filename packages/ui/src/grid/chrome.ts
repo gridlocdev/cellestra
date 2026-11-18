@@ -1,8 +1,9 @@
 import { DataScope, type CellRange, type DataValidation, type Worksheet } from '@cellestra/core';
+import { chevronRect } from './chip.ts';
 import type { GridPalette } from './palette.ts';
 import { HEADER_HEIGHT, HEADER_WIDTH, type Rect, type Viewport } from './viewport.ts';
 
-/** A clickable control the grid draws over cells: a filter chevron or a validation-list arrow. */
+/** A clickable control over cells: a filter chevron, or the chevron of a list cell's chip. */
 export type ChromeButton =
   | {
       readonly kind: 'filter';
@@ -14,17 +15,19 @@ export type ChromeButton =
       /** This column currently has a filter condition (drawn filled). */
       readonly active: boolean;
     }
-  | { readonly kind: 'validation'; readonly rect: Rect; readonly rule: DataValidation };
+  | {
+      readonly kind: 'validation';
+      readonly rect: Rect;
+      readonly rule: DataValidation;
+      readonly row: number;
+      readonly column: number;
+    };
 
 /**
  * The buttons to draw this frame, in screen px. Tables with a header row and the sheet AutoFilter
- * get a chevron in each visible header cell; a list-validated active cell gets a dropdown arrow.
+ * get a chevron in each visible header cell; each visible list-validated cell gets its chip's chevron.
  */
-export function chromeButtons(
-  sheet: Worksheet,
-  v: Viewport,
-  active: { readonly row: number; readonly column: number },
-): ChromeButton[] {
+export function chromeButtons(sheet: Worksheet, v: Viewport): ChromeButton[] {
   const out: ChromeButton[] = [];
   const visibleRow = (row: number) => v.visibleRows.some((b) => b.index === row);
   const regions: { range: CellRange; hasHeader: boolean }[] = sheet.tables
@@ -50,14 +53,24 @@ export function chromeButtons(
     }
   }
 
-  const rule = sheet.findValidation(active.row, active.column);
-  if (rule?.kind === 'list') {
-    const cell = v.rangeRect(active.row, active.column, active.row, active.column);
-    if (onScreen(cell)) {
-      // Inside the cell (clicks on the next column must select it) and clear of the fill handle.
-      const size = Math.min(14, cell.h - 2);
-      const rect = { x: cell.x + cell.w - size - 5, y: cell.y + (cell.h - size) / 2, w: size, h: size };
-      if (inPane(v, active.row, active.column, rect)) out.push({ kind: 'validation', rect, rule });
+  // Every visible list-validated cell draws as a chip whose chevron opens the list (PRD §8.13).
+  for (const rule of sheet.validations) {
+    if (rule.kind !== 'list') continue;
+    const t = rule.target;
+    for (const rb of v.visibleRows) {
+      if (rb.index < t.top || rb.index > t.bottom) continue;
+      for (const cb of v.visibleColumns) {
+        if (cb.index < t.left || cb.index > t.right) continue;
+        const merge = sheet.findMerge(rb.index, cb.index);
+        if (merge?.isCovered(rb.index, cb.index)) continue;
+        const cell = merge
+          ? v.rangeRect(merge.range.top, merge.range.left, merge.range.bottom, merge.range.right)
+          : { x: cb.start, y: rb.start, w: cb.size, h: rb.size };
+        if (!onScreen(cell)) continue;
+        const rect = chevronRect(cell, v.zoom);
+        if (rect.w <= 0 || rect.h <= 0 || !inPane(v, rb.index, cb.index, rect)) continue;
+        out.push({ kind: 'validation', rect, rule, row: rb.index, column: cb.index });
+      }
     }
   }
   return out;
@@ -81,6 +94,8 @@ export function drawChrome(
   ctx.rect(HEADER_WIDTH, HEADER_HEIGHT, ctx.canvas.width, ctx.canvas.height);
   ctx.clip();
   for (const b of buttons) {
+    // A list cell's chevron is drawn with its chip.
+    if (b.kind === 'validation') continue;
     const { x, y, w, h } = b.rect;
     const filled = b.kind === 'filter' && b.active;
     ctx.fillStyle = filled ? palette.activeOutline : palette.headerFill;

@@ -10,6 +10,9 @@ import {
   DataEditCommands,
   DataRegion,
   listItems,
+  chipColorsOf,
+  chipColorsTransform,
+  type ChipColor,
   namedRangeError,
   planCellEntry,
   SortFilterCommands,
@@ -1690,6 +1693,40 @@ export class AppController {
   /** Items for a list rule's dropdown. */
   listItems(rule: DataValidation): string[] {
     return listItems(rule, this.resolver);
+  }
+
+  /** The chip colour of each list item at a cell, keyed by the item in upper case (PRD §8.13). */
+  chipColors(row: number, column: number): Map<string, ChipColor> {
+    const styles = this.session.workbook.peek().styles;
+    return chipColorsOf(styles.get(this.sheet.effectiveStyleId(row, column)));
+  }
+
+  /**
+   * Replace the rules over the range with `rule` (null removes them) and give its items their chip
+   * colours, as one step. `replaced` are the items the old rule had, whose colours go.
+   */
+  setListValidation(
+    range: CellRange,
+    rule: DataValidation | null,
+    colors: readonly { readonly value: string; readonly color: ChipColor | null }[],
+    replaced: readonly string[],
+  ): void {
+    const steps: EditCommand[] = [DataEditCommands.replaceValidation(this.sheetName, range, rule)];
+    const touched = colors.some((c) => c.color !== null) || replaced.length > 0;
+    if (touched) {
+      const base = { sheet: this.sheetName, row: range.top, column: range.left };
+      const change = chipColorsTransform(colors, replaced, base);
+      steps.push(
+        EditCommands.applyStyle(
+          this.session.workbook.peek(),
+          this.sheetName,
+          range,
+          change,
+          'Data Validation',
+        ),
+      );
+    }
+    this.run(each('Data Validation', steps));
   }
 
   setHyperlink(row: number, column: number, link: Hyperlink | null, text: string): void {

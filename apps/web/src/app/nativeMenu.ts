@@ -44,6 +44,7 @@ const BREAKS = new Set([
   'data.toggleFilter',
   'data.createTable',
   'data.validation',
+  'data.chooseFromList',
   'insert.function',
   'insert.date',
   'formula.recalc',

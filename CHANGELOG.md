@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### What's new
+
+- **Dropdown lists look like chips.** Every cell with a list rule shows its value in a rounded, coloured chip with a chevron, and an empty one shows the chevron. Pick each item's colour in **Data Validation…**: new items get a colour of their own. Click the chevron, or run **Choose from List**, to pick an item from a list of chips. The colours are saved as conditional formats, so LibreOffice shows them as cell fills.
+
 ## 0.3.0
 
 ### Before you update

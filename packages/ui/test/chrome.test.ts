@@ -21,9 +21,7 @@ describe('chromeButtons with frozen columns', () => {
   const sheet = Workbook.createNew().activeSheet;
   sheet.addTable(table('T', CellRange.parse('A1:E10')));
   const columns = (scrollX: number) =>
-    chromeButtons(sheet, viewport(scrollX), { row: 5, column: 5 }).map((b) =>
-      b.kind === 'filter' ? b.column : -1,
-    );
+    chromeButtons(sheet, viewport(scrollX)).map((b) => (b.kind === 'filter' ? b.column : -1));
 
   it('shows a chevron for every header cell when nothing is scrolled', () => {
     expect(columns(0)).toEqual([0, 1, 2, 3, 4]);
@@ -32,7 +30,7 @@ describe('chromeButtons with frozen columns', () => {
   it('drops the chevron of a column scrolled under the frozen pane', () => {
     // Column B starts 55px under column A: its chevron would sit over A's header cell.
     const v = viewport(55);
-    const shown = chromeButtons(sheet, v, { row: 5, column: 5 });
+    const shown = chromeButtons(sheet, v);
     expect(shown.map((b) => (b.kind === 'filter' ? b.column : -1))).toEqual([0, 2, 3, 4]);
     for (const b of shown)
       if (b.kind === 'filter' && b.column > 0) expect(b.rect.x).toBeGreaterThanOrEqual(v.paneX);

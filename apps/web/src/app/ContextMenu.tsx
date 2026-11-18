@@ -117,7 +117,15 @@ export function GridContextMenu({
   }, [menu]);
 
   if (!menu) return null;
-  const items = menu.zone === 'cell' && app.activeTable ? [...MENUS.cell, ...TABLE_ITEMS] : MENUS[menu.zone];
+  const { row, column } = app.selection.active.peek();
+  const list =
+    menu.zone === 'cell' && app.sheet.findValidation(row, column)?.kind === 'list'
+      ? ['data.chooseFromList', '|']
+      : [];
+  const items =
+    menu.zone === 'cell' && app.activeTable
+      ? [...list, ...MENUS.cell, ...TABLE_ITEMS]
+      : [...list, ...MENUS[menu.zone]];
   return (
     <div
       ref={ref}

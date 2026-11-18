@@ -70,11 +70,11 @@ export {
 export { Axis } from './grid/axis.ts';
 export { type Band, HEADER_HEIGHT, HEADER_WIDTH, type Hit, type Rect, Viewport } from './grid/viewport.ts';
 export { darkPalette, type GridPalette, lightPalette } from './grid/palette.ts';
+export { chipColors } from './grid/chip.ts';
 export {
   checkboxRect,
   type DisplayText,
   fillHandleRect,
-  fitText,
   type GridOverlay,
   MARQUEE_DASH,
   overflowEdge,
@@ -89,6 +89,7 @@ export {
   CELL_PAD_Y,
   cellFont,
   fittedWidth,
+  fitText,
   rotatedBox,
   rotatedCellBox,
   textHeight,

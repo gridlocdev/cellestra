@@ -107,6 +107,8 @@ export interface GridController {
    * False when the value was refused (a stop validation rule) and the editor stays open.
    */
   commitEdit(): boolean;
+  /** Open the active cell's list, as clicking its chip's chevron does. False when it has none. */
+  openList(): boolean;
 }
 
 const MIN_COLUMN_WIDTH = 16;
@@ -277,7 +279,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const v = viewport();
     state.current.viewport = v;
     const sel = selection.state.value;
-    const chrome = chromeButtons(host.sheet.value, v, sel);
+    const chrome = chromeButtons(host.sheet.value, v);
     state.current.chrome = chrome;
     const s = state.current;
     const marquee = host.marquee?.value;
@@ -399,6 +401,16 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       el.scrollLeft = x * zoom.value;
       el.scrollTop = y * zoom.value;
     }
+  };
+
+  const openChrome = (button: ChromeButton) => {
+    const r = canvasRef.current!.getBoundingClientRect();
+    host.chrome?.(button, {
+      x: r.left + button.rect.x,
+      y: r.top + button.rect.y,
+      w: button.rect.w,
+      h: button.rect.h,
+    });
   };
 
   // --- editing -----------------------------------------------------------------------------------
@@ -785,13 +797,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     }
     const button = hitChrome(state.current.chrome, x, y);
     if (button && host.chrome) {
-      const r = canvasRef.current!.getBoundingClientRect();
-      host.chrome(button, {
-        x: r.left + button.rect.x,
-        y: r.top + button.rect.y,
-        w: button.rect.w,
-        h: button.rect.h,
-      });
+      openChrome(button);
       return;
     }
     const hit = v.hitTest(x, y);
@@ -988,6 +994,17 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
         reveal(row, column);
       },
       commitEdit: () => endEdit(true),
+      openList: () => {
+        const { row, column } = selection.active.peek();
+        reveal(row, column);
+        draw();
+        const button = state.current.chrome.find(
+          (b) => b.kind === 'validation' && b.row === row && b.column === column,
+        );
+        if (!button || !host.chrome) return false;
+        openChrome(button);
+        return true;
+      },
     };
 
   return (

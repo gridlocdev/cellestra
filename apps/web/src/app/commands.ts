@@ -58,6 +58,10 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     <T>(f: () => T) =>
     () => (s.version.value, s.activeSheet.value, app.selection.state.value, f());
   const inTable = live(() => app.activeTable !== null);
+  const inList = live(() => {
+    const { row, column } = app.selection.active.value;
+    return app.sheet.findValidation(row, column)?.kind === 'list';
+  });
 
   const specs: CommandSpec[] = [
     // File
@@ -1095,6 +1099,17 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
           existing: app.sheet.findValidation(row, column) ?? null,
         };
       },
+    },
+    {
+      id: 'data.chooseFromList',
+      title: 'Choose from List',
+      description: 'Open the selected cell’s dropdown list',
+      group: 'Data',
+      icon: 'list',
+      run: () => {
+        app.grid.current?.openList();
+      },
+      enabled: inList,
     },
     {
       id: 'data.removeDuplicates',

@@ -5,7 +5,11 @@ import {
   CellRange,
   FunctionRegistry,
   InputParser,
+  CHIP_COLORS,
+  type ChipColor,
   dataValidation,
+  nextChipColor,
+  sameChipColor,
   type ColumnFilter,
   type DataValidation,
   type FilterSpec,
@@ -15,7 +19,7 @@ import {
   type ValidationOperator,
   type ValidationResponse,
 } from '@cellestra/core';
-import { Dialog, QuickPick } from '@cellestra/ui';
+import { chipColors, Dialog, QuickPick } from '@cellestra/ui';
 import type { AppController, DataTarget } from './controller.ts';
 
 type Anchor = { x: number; y: number; w: number; h: number };
@@ -174,6 +178,7 @@ export function ValidationListPopup(props: {
 }) {
   const { app } = props;
   const items = app.listItems(props.rule);
+  const colors = app.chipColors(props.row, props.column);
   const current = app.session.editText(props.row, props.column).toUpperCase();
   const pick = (text: string) => {
     close(app);
@@ -191,11 +196,21 @@ export function ValidationListPopup(props: {
             class="cs-list-item"
             onClick={() => pick(t)}
           >
-            {t}
+            <Chip app={app} text={t} color={colors.get(t.trim().toUpperCase()) ?? null} />
           </button>
         ))}
       </div>
     </Popover>
+  );
+}
+
+/** A list item drawn as the grid draws it in a cell: a rounded chip in the item's colour. */
+function Chip(props: { app: AppController; text: string; color: ChipColor | null }) {
+  const c = chipColors(props.color, props.app.palette.value);
+  return (
+    <span class="cs-chip" style={{ background: c.fill, color: c.text }}>
+      {props.text}
+    </span>
   );
 }
 
@@ -377,6 +392,20 @@ export function ValidationDialog(props: {
   const [response, setResponse] = useState<ValidationResponse>(e?.response ?? 'stop');
   const [problem, setProblem] = useState('');
   const target = e?.target ?? props.range;
+  // Chip colours (PRD §8.13): what the cells have now, then what the user picks here.
+  const [before] = useState(() => ({
+    items: e?.kind === 'list' ? app.listItems(e) : [],
+    colors: app.chipColors(target.top, target.left),
+  }));
+  const [picked, setPicked] = useState<ReadonlyMap<string, ChipColor | null>>(new Map());
+  const sourceRange = source.trim() ? CellRange.tryParse(source.trim().replace(/\$/g, '')) : null;
+  const draftItems =
+    kind !== 'list'
+      ? []
+      : sourceRange
+        ? app.listItems(dataValidation('list', target, { listSource: sourceRange }))
+        : app.listItems(dataValidation('list', target, { listValues: list.split(',') }));
+  const itemColors = chipChoices(draftItems, before, picked, !sourceRange);
   const between = op === 'between' || op === 'notBetween';
   const numeric = kind !== 'any' && kind !== 'list';
   const done = () => close(app);
@@ -411,7 +440,12 @@ export function ValidationDialog(props: {
       if (x === null || y === null) return setProblem('Enter a number (or a date) for each bound.');
       rest = { ...rest, operand1: x, operand2: y };
     }
-    app.setValidation(target, dataValidation(kind, target, rest));
+    app.setListValidation(
+      target,
+      dataValidation(kind, target, rest),
+      kind === 'list' ? itemColors : [],
+      before.items,
+    );
     done();
   };
   return (
@@ -427,7 +461,7 @@ export function ValidationDialog(props: {
               type="button"
               class="cs-btn danger"
               onClick={() => {
-                app.setValidation(target, null);
+                app.setListValidation(target, null, [], before.items);
                 done();
               }}
             >
@@ -467,6 +501,33 @@ export function ValidationDialog(props: {
               onInput={(ev) => setSource(ev.currentTarget.value)}
             />
           </label>
+          {itemColors.length > 0 && (
+            <fieldset class="cs-chip-colors">
+              <legend>Colours</legend>
+              {itemColors.map(({ value, color }) => (
+                <div class="cs-form-row">
+                  <Chip app={app} text={value} color={color} />
+                  <select
+                    aria-label={`Colour of ${value}`}
+                    value={colorName(color)}
+                    onChange={(ev) => {
+                      const name = ev.currentTarget.value;
+                      if (name === 'Custom') return;
+                      const next = new Map(picked);
+                      next.set(value.toUpperCase(), CHIP_COLORS.find((c) => c.name === name) ?? null);
+                      setPicked(next);
+                    }}
+                  >
+                    <option value="None">None</option>
+                    {CHIP_COLORS.map((c) => (
+                      <option value={c.name}>{c.name}</option>
+                    ))}
+                    {colorName(color) === 'Custom' && <option value="Custom">Custom</option>}
+                  </select>
+                </div>
+              ))}
+            </fieldset>
+          )}
         </>
       )}
       {numeric && (
@@ -509,6 +570,38 @@ export function ValidationDialog(props: {
       {problem && <p class="cs-problem">{problem}</p>}
     </Dialog>
   );
+}
+
+/**
+ * Each item's chip colour: the one picked in the dialog, else the one its cells have, else none
+ * for an item the rule already had. A new typed item takes the next free palette colour; items
+ * read from a range start with none, as a long range would run through the palette.
+ */
+function chipChoices(
+  items: readonly string[],
+  before: { readonly items: readonly string[]; readonly colors: ReadonlyMap<string, ChipColor> },
+  picked: ReadonlyMap<string, ChipColor | null>,
+  autoColor: boolean,
+): { value: string; color: ChipColor | null }[] {
+  const old = new Set(before.items.map((t) => t.toUpperCase()));
+  const out: { value: string; color: ChipColor | null }[] = [];
+  for (const value of items) {
+    const key = value.toUpperCase();
+    const color = picked.has(key)
+      ? picked.get(key)!
+      : before.colors.has(key)
+        ? before.colors.get(key)!
+        : old.has(key) || !autoColor
+          ? null
+          : nextChipColor(out.map((o) => o.color));
+    out.push({ value, color });
+  }
+  return out;
+}
+
+function colorName(color: ChipColor | null): string {
+  if (color === null) return 'None';
+  return CHIP_COLORS.find((c) => sameChipColor(c, color))?.name ?? 'Custom';
 }
 
 // ── Hyperlink ───────────────────────────────────────────────────────────────

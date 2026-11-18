@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CellRange, CellStyles, CellValue, DataEditCommands, Workbook, table } from '@cellestra/core';
 import { Axis } from '../src/grid/axis.ts';
+import { fitText } from '../src/grid/cellText.ts';
 import { lightPalette } from '../src/grid/palette.ts';
 import {
   checkboxRect,
   fillHandleRect,
-  fitText,
   overflowEdge,
   renderGrid,
   stickyHeaderTitles,

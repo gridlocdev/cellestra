@@ -130,6 +130,15 @@ export {
   rulesTransform,
 } from './styling/conditionalFormatRules.ts';
 export {
+  CHIP_COLORS,
+  type ChipColor,
+  chipColorsOf,
+  chipColorsTransform,
+  type NamedChipColor,
+  nextChipColor,
+  sameChipColor,
+} from './styling/listChips.ts';
+export {
   classifyNumberFormat,
   isDateLikeKind,
   type NumberFormatKind,

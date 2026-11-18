@@ -72,6 +72,26 @@ test.describe('Data tools', () => {
     expect(readCell('budget.ods', 'C2'), 'the row moves together').toBe('285');
     expect(readCell('budget.ods', 'D2'), 'its total moves with it').toBe('1485');
   });
+
+  test('A dropdown list colours its items and fills a cell from the list', async ({ page }) => {
+    await goTo(page, 'F2:F4');
+    await runCommand(page, 'Data Validation');
+    const dialog = page.getByRole('dialog', { name: 'Data Validation' });
+    await dialog.getByLabel('Items (comma-separated)').fill('Yes - native, No - not on Steam');
+    await expect(dialog.getByLabel('Colour of No - not on Steam')).toHaveValue('Orange');
+    await dialog.getByLabel('Colour of No - not on Steam').selectOption('Red');
+    await dialog.getByRole('button', { name: 'OK' }).click();
+    await expect(dialog).toBeHidden();
+
+    await goTo(page, 'F3');
+    await runCommand(page, 'Choose from List');
+    const option = page.getByRole('option', { name: 'No - not on Steam' });
+    await expect(option.locator('.cs-chip')).toHaveCSS('background-color', 'rgb(255, 199, 206)');
+    await option.click();
+    await expect(contents(page)).toHaveValue('No - not on Steam');
+    await save(page);
+    expect(readCell('budget.ods', 'F3')).toBe('No - not on Steam');
+  });
 });
 
 test.describe('Charts', () => {

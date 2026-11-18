@@ -9,7 +9,8 @@ import {
   StylePool,
   type Worksheet,
 } from '@cellestra/core';
-import { CELL_PAD_X, CELL_PAD_Y, cellFont, LINE_FACTOR, PT_TO_PX, rotatedBox } from './cellText.ts';
+import { CELL_PAD_X, CELL_PAD_Y, cellFont, fitText, LINE_FACTOR, PT_TO_PX, rotatedBox } from './cellText.ts';
+import { drawChip } from './chip.ts';
 import { drawChrome, type ChromeButton } from './chrome.ts';
 import type { GridPalette } from './palette.ts';
 import { HEADER_HEIGHT, HEADER_WIDTH, type Band, type Rect, type Viewport } from './viewport.ts';
@@ -67,9 +68,10 @@ export interface GridOverlay {
 }
 
 /** The style a cell draws with: its own, with any hover preview applied over it. */
-function styleAt(input: RenderInput, row: number, column: number, id: number): CellStyle {
+function styleAt(input: RenderInput, row: number, column: number, id: number, conditional = true): CellStyle {
   let style = input.styles.get(id);
-  if (style.conditionalMaps?.length && input.conditional) style = input.conditional(style, row, column);
+  if (conditional && style.conditionalMaps?.length && input.conditional)
+    style = input.conditional(style, row, column);
   const p = input.overlay?.stylePreview;
   if (!p) return style;
   for (const r of p.ranges)
@@ -140,12 +142,24 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
     (m) => m.range.bottom >= top && m.range.top <= bottom && m.range.right >= left && m.range.left <= right,
   );
   const coveredByMerge = (r: number, c: number) => merges.some((m) => m.covers(r, c));
+  // List cells draw as chips: a conditional fill colours the chip, not the cell (PRD §8.13).
+  const lists = sheet.validations.filter(
+    (r) => r.kind === 'list' && r.target.bottom >= top && r.target.top <= bottom,
+  );
+  const isList = (r: number, c: number) =>
+    !input.showFormulas && lists.length > 0 && lists.some((l) => l.target.contains(r, c));
 
   // 1. Fills (row / column default styles included via effectiveStyleId), table bands.
   for (const rb of rows) {
     for (const cb of cols) {
       if (coveredByMerge(rb.index, cb.index)) continue;
-      const style = styleAt(input, rb.index, cb.index, sheet.effectiveStyleId(rb.index, cb.index));
+      const style = styleAt(
+        input,
+        rb.index,
+        cb.index,
+        sheet.effectiveStyleId(rb.index, cb.index),
+        !isList(rb.index, cb.index),
+      );
       const fill = style.fill.background;
       if (fill !== null) {
         ctx.fillStyle = Argb.toCss(fill);
@@ -196,6 +210,7 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
       m.range.top,
       m.range.left,
       sheet.effectiveStyleId(m.range.top, m.range.left),
+      !isList(m.range.top, m.range.left),
     );
     ctx.fillStyle = style.fill.background !== null ? Argb.toCss(style.fill.background) : palette.canvas;
     ctx.fillRect(r.x, r.y, r.w - 1, r.h - 1);
@@ -208,10 +223,16 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
     for (let ci = 0; ci < cols.length; ci++) {
       const cb = cols[ci]!;
       const cell = sheet.find(rb.index, cb.index);
-      if (!cell || cell.isBlank) continue;
+      const list = isList(rb.index, cb.index);
+      if (!list && (!cell || cell.isBlank)) continue;
       if (input.editing && input.editing.row === rb.index && input.editing.column === cb.index) continue;
       if (merges.length > 0 && coveredByMerge(rb.index, cb.index)) continue; // drawn once below
       const rect = { x: cb.start, y: rb.start, w: cb.size, h: rb.size };
+      if (list) {
+        drawListCell(input, cell, rb.index, cb.index, rect);
+        continue;
+      }
+      if (!cell) continue;
       drawCellText(input, cell, rb.index, cb.index, rect, { cols, ci, firstColumn, lastColumn });
     }
     drawOffscreenSpills(input, rb, cols);
@@ -220,9 +241,12 @@ function drawQuadrant(input: RenderInput, rows: readonly Band[], cols: readonly 
   for (const m of merges) {
     const { top: row, left: column } = m.range;
     const cell = sheet.find(row, column);
-    if (!cell || cell.isBlank) continue;
+    const list = isList(row, column);
+    if (!list && (!cell || cell.isBlank)) continue;
     if (input.editing && input.editing.row === row && input.editing.column === column) continue;
-    drawCellText(input, cell, row, column, v.rangeRect(row, column, m.range.bottom, m.range.right), null);
+    const rect = v.rangeRect(row, column, m.range.bottom, m.range.right);
+    if (list) drawListCell(input, cell, row, column, rect);
+    else if (cell) drawCellText(input, cell, row, column, rect, null);
   }
 
   // 5. Borders.
@@ -406,6 +430,29 @@ function drawCheckbox(
     ctx.stroke();
   }
   ctx.restore();
+}
+
+/**
+ * A list-validated cell: its value in a chip, coloured by the conditional format that holds for
+ * it (the item's colour), or the chevron alone when it is empty.
+ */
+function drawListCell(
+  input: RenderInput,
+  cell: Cell | undefined,
+  row: number,
+  column: number,
+  rect: Rect,
+): void {
+  const { sheet, viewport: v } = input;
+  const id =
+    cell && cell.styleId !== StylePool.defaultId ? cell.styleId : sheet.effectiveStyleId(row, column);
+  const own = styleAt(input, row, column, id, false);
+  const shown = styleAt(input, row, column, id);
+  const text = cell && !cell.isBlank ? input.display(cell.value, own).text : '';
+  const fill = shown.fill.background;
+  const color =
+    shown !== own && fill !== null && fill !== own.fill.background ? { fill, text: shown.font.color } : null;
+  drawChip(input.ctx, rect, text, cellFont(own.font, v.zoom), color, input.palette, v.zoom);
 }
 
 function drawCellText(
@@ -847,21 +894,6 @@ function drawHeaders(input: RenderInput): void {
   line(ctx, 0, crisp(HEADER_HEIGHT), v.width, crisp(HEADER_HEIGHT));
   line(ctx, crisp(HEADER_WIDTH), 0, crisp(HEADER_WIDTH), v.height);
   ctx.stroke();
-}
-
-/** `text` cut short with an ellipsis so it measures at most `width` (empty when nothing fits). */
-export function fitText(ctx: CanvasRenderingContext2D, text: string, width: number): string {
-  if (ctx.measureText(text).width <= width) return text;
-  const chars = [...text];
-  // The longest prefix that fits with its ellipsis (binary search: titles can be long).
-  let lo = 0;
-  let hi = chars.length - 1;
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2);
-    if (ctx.measureText(chars.slice(0, mid).join('') + '…').width <= width) lo = mid;
-    else hi = mid - 1;
-  }
-  return lo > 0 ? chars.slice(0, lo).join('') + '…' : '';
 }
 
 /**

@@ -1,6 +1,8 @@
 import {
   CellRange,
   CellValue,
+  CHIP_COLORS,
+  dataValidation,
   EditCommands,
   OdsWriter,
   SheetDimensions,
@@ -465,6 +467,7 @@ describe('grid focus at launch', () => {
       isEditing: () => false,
       commitEdit: () => true,
       revealActive: () => {},
+      openList: () => false,
     };
 
     doc.activeElement = body;
@@ -974,6 +977,35 @@ describe('autofit columns', () => {
     expect(slant).toBeGreaterThan(up!);
     expect(slant).toBeLessThan(flat!);
     expect(wrapped).toBe(up);
+  });
+});
+
+describe('list chips', () => {
+  it('sets a list rule and its item colours as one step, and replaces the colours later', async () => {
+    const app = await makeApp();
+    const target = CellRange.parse('B2:B4');
+    const [red, green] = [CHIP_COLORS[0]!, CHIP_COLORS[3]!];
+    const rule = dataValidation('list', target, { listValues: ['Yes', 'No'] });
+    app.setListValidation(
+      target,
+      rule,
+      [
+        { value: 'Yes', color: green },
+        { value: 'No', color: red },
+      ],
+      [],
+    );
+    expect(app.sheet.findValidation(2, 1)?.kind).toBe('list');
+    expect(app.chipColors(3, 1).get('NO')?.fill).toBe(red.fill);
+
+    app.setListValidation(target, rule, [{ value: 'Yes', color: null }], ['Yes', 'No']);
+    expect(app.chipColors(3, 1).size).toBe(0);
+
+    app.session.undo();
+    expect(app.chipColors(3, 1).get('YES')?.fill).toBe(green.fill);
+    app.session.undo();
+    expect(app.sheet.findValidation(2, 1)).toBeUndefined();
+    expect(app.chipColors(3, 1).size).toBe(0);
   });
 });
 

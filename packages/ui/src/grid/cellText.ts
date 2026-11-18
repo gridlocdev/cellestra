@@ -79,3 +79,18 @@ export function fittedWidth(ctx: TextMeasure, text: string, style: CellStyle): n
   const height = style.font.sizePoints * PT_TO_PX * LINE_FACTOR * lines;
   return rotatedCellBox(width, height, rotation).width;
 }
+
+/** `text` cut short with an ellipsis so it measures at most `width` (empty when nothing fits). */
+export function fitText(ctx: TextMeasure, text: string, width: number): string {
+  if (ctx.measureText(text).width <= width) return text;
+  const chars = [...text];
+  // The longest prefix that fits with its ellipsis (binary search: titles can be long).
+  let lo = 0;
+  let hi = chars.length - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.measureText(chars.slice(0, mid).join('') + '…').width <= width) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo > 0 ? chars.slice(0, lo).join('') + '…' : '';
+}
