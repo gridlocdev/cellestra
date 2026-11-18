@@ -166,6 +166,7 @@ export const XlsxReader = {
           sharedStrings,
           rels: sheetRels,
           hasName: (n) => workbook.findNamedRange(n, sheet.name) !== undefined,
+          namedRange: (n) => workbook.findNamedRange(n, sheet.name)?.target ?? null,
           report,
         },
         date1904,

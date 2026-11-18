@@ -273,7 +273,7 @@ describe('reading an .xlsx', () => {
       sheets: [
         {
           name: 'A',
-          xml: '<sheetData/><conditionalFormatting sqref="A1"/><dataValidations/><autoFilter ref="A1:B2"/><drawing r:id="d"/>',
+          xml: '<sheetData/><conditionalFormatting sqref="A1"/><dataValidations><dataValidation type="whole" sqref="A1"><formula1>1</formula1></dataValidation></dataValidations><autoFilter ref="A1:B2"/><drawing r:id="d"/>',
         },
         { name: 'B', xml: '<sheetData/>', state: 'hidden' },
       ],
@@ -283,6 +283,69 @@ describe('reading an .xlsx', () => {
     expect(describeXlsxImport(report)).toBe(
       'Left out: charts, images and shapes, conditional formatting, data validation, AutoFilters. 1 hidden sheet is shown.',
     );
+  });
+
+  it('reads dropdown lists: typed, from a range on another sheet, by name, and in the x14 form', () => {
+    const X14 = 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/main';
+    const XM = 'http://schemas.microsoft.com/office/excel/2006/main';
+    const { workbook, report } = read({
+      workbookExtra: '<definedNames><definedName name="Sizes">Options!$B$1:$B$3</definedName></definedNames>',
+      sheets: [
+        {
+          name: 'Sheet1',
+          xml:
+            '<sheetData/><dataValidations count="4">' +
+            '<dataValidation type="list" allowBlank="1" sqref="A1:A5 C1"><formula1>"Yes, No,""Maybe"""</formula1></dataValidation>' +
+            `<dataValidation type="list" showErrorMessage="1" errorStyle="warning" error="Pick one" showInputMessage="1" prompt="Choose" sqref="B2:B9"><formula1>'Dropdown options'!$A$1:$A$6</formula1></dataValidation>` +
+            '<dataValidation type="list" showErrorMessage="1" sqref="D1"><formula1>Sizes</formula1></dataValidation>' +
+            '<dataValidation type="list" sqref="E1"><formula1>INDIRECT(A1)</formula1></dataValidation>' +
+            '</dataValidations>' +
+            `<extLst><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:dataValidations xmlns:x14="${X14}" xmlns:xm="${XM}">` +
+            '<x14:dataValidation type="list" showErrorMessage="1"><x14:formula1><xm:f>Options!$A$1:$A$2</xm:f></x14:formula1><xm:sqref>F1:F3</xm:sqref></x14:dataValidation>' +
+            '</x14:dataValidations></ext></extLst>',
+        },
+        { name: 'Dropdown options', xml: '<sheetData/>' },
+        { name: 'Options', xml: '<sheetData/>' },
+      ],
+    });
+    const rules = workbook.worksheets[0]!.validations.map((v) => ({
+      target: v.target.toString(),
+      values: v.listValues ?? null,
+      source: v.listSource?.toString() ?? null,
+      response: v.response,
+      input: v.inputMessage ?? null,
+      error: v.errorMessage ?? null,
+    }));
+    const typed = {
+      values: ['Yes', 'No', '"Maybe"'],
+      source: null,
+      response: 'none',
+      input: null,
+      error: null,
+    };
+    expect(rules).toEqual([
+      { target: 'A1:A5', ...typed },
+      { target: 'C1', ...typed },
+      {
+        target: 'B2:B9',
+        values: null,
+        source: "'Dropdown options'.$A$1:$A$6",
+        response: 'warning',
+        input: 'Choose',
+        error: 'Pick one',
+      },
+      { target: 'D1', values: null, source: 'Options.$B$1:$B$3', response: 'stop', input: null, error: null },
+      {
+        target: 'F1:F3',
+        values: null,
+        source: 'Options.$A$1:$A$2',
+        response: 'stop',
+        input: null,
+        error: null,
+      },
+    ]);
+    // A list from a formula such as INDIRECT can't come across.
+    expect(report.leftOut.has('dataValidation')).toBe(true);
   });
 
   it('says nothing when everything came across', () => {

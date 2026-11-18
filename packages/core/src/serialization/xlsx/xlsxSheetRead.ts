@@ -10,6 +10,7 @@ import { XmlEventReader, type XmlAttribute, type XmlEventHandler, type XmlName }
 import { excelToInternal, importFormula, shiftFormula } from './xlsxFormulas.ts';
 import { attrIn, flag, RelType, relIdIn, type Relationship } from './xlsxPackage.ts';
 import type { XlsxLeftOut, XlsxReportBuilder } from './xlsxReport.ts';
+import { importListValidation, type XlsxValidation } from './xlsxValidation.ts';
 
 /** Excel's 1904 date system counts days from 1 January 1904, 1462 days after the 1900 system's day 0. */
 const DAYS_1904 = 1462;
@@ -31,6 +32,8 @@ export interface SheetReadContext {
   /** The worksheet part's relationships, for hyperlinks. */
   readonly rels: ReadonlyMap<string, Relationship>;
   hasName(name: string): boolean;
+  /** The range a workbook or sheet name stands for, or null when it names none. */
+  namedRange(name: string): CellRange | null;
   readonly report: XlsxReportBuilder;
 }
 
@@ -70,7 +73,6 @@ function isoToSerial(text: string): number | null {
 /** Elements directly under `<worksheet>` that hold what Cellestra leaves out. */
 const LEFT_OUT_PARTS: Readonly<Record<string, XlsxLeftOut>> = {
   conditionalFormatting: 'conditionalFormatting',
-  dataValidations: 'dataValidation',
   autoFilter: 'autoFilters',
   drawing: 'drawings',
   picture: 'drawings',
@@ -96,9 +98,12 @@ interface PendingCell {
   sharedIndex: string | null;
 }
 
+/** A `<dataValidation>` being read, with its formula and (in the `x14` form) range as text. */
+type PendingValidation = { -readonly [K in keyof XlsxValidation]: XlsxValidation[K] };
+
 /**
  * Streams one worksheet part into a sheet (PRD §8.19): cells with values, formulas and styles, row
- * heights and column widths, hidden lines, merges, frozen panes and hyperlinks.
+ * heights and column widths, hidden lines, merges, frozen panes, hyperlinks and dropdown lists.
  */
 class SheetReader implements XmlEventHandler {
   readonly #ctx: SheetReadContext;
@@ -108,6 +113,9 @@ class SheetReader implements XmlEventHandler {
   #row = -1;
   #column = -1;
   #cell: PendingCell | null = null;
+  #validation: PendingValidation | null = null;
+  /** Which text of `#validation` is being read, else null. */
+  #validationText: 'formula1' | 'sqref' | null = null;
   /** Text of the `v`, `f` or inline `t` element being read, else null. */
   #text: string | null = null;
   #phonetic = 0;
@@ -125,6 +133,7 @@ class SheetReader implements XmlEventHandler {
 
   text(value: string): void {
     if (this.#text !== null && this.#phonetic === 0) this.#text += value;
+    if (this.#validation && this.#validationText) this.#validation[this.#validationText] += value;
   }
 
   openElement(name: XmlName, attributes: XmlAttribute[]): void {
@@ -136,6 +145,7 @@ class SheetReader implements XmlEventHandler {
         return;
       case 'v':
       case 'f':
+        if (parent === 'formula1' && this.#validation) this.#validationText = 'formula1';
         if (parent === 'c') {
           this.#text = '';
           if (name.local === 'f' && this.#cell) {
@@ -170,6 +180,16 @@ class SheetReader implements XmlEventHandler {
       case 'hyperlink':
         if (parent === 'hyperlinks') this.#hyperlink(attributes);
         return;
+      case 'dataValidation':
+        if (parent === 'dataValidations') this.#openValidation(attributes);
+        return;
+      case 'formula1':
+        // The worksheet's own rules hold the formula as text; the x14 form wraps it in `<xm:f>`.
+        if (parent === 'dataValidation' && this.#validation) this.#validationText = 'formula1';
+        return;
+      case 'sqref':
+        if (parent === 'dataValidation' && this.#validation) this.#validationText = 'sqref';
+        return;
       default: {
         const leftOut = parent === 'worksheet' ? LEFT_OUT_PARTS[name.local] : undefined;
         if (leftOut) this.#ctx.report.leftOut.add(leftOut);
@@ -197,6 +217,14 @@ class SheetReader implements XmlEventHandler {
         return;
       case 'sheetView':
         this.#sawView = true;
+        return;
+      case 'formula1':
+      case 'sqref':
+        this.#validationText = null;
+        return;
+      case 'dataValidation':
+        if (this.#validation) this.#finishValidation(this.#validation);
+        this.#validation = null;
         return;
       case 'c':
         if (this.#cell) this.#finishCell(this.#cell);
@@ -281,6 +309,25 @@ class SheetReader implements XmlEventHandler {
         if (count++ >= HYPERLINK_CELL_LIMIT) return;
         this.#ctx.sheet.getOrCreate(r, c).hyperlink = link;
       }
+  }
+
+  #openValidation(attributes: readonly XmlAttribute[]): void {
+    this.#validation = {
+      type: attrIn(attributes, 'type'),
+      sqref: attrIn(attributes, 'sqref') ?? '',
+      formula1: '',
+      errorStyle: attrIn(attributes, 'errorStyle'),
+      showErrorMessage: flag(attrIn(attributes, 'showErrorMessage')),
+      showInputMessage: flag(attrIn(attributes, 'showInputMessage')),
+      error: attrIn(attributes, 'error'),
+      prompt: attrIn(attributes, 'prompt'),
+    };
+  }
+
+  #finishValidation(rule: PendingValidation): void {
+    const rules = importListValidation(rule, (name) => this.#ctx.namedRange(name));
+    if (rules === null) this.#ctx.report.leftOut.add('dataValidation');
+    else for (const v of rules) this.#ctx.sheet.addValidation(v);
   }
 
   #openCell(attributes: readonly XmlAttribute[]): void {
