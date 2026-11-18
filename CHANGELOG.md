@@ -1,16 +1,29 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 ### What's new
 
 - **Open Excel workbooks.** **Open…**, drag and drop, Open Recent and the desktop app's file associations accept `.xlsx` and `.xlsm`. The file opens as a new, unsaved workbook with the same name ending in `.ods`, and the first save asks where to put it, so the Excel file is never changed. Values, formulas, number formats, fonts, fills, borders, alignment, merges, column widths, row heights, hidden rows and columns, frozen panes, named ranges and dropdown lists come across. A notice lists what was left out, such as charts, comments or conditional formatting, and formulas Cellestra can't calculate keep their last result as a value.
-- **CLI reads `.xlsx`.** Every command that reads a workbook reads `.xlsx` and `.xlsm` too, and prints what was left out on stderr. `convert book.xlsx book.ods` converts one. Writing to an `.xlsx` (`--in-place`, `-o`, or `convert` to `.xlsx`) is refused, and the file stays as it was.
 - **Dropdown lists look like chips.** Every cell with a list rule shows its value in a rounded, coloured chip with a chevron, and an empty one shows the chevron. Pick each item's colour in **Data Validation…**: new items get a colour of their own. Click the chevron, or run **Choose from List**, to pick an item from a list of chips. The colours are saved as conditional formats, so LibreOffice shows them as cell fills.
+- **Move rows and columns with the Option key.** **⌥↑** and **⌥↓** move the selected rows one step, and **⌥←** and **⌥→** move the selected columns, trading places with their neighbour. Cells, sizes and formatting go with them, formulas follow the moved cells, and the selection moves too. Nothing moves past the edge of the sheet or splits a merge or a table.
+- **CLI reads `.xlsx`.** Every command that reads a workbook reads `.xlsx` and `.xlsm` too, and prints what was left out on stderr. `convert book.xlsx book.ods` converts one. Writing to an `.xlsx` (`--in-place`, `-o`, or `convert` to `.xlsx`) is refused, and the file stays as it was.
+
+### Improvements
+
+- **Shortcuts and typing stay in the dialog that's open.** ⌘K and the other shortcuts no longer open behind Settings, **Go to Sheet** or **Open Recent**. A dialog's first field takes focus as it opens, so what you type straight away goes into it instead of the cell behind. Picking a function in **Insert Function** leaves you typing in the cell.
+- **Tab and Shift+Tab move the highlight** in the command menu and **Go to Sheet**, like the arrow keys.
+- **Saving is steadier.** Closing the window while a save runs waits for it to finish, then closes or asks. Auto-save waits while the close question is open. ⌘S with nothing unsaved writes nothing. **Revert** stops if you type while it reads the file, as a refresh does.
+- **Screen readers can step through list popups.** The command menu, **Go to Sheet**, **Open Recent**, **Insert Function** and the **Open from NAS** file list each have a name, and their rows are options.
+- If you run the NAS server yourself, it reads its port from `CELLESTRA_PORT`. `PORT` still works when that isn't set.
 
 ### Bugs fixed
 
 - **A dropdown list taken from another sheet offers that sheet's items.** It used to read the same cells on the sheet you were on, in the dropdown, in **Data Validation…** and when checking what you typed.
+- A date you type keeps the same format after you save and reopen the file.
+- A resized empty row at the bottom of a sheet keeps its height after a save.
+- A very large number in a date-formatted cell, such as 1000000000, no longer disappears when the file is saved and reopened.
+- A failed save in the desktop app or on the NAS server is reported instead of being passed over for the next one.
 
 ## 0.3.0
 
