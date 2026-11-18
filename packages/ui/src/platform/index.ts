@@ -6,6 +6,7 @@ export {
   type FileStore,
   mimeFor,
   type OpenedDocument,
+  OPENABLE_TYPES,
   SPREADSHEET_TYPES,
   type StoreCapabilities,
   type StoreKind,

@@ -40,6 +40,7 @@ export {
   rememberRecent,
   type SavedFile,
   saveRecovery,
+  OPENABLE_TYPES,
   SPREADSHEET_TYPES,
   type StoreCapabilities,
   type StoreKind,
@@ -116,6 +117,8 @@ export {
   type CellPosition,
   type DocumentFormat,
   formatOf,
+  isExcelFile,
+  odsNameFor,
   WorkbookSession,
 } from './session/workbookSession.ts';
 export { csvLosses } from './session/csvLoss.ts';

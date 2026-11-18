@@ -54,6 +54,7 @@ If I open a Cellestra-saved file in LibreOffice and notice nothing wrong, the ba
 ### Files
 - Open and save `.ods` files.
 - Import and export **CSV** (precise format in §8.4).
+- Open **`.xlsx`** as a new `.ods` workbook (§8.19).
 - Recent-files list.
 - Safe round-tripping (preserve content Cellestra doesn't model — see §8.1).
 
@@ -596,6 +597,19 @@ Every change is one undoable chart edit, with the panel's usual preview-while-ty
 
 **Hover details.** On the chart sheet, pointing at the chart (or tapping it) highlights the mark under the pointer and shows a tooltip. Column, bar, line, area and radar charts answer for the nearest category anywhere in the plot: its label and every series' value, the hovered bar emphasised and outlined, a guide line and larger markers for lines and areas; stacked charts add the total, 100% stacked charts each value's share. A pie or doughnut slice gives its value and share of the total; a scatter or bubble point within 12 px gives its series, X and Y (named by the axis titles when set) and its size. Gaps read "—". A category that merged repeated rows notes the aggregate and the row count ("Average of 3 rows"). The hit regions and tooltip text are laid out with the chart scene, so they are pure and tested.
 
+### 8.19 Excel import (`.xlsx`)
+
+`.ods` stays the home format: Cellestra **reads** `.xlsx` and `.xlsm` and never writes them. Opening one converts it into a new workbook.
+
+- **Where:** Open, drag and drop, Open Recent, the desktop app's file associations and the NAS picker all accept `.xlsx` and `.xlsm`. The CLI reads them wherever it reads a workbook (`convert book.xlsx book.ods`, `cat book.xlsx`); it refuses to write to an `.xlsx` path, `--in-place` included.
+- **The result is an unsaved `.ods`.** The workbook is named after the file (`Budget.xlsx` opens as `Budget.ods`) and has no file yet, so the first Save asks where to put it, and auto-save (§8.7a) waits until then. The `.xlsx` file is never written, so the workbook opens unmodified: closing it loses nothing. A notice says the file was converted and lists what was left out.
+- **Brought across:** sheets in order, the active sheet; values (numbers, text, booleans, errors, rich text as plain text); formulas (below); number formats (built-in and custom codes, which share Cellestra's dialect); fonts (family, size, bold, italic, underline, strikethrough, colour), solid fills, borders, horizontal and vertical alignment, wrapping and rotation; theme and indexed colours with their tints, resolved to plain colours; row and column formats; merges; column widths and row heights; hidden rows and columns; frozen panes; hyperlinks; workbook and sheet-scoped named ranges that name one range.
+- **The default font.** The workbook's own default font (Calibri 11 in Excel) becomes Cellestra's default (§8.8), so ordinary cells carry no font style. Any other font keeps its family and size. Excel's default column width (8.43 characters) and row height (15 pt) are 64 px and 20 px, Cellestra's defaults; other sizes convert at 7 px per stored width unit (Excel stores its 8.43-character default as 9.14) and 4/3 px per point.
+- **Formulas.** Excel's syntax is rewritten to Cellestra's (`Sheet2!A1` → `Sheet2.A1`, the `_xlfn.` prefix dropped), and shared formulas are expanded to each cell as a copy would move them. The file's cached results are shown, then recalculated (§8.6). A formula keeps its result **as a value** instead when Cellestra can't compute it the same way: it doesn't parse (structured references such as `Table1[Total]`, external workbooks), it calls a function the registry lacks, or it is an array or data-table formula (§9). The notice counts them.
+- **Dates.** Excel's 1900 date serials are Calc's from 1 March 1900 on. A workbook on the 1904 date system has 1,462 days added to every number shown as a date (not to times or durations).
+- **Left out, and named in the notice:** charts, images and shapes; conditional formatting; data validation; comments; pivot tables; tables (their cells stay); AutoFilters; macros (`.xlsm`); chart sheets and macro sheets. Hidden sheets come in visible, since Cellestra has no hidden sheets, and the notice says so.
+- **Refused with a message:** a password-protected workbook or an old binary `.xls` (both are OLE files, not ZIP) and `.xlsb`. The ZIP size cap and the XML depth limit of `.ods` reading apply.
+
 ## 9. Non-goals (deliberately NOT in v1)
 
 Intentional exclusions, not oversights.
@@ -606,7 +620,7 @@ Intentional exclusions, not oversights.
 - **Pivot tables.**
 - **Macros / scripting.**
 - **Real-time collaboration / cloud sync.**
-- **Other file formats as first-class citizens** — `.xlsx` and Google Sheets are out; `.ods` is the home format.
+- **Other file formats as first-class citizens** — `.ods` is the home format. `.xlsx` is read but never written (§8.19); Google Sheets is out.
 - **Array / spill formulas** and **iterative calculation** for intentional circular references.
 - **Excel-style structured references** (`Table[Column]` syntax). Tables exist (§8.10), but `.ods` has no equivalent reference syntax, so formulas use ordinary A1/named references; adding structured refs would break the LibreOffice round-trip (§3).
 - **Fill-handle series extrapolation** (auto-incrementing numbers/dates/months). The fill handle copy-fills only (§8.15).
@@ -691,4 +705,4 @@ editing match spreadsheet muscle memory (§3 *Feel*). Each is implemented and te
 
 ## 11. Possible later versions (not commitments)
 
-Printing/PDF, crash auto-recovery of unsaved work (document auto-save itself landed in v1, §8.7a), conditional formatting, charts, pivot tables, `.xlsx` import, cell comments/notes, Excel-style structured references, fill-handle series, more functions (e.g. `SUBTOTAL`/`SUMIFS`/`XLOOKUP`), and eventually other platforms — once the core is rock-solid.
+Printing/PDF, crash auto-recovery of unsaved work (document auto-save itself landed in v1, §8.7a), conditional formatting, charts, pivot tables, ~~`.xlsx` import~~ (landed, §8.19), cell comments/notes, Excel-style structured references, fill-handle series, more functions (e.g. `SUBTOTAL`/`SUMIFS`/`XLOOKUP`), and eventually other platforms — once the core is rock-solid.

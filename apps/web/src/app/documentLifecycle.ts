@@ -1,4 +1,5 @@
 import { effect, untracked } from '@preact/signals';
+import { describeXlsxImport } from '@cellestra/core';
 import {
   after,
   ConflictError,
@@ -150,10 +151,17 @@ export class DocumentLifecycle {
     }
     void this.#host.recovery.clear();
     void this.#host.remember(opened.ref);
-    this.#host.native()?.watch(opened.ref.store === 'native' ? opened.ref.id : null);
+    const report = this.#session.importReport;
+    // A converted Excel file is a new document: it isn't the file on disk, so changes there don't apply.
+    this.#host.native()?.watch(!report && opened.ref.store === 'native' ? opened.ref.id : null);
     // Only a warning: the lock is LibreOffice's, and saving still asks before overwriting.
-    if (opened.lock) this.#host.error(lockWarning(opened.lock));
+    if (opened.lock && !report) this.#host.error(lockWarning(opened.lock));
     this.#host.replaced();
+    if (report) {
+      const title = this.#session.title.peek();
+      const left = describeXlsxImport(report);
+      this.#host.info(`Opened ${opened.ref.name} as a new workbook, ${title}.${left ? ` ${left}` : ''}`);
+    }
   }
 
   /** True when it is safe to replace the document (saved, discarded, or clean). */

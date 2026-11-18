@@ -20,6 +20,11 @@ fileAssociations:
     name: CSV Document
     mimeType: text/csv
     role: Editor
+  # Opened as a new .ods; Cellestra never writes .xlsx.
+  - ext: xlsx
+    name: Excel Workbook
+    mimeType: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+    role: Viewer
 mac:
   icon: build/icon.icns
   category: public.app-category.productivity

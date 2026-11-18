@@ -25,6 +25,7 @@ import {
   contentVersion,
   isAppUrl,
   isSpreadsheetPath,
+  isWritablePath,
   saveAsMismatch,
   spreadsheetFormat,
   PathGrants,
@@ -42,6 +43,12 @@ const webRoot = path.join(here, 'web');
 const FILTERS = [
   { name: 'Spreadsheets', extensions: ['ods', 'csv', 'tsv'] },
   { name: 'OpenDocument Spreadsheet', extensions: ['ods'] },
+];
+/** Open also offers Excel workbooks, which open as a new .ods (PRD §8.19). */
+const OPEN_FILTERS = [
+  { name: 'Spreadsheets', extensions: ['ods', 'csv', 'tsv', 'xlsx', 'xlsm'] },
+  { name: 'OpenDocument Spreadsheet', extensions: ['ods'] },
+  { name: 'Excel Workbook', extensions: ['xlsx', 'xlsm'] },
 ];
 /** How long the renderer has to acknowledge a close request before we offer to force it. */
 const CLOSE_ACK_MS = 3000;
@@ -283,6 +290,8 @@ async function writeNative(
   force: boolean,
 ): Promise<SavedFile> {
   // One save per file at a time, so the check and the write can't interleave with another save.
+  // An Excel workbook is only ever read: its converted copy is saved as a new file.
+  if (!isWritablePath(p)) forbidden();
   return withFileLock(p, async () => {
     if (!force && expectedVersion !== null) {
       const [current, s] = await Promise.all([readFile(p).catch(() => null), stat(p).catch(() => null)]);
@@ -393,7 +402,7 @@ function registerIpc(): void {
   ipcMain.handle(Channels.openDialog, async (e) => {
     if (!trusted(e)) forbidden();
     const win = fromEvent(e);
-    const result = await pickToOpen(win, { properties: ['openFile'], filters: FILTERS });
+    const result = await pickToOpen(win, { properties: ['openFile'], filters: OPEN_FILTERS });
     const p = result.filePaths[0];
     return result.canceled || !p ? null : readNative(p);
   });

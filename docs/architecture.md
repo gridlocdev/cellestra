@@ -18,7 +18,7 @@ Cellestra is one TypeScript code base with three hosts and a command line. The b
             ┌──────────────── packages/core (pure TS) ───────────────────────┐
             │  values · model · formulas · dependencies (recalc) · editing   │
             │  data (sort/filter/tables/validation) · styling · xml          │
-            │  serialization (ods via fflate + saxes, csv) · printing        │
+            │  serialization (ods, xlsx read, csv) · printing                │
             └──────────────────────────────┬─────────────────────────────────┘
                                            │
                                packages/charts (model + ODF chart XML)

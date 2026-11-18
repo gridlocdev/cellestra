@@ -34,6 +34,7 @@ import {
 import {
   detectFormat,
   csvDelimiter,
+  isExcelPath,
   load,
   recalculate,
   saveOds,
@@ -66,7 +67,7 @@ export const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.s
 
 export const convert: CommandSpec = {
   name: 'convert',
-  description: 'Convert between .ods and CSV (both directions)',
+  description: 'Convert between .ods and CSV (both directions), or from .xlsx',
   args: [
     fileArg('input', 'Source file (or - for stdin)'),
     fileArg('output', 'Destination file (or - for stdout)'),
@@ -77,11 +78,13 @@ export const convert: CommandSpec = {
     const outputPath = p.arg('output');
     const locale = resolveLocale(p.str('--locale'));
     const csv = csvOptions(p.str('--delimiter'));
-    const loaded = load(con, inputPath, formatOverride(p.str('--from')), locale, csv);
     const outFormat = detectFormat(outputPath, formatOverride(p.str('--to')));
+    if (outFormat === 'xlsx')
+      throw new CliError('Cellestra reads .xlsx but never writes it. Convert to .ods or .csv instead.');
+    const loaded = load(con, inputPath, formatOverride(p.str('--from')), locale, csv);
     const sheetName = p.str('--sheet');
     if (outFormat === 'ods') {
-      if (sheetName !== null && loaded.package === null) {
+      if (sheetName !== null && loaded.package === null && !isExcelPath(inputPath)) {
         loaded.workbook.renameSheet(loaded.workbook.activeSheet, sheetName);
       }
       recalculate(loaded.workbook);

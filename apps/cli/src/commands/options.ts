@@ -1,6 +1,6 @@
 import type { CsvOptions } from '@cellestra/core';
 import { CliError } from '../infra/errors.ts';
-import type { WorkbookFormat } from '../infra/workspace.ts';
+import { refuseExcelOutput, type WorkbookFormat } from '../infra/workspace.ts';
 import type { ArgumentSpec, OptionSpec } from '../spec.ts';
 
 /** The options and arguments shared across commands. */
@@ -34,7 +34,7 @@ export const localeOpt: OptionSpec = {
   description: 'Locale override for parsing/formatting, e.g. en-US',
 };
 
-export const fromOpt: OptionSpec = { name: '--from', description: 'Input format override: ods | csv' };
+export const fromOpt: OptionSpec = { name: '--from', description: 'Input format override: ods | csv | xlsx' };
 export const toOpt: OptionSpec = { name: '--to', description: 'Output format override: ods | csv' };
 
 export const delimiterOpt: OptionSpec = {
@@ -78,8 +78,10 @@ export function formatOverride(value: string | null | undefined): WorkbookFormat
     case 'csv':
     case 'tsv':
       return 'csv';
+    case 'xlsx':
+      return 'xlsx';
     default:
-      throw new CliError(`Unknown format '${value}'. Use ods or csv.`);
+      throw new CliError(`Unknown format '${value}'. Use ods, csv or xlsx.`);
   }
 }
 
@@ -91,7 +93,7 @@ export function csvOptions(delimiter: string | null | undefined): CsvOptions | n
 
 /** The destination for an edit command: explicit -o, or the input file with --in-place. */
 export function editTarget(inputPath: string, inPlace: boolean, output: string | null): string {
-  if (output !== null) return output;
-  if (inPlace) return inputPath;
+  if (output !== null) return (refuseExcelOutput(output), output);
+  if (inPlace) return (refuseExcelOutput(inputPath), inputPath);
   throw new CliError('Refusing to overwrite without --in-place or -o <file>.');
 }

@@ -15,13 +15,22 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 
+/** What Cellestra saves. */
 const SPREADSHEET = /\.(ods|csv|tsv)$/i;
+/** What it opens: those, and Excel workbooks it converts to a new .ods and never writes (PRD §8.19). */
+const OPENABLE = /\.(ods|csv|tsv|xlsx|xlsm)$/i;
 
+/** A path Cellestra may open: a spreadsheet it saves, or an Excel workbook. */
 export function isSpreadsheetPath(p: unknown): p is string {
-  return typeof p === 'string' && p.length > 0 && !p.includes('\0') && SPREADSHEET.test(p);
+  return typeof p === 'string' && p.length > 0 && !p.includes('\0') && OPENABLE.test(p);
 }
 
-/** The lower-case extension of a spreadsheet path ('ods', 'csv' or 'tsv'), or null. */
+/** A path Cellestra may write: never an Excel workbook, even one it opened. */
+export function isWritablePath(p: unknown): p is string {
+  return isSpreadsheetPath(p) && SPREADSHEET.test(p);
+}
+
+/** The lower-case extension of a path Cellestra saves ('ods', 'csv' or 'tsv'), or null. */
 export function spreadsheetFormat(p: string): 'ods' | 'csv' | 'tsv' | null {
   const m = SPREADSHEET.exec(p);
   return m ? (m[1]!.toLowerCase() as 'ods' | 'csv' | 'tsv') : null;

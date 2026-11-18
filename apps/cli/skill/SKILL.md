@@ -78,7 +78,7 @@ Every op also exists as a verb for one-off use (`style`, `width`, `height`, `fre
 
 To print: `cellestra print book.ods out.pdf --sheet Data` lays the sheet out with its page setup, exactly as the app's Export PDF does (`--range` for part of it; `.html` or `-` writes printable HTML instead). PDF needs a Chromium-family browser (Chrome, Edge, Brave…, or `CELLESTRA_BROWSER`).
 
-For a grid of data you already have as CSV: `cellestra put book.ods Data.B3 --from grid.csv` drops it at a cell (fields parse like typing, so `=…` formulas land as formulas); `cellestra import data.csv --into book.ods --sheet Data` replaces a whole sheet (creating the workbook if absent). `cellestra convert a.csv b.ods` / `convert b.ods c.csv` converts whole files.
+For a grid of data you already have as CSV: `cellestra put book.ods Data.B3 --from grid.csv` drops it at a cell (fields parse like typing, so `=…` formulas land as formulas); `cellestra import data.csv --into book.ods --sheet Data` replaces a whole sheet (creating the workbook if absent). `cellestra convert a.csv b.ods` / `convert b.ods c.csv` converts whole files, and `convert book.xlsx book.ods` turns an Excel workbook into an .ods. Every read command also reads .xlsx and .xlsm (what was left out goes to stderr), but nothing writes .xlsx: save the result as .ods.
 
 ## Reading what is there
 

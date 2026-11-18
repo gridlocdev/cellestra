@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   CellRange,
@@ -12,7 +13,7 @@ import {
 import { effect } from '@preact/signals';
 import { textHeight } from '../src/grid/cellText.ts';
 import { ContentHeights, type RowMeasure } from '../src/grid/rowHeights.ts';
-import { WorkbookSession } from '../src/session/workbookSession.ts';
+import { isExcelFile, odsNameFor, WorkbookSession } from '../src/session/workbookSession.ts';
 
 const refusing: EditCommand = {
   label: 'Sort',
@@ -328,5 +329,29 @@ describe('WorkbookSession and hidden rows', () => {
     expect(session.cellsChangedSince(sheet.name, before)).toContainEqual({ row: 4, column: 0 });
     session.undo();
     expect(sheet.getValue(4, 0)).toEqual(CellValue.number(60));
+  });
+});
+
+describe('opening an .xlsx (PRD §8.19)', () => {
+  it('names the .ods copy after the workbook', () => {
+    expect(isExcelFile('Budget.XLSX')).toBe(true);
+    expect(isExcelFile('macros.xlsm')).toBe(true);
+    expect(isExcelFile('Budget.ods')).toBe(false);
+    expect(odsNameFor('Budget.xlsx')).toBe('Budget.ods');
+    expect(odsNameFor('/a/b/Q3 plan.v2.xlsm')).toBe('Q3 plan.v2.ods');
+  });
+
+  it('loads it as an unsaved workbook with the import report, and clears the report on the next open', () => {
+    const session = new WorkbookSession();
+    const xlsx = readFileSync(
+      new URL('../../core/test/serialization/fixtures/libreoffice-sample.xlsx', import.meta.url),
+    );
+    session.load(xlsx, null, 'Budget.xlsx');
+    expect(session.title.value).toBe('Budget.ods');
+    expect(session.document.value).toBeNull();
+    expect(session.modified.value).toBe(false);
+    expect(session.importReport).not.toBeNull();
+    session.load(OdsWriter.write(Workbook.createNew(), null), null, 'plain.ods');
+    expect(session.importReport).toBeNull();
   });
 });

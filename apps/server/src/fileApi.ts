@@ -65,7 +65,9 @@ export function parseRoots(spec: string, baseDir: string): Root[] {
 }
 
 /** Files the picker offers. Everything else is hidden (dirs are always listed). */
-const OPENABLE = /\.(ods|csv|tsv)$/i;
+const OPENABLE = /\.(ods|csv|tsv|xlsx|xlsm)$/i;
+/** Files a save may write: an Excel workbook is only read, and opens as a new .ods (PRD §8.19). */
+const WRITABLE = /\.(ods|csv|tsv)$/i;
 
 /**
  * The rule `list` shows and `read`/`write` enforce: a spreadsheet file, reached without any
@@ -74,7 +76,13 @@ const OPENABLE = /\.(ods|csv|tsv)$/i;
 function checkSpreadsheetPath(rel: string | null, verb: string): void {
   const segments = checkVisiblePath(rel);
   const base = segments.at(-1) ?? '';
-  if (!OPENABLE.test(base)) throw new ApiError(400, `Only .ods, .csv, and .tsv files can be ${verb}`);
+  if (verb === 'saved' ? !WRITABLE.test(base) : !OPENABLE.test(base))
+    throw new ApiError(
+      400,
+      verb === 'saved'
+        ? 'Only .ods, .csv, and .tsv files can be saved'
+        : `Only .ods, .csv, .tsv, .xlsx, and .xlsm files can be ${verb}`,
+    );
 }
 
 /** Refuse a path with any dot-named segment; returns its segments. */

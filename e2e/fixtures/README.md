@@ -12,3 +12,9 @@ just cli new empty.ods
 just cli new "Café ☕ notes.ods"
 just cli set "Café ☕ notes.ods" --in-place "A1=Crème brûlée" "A2=日本語のテキスト"
 ```
+
+`expenses.xlsx` is `budget.ods` converted by LibreOffice, so the `.xlsx` import opens a file Excel-format tools really write:
+
+```bash
+soffice --headless --convert-to xlsx budget.ods   # then rename budget.xlsx to expenses.xlsx
+```

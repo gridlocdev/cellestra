@@ -851,7 +851,12 @@ export class AppController {
   #showToast(text: string, tone: 'info' | 'error'): void {
     this.toast.value = { text, tone };
     this.#cancelToast?.();
-    this.#cancelToast = after(tone === 'error' ? 6000 : 2500, () => (this.toast.value = null));
+    // Long notices (what an .xlsx import left out) stay up long enough to read.
+    const readable = Math.min(12_000, text.length * 60);
+    this.#cancelToast = after(
+      Math.max(tone === 'error' ? 6000 : 2500, readable),
+      () => (this.toast.value = null),
+    );
   }
 
   // ── Selection helpers ────────────────────────────────────────────────────

@@ -90,7 +90,7 @@ function civilSerial(year: number, month: number, day: number): number | null {
 const shortDateCodes = new Map<string, string>();
 
 /** The locale's numeric short-date pattern as a format code (`m/d/yyyy`, `dd.mm.yyyy`). */
-function shortDateCode(locale: string): string {
+export function shortDateCode(locale: string): string {
   let code = shortDateCodes.get(locale);
   if (code !== undefined) return code;
   const fmt = new Intl.DateTimeFormat(safeLocale(locale), {

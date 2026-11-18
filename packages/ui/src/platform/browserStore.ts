@@ -3,6 +3,7 @@ import {
   ACCEPT,
   ConflictError,
   mimeFor,
+  OPENABLE_TYPES,
   SPREADSHEET_TYPES,
   type DocumentRef,
   type FilePicker,
@@ -40,6 +41,7 @@ async function ensurePermission(
 }
 
 const pickerTypes = [{ description: 'Spreadsheets', accept: SPREADSHEET_TYPES }];
+const openPickerTypes = [{ description: 'Spreadsheets', accept: OPENABLE_TYPES }];
 
 function isAbort(e: unknown): boolean {
   return e instanceof DOMException && e.name === 'AbortError';
@@ -66,7 +68,7 @@ export class BrowserStore implements FileStore, FilePicker {
   async pick(): Promise<OpenedDocument | null> {
     if (this.win.showOpenFilePicker) {
       try {
-        const [handle] = await this.win.showOpenFilePicker({ types: pickerTypes, multiple: false });
+        const [handle] = await this.win.showOpenFilePicker({ types: openPickerTypes, multiple: false });
         return handle ? this.fromHandle(handle) : null;
       } catch (e) {
         if (isAbort(e)) return null;

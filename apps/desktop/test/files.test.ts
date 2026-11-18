@@ -19,6 +19,8 @@ import {
   changedSince,
   contentVersion,
   isAppUrl,
+  isSpreadsheetPath,
+  isWritablePath,
   PathGrants,
   pdfExportTarget,
   readLockFile,
@@ -198,6 +200,16 @@ describe('main-process guards', () => {
     await g.flushed();
     expect(g.has('/x/new.ods')).toBe(true);
     expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(['/x/kept.ods']);
+  });
+});
+
+describe('.xlsx files (read only, PRD §8.19)', () => {
+  it('opens .xlsx and .xlsm but never writes them', () => {
+    expect(isSpreadsheetPath('/tmp/Book.xlsx')).toBe(true);
+    expect(isSpreadsheetPath('/tmp/Book.XLSM')).toBe(true);
+    expect(isWritablePath('/tmp/Book.xlsx')).toBe(false);
+    expect(isWritablePath('/tmp/Book.ods')).toBe(true);
+    expect(saveAsMismatch('Book.ods', '/tmp/Book.xlsx')).not.toBeNull();
   });
 });
 

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { CellValue, OdsWriter, Workbook } from '@cellestra/core';
 import { signal } from '@preact/signals';
 import { describe, expect, it, vi } from 'vitest';
@@ -208,5 +209,27 @@ describe('a file changed on disk', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('opening an .xlsx (PRD §8.19)', () => {
+  const xlsx = readFileSync(
+    new URL('../../../packages/core/test/serialization/fixtures/libreoffice-sample.xlsx', import.meta.url),
+  );
+
+  it('opens it as a new unsaved .ods, says so, and never watches or saves to the .xlsx', async () => {
+    const notices: string[] = [];
+    const { session, lifecycle, native, desktop } = setup({ info: (t) => notices.push(t) });
+    desktop.on = true;
+    lifecycle.adopt({
+      ref: { store: 'native', name: 'Budget.xlsx', id: '/x/Budget.xlsx', version: 'v1' },
+      bytes: xlsx,
+    });
+    await flush();
+    expect(session.title.value).toBe('Budget.ods');
+    expect(session.document.value).toBeNull();
+    expect(session.importReport).not.toBeNull();
+    expect(native.watch).toHaveBeenLastCalledWith(null);
+    expect(notices[0]).toMatch(/^Opened Budget\.xlsx as a new workbook, Budget\.ods\./);
   });
 });

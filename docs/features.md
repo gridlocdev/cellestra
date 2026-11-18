@@ -18,6 +18,8 @@ Cellestra reads and writes `.ods` and keeps anything it doesn't understand intac
 
 When LibreOffice has a file open, it keeps a `.~lock.<name>#` file beside it. Opening that file in the desktop app or from the NAS reads the lock and warns who opened it and when, for example “Opened by Ada on 14.11.2026 10:22 in LibreOffice – your changes may conflict.” The file still opens, and Cellestra never writes or removes lock files. A plain browser can't see the folder around a file, so it can't warn.
 
+**Open…** also opens Excel workbooks (`.xlsx` and `.xlsm`). The workbook opens as a new, unsaved file with the same name ending in `.ods` (`Budget.xlsx` becomes `Budget.ods`), and the first save asks where to put it, so the Excel file is never written. Values, formulas, number formats, fonts, fills, borders, alignment, merges, column widths, row heights, hidden rows and columns, frozen panes and named ranges come across. Charts, images, comments, conditional formatting, data validation, pivot tables, AutoFilters and macros are left out, and a notice lists the ones the file had. A formula that uses a function Cellestra doesn't have keeps its last result as a plain value, and hidden sheets are shown.
+
 While a file from the NAS is open, Cellestra checks every 30 seconds whether someone else saved it (only while the tab is visible). If you have no unsaved changes it offers to reload the file. If you do, it warns you, and saving then asks whether to overwrite their version, save a copy or reload.
 
 ## Formulas
@@ -71,4 +73,4 @@ A screen reader such as VoiceOver hears the active cell's address and what it sh
 
 ## Command line
 
-The `cellestra` command reads and edits `.ods` files from scripts and CI with the same engine as the app: convert to and from CSV, read and set cells, recalculate, check a workbook for formula errors, compare two workbooks, and more. See [Development](development.md#the-cellestra-cli) for how to run it.
+The `cellestra` command reads and edits `.ods` files from scripts and CI with the same engine as the app: convert to and from CSV, convert `.xlsx` to `.ods`, read and set cells, recalculate, check a workbook for formula errors, compare two workbooks, and more. See [Development](development.md#the-cellestra-cli) for how to run it.

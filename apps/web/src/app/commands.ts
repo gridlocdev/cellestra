@@ -78,7 +78,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     {
       id: 'file.open',
       title: 'Open…',
-      description: 'Open a spreadsheet (.ods, .csv)',
+      description: 'Open a spreadsheet (.ods, .csv, .xlsx)',
       group: 'File',
       shortcut: 'mod+o',
       icon: 'folder-open',

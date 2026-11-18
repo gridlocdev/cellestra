@@ -83,16 +83,29 @@ export class ConflictError extends Error {
   }
 }
 
+/** What Cellestra saves: `.ods`, `.csv` and `.tsv`. */
 export const SPREADSHEET_TYPES = {
   'application/vnd.oasis.opendocument.spreadsheet': ['.ods'],
   'text/csv': ['.csv'],
   'text/tab-separated-values': ['.tsv'],
 } as const;
 
-export const ACCEPT = '.ods,.csv,.tsv';
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const XLSM_MIME = 'application/vnd.ms-excel.sheet.macroEnabled.12';
+
+/** What Cellestra opens: what it saves, and Excel workbooks it converts (PRD §8.19). */
+export const OPENABLE_TYPES = {
+  ...SPREADSHEET_TYPES,
+  [XLSX_MIME]: ['.xlsx'],
+  [XLSM_MIME]: ['.xlsm'],
+} as const;
+
+export const ACCEPT = '.ods,.csv,.tsv,.xlsx,.xlsm';
 
 export function mimeFor(name: string): string {
   const lower = name.toLowerCase();
+  if (lower.endsWith('.xlsx')) return XLSX_MIME;
+  if (lower.endsWith('.xlsm')) return XLSM_MIME;
   if (lower.endsWith('.csv')) return 'text/csv';
   if (lower.endsWith('.tsv')) return 'text/tab-separated-values';
   return 'application/vnd.oasis.opendocument.spreadsheet';

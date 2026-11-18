@@ -1,5 +1,5 @@
 /**
- * File I/O: `.ods` (ODF 1.3 spreadsheet) and CSV. Byte-oriented, with no DOM or Node APIs, so it
+ * File I/O: `.ods` (ODF 1.3 spreadsheet), CSV, and reading `.xlsx`. Byte-oriented, with no DOM or Node APIs, so it
  * runs unchanged in a browser, a worker, or Node.
  */
 import type { Workbook } from '../model/workbook.ts';
@@ -24,6 +24,13 @@ export {
   readContentXml,
   writeContentXml,
 } from './ods/index.ts';
+export {
+  describeXlsxImport,
+  type XlsxImportReport,
+  type XlsxLeftOut,
+  XlsxReader,
+  type XlsxReadResult,
+} from './xlsx/index.ts';
 export { CsvOptions, fillFromCsv, parseCsv, readCsv, writeCsv } from './csv/index.ts';
 
 /** Read `.ods` bytes into a workbook. */

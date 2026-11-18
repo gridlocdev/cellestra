@@ -1718,3 +1718,49 @@ describe('isExpectedError', () => {
     expect(isExpectedError(new RangeError('Invalid array length'))).toBe(false);
   });
 });
+
+describe('.xlsx input (read only)', () => {
+  const sample = new URL(
+    '../../../packages/core/test/serialization/fixtures/libreoffice-sample.xlsx',
+    import.meta.url,
+  );
+  let xlsx = '';
+  beforeEach(() => {
+    xlsx = path2('Sample.xlsx');
+    writeFileSync(xlsx, readFileSync(sample));
+  });
+
+  it('converts to .ods, noting on stderr what was left out', () => {
+    const ods = path2('Sample.ods');
+    const r = run('convert', xlsx, ods);
+    expect(r.exit).toBe(0);
+    expect(r.err).toContain('Left out:');
+    expect(r.err).toContain('comments');
+    const book = readOds(readFileSync(ods));
+    expect(book.worksheets.map((s) => s.name)).toEqual(['Data', 'Lookup', 'Q2 Sales', 'Empty']);
+    expect(book.worksheets[0]!.find(2, 6)?.formula).toBe('ROUND(B3*C3*(1-E3), 2)');
+  });
+
+  it('is read by commands that read a workbook', () => {
+    const r = run('get', xlsx, 'Data.G3');
+    expect(r.exit).toBe(0);
+    expect(r.out).toContain('37.8');
+  });
+
+  it('is never written: --in-place, -o and convert refuse before anything changes', () => {
+    const before = readFileSync(xlsx);
+    const inPlace = run('set', xlsx, 'Data.A1', 'x', '--in-place');
+    expect(inPlace.exit).toBe(1);
+    expect(inPlace.err).toContain('never writes');
+    const other = path2('Other.xlsx');
+    expect(run('set', xlsx, 'Data.A1', 'x', '-o', other).exit).toBe(1);
+    expect(run('convert', xlsx, other).exit).toBe(1);
+    expect(readFileSync(xlsx)).toEqual(before);
+    expect(() => statSync(other)).toThrow();
+  });
+
+  it('goes to the launcher, which opens it as a new .ods', () => {
+    expect(run(xlsx).exit).toBe(0);
+    expect(launched).toEqual([xlsx]);
+  });
+});

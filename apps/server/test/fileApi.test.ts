@@ -176,6 +176,17 @@ describe('read and write rules', () => {
     expect((await put('.git/y.ods', 'x')).status).toBe(403);
   });
 
+  it('reads .xlsx files but refuses to save to them (PRD §8.19)', async () => {
+    const get = (p: string) => fetch(`${base}/api/file?root=docs&path=${p}`, { headers: auth });
+    await writeFile(path.join(dir, 'book.xlsx'), 'PK');
+    const read = await get('book.xlsx');
+    expect(read.status).toBe(200);
+    expect(await read.text()).toBe('PK');
+    expect((await put('book.xlsx', 'x')).status).toBe(400);
+    expect(await readFile(path.join(dir, 'book.xlsx'), 'utf8')).toBe('PK');
+    await rm(path.join(dir, 'book.xlsx'));
+  });
+
   it('lets only one of two concurrent saves from the same etag win', async () => {
     await writeFile(path.join(dir, 'race.ods'), 'v0');
     const etag = (await fetch(`${base}/api/file?root=docs&path=race.ods`, { headers: auth })).headers.get(

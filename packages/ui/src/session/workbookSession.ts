@@ -12,6 +12,7 @@ import {
   RenameSheetCommand,
   SheetName,
   Workbook,
+  XlsxReader,
   readCsv,
   writeCsv,
   type CellStyle,
@@ -21,6 +22,7 @@ import {
   EditResult,
   type OdsPackage,
   type Worksheet,
+  type XlsxImportReport,
 } from '@cellestra/core';
 import type { TextMeasure } from '../grid/cellText.ts';
 import { canvasMeasure, fitCsvColumns } from '../grid/columnFit.ts';
@@ -38,6 +40,8 @@ const CELL_LOG_VERSIONS = 64;
 const CELL_LOG_MAX_CELLS = 50_000;
 
 export type DocumentFormat = 'ods' | 'csv';
+
+const UNTITLED = 'Untitled.ods';
 
 /** What a step of history restores the selection to. */
 interface HistoryEntry {
@@ -61,6 +65,9 @@ export class WorkbookSession {
   readonly #circular = signal(false);
   readonly #lastAction = signal('');
   readonly #savedAt = signal<Date | null>(null);
+  /** The title of a document with no file yet: `Untitled.ods`, or `Budget.ods` for an imported `Budget.xlsx`. */
+  readonly #untitledName = signal(UNTITLED);
+  #imported: XlsxImportReport | null = null;
 
   #engine: RecalculationEngine;
   #history: EditHistory;
@@ -101,7 +108,9 @@ export class WorkbookSession {
     return this.#workbook.value.worksheets.map((s) => s.name);
   });
   readonly activeIndex: ReadonlySignal<number> = this.#activeIndex;
-  readonly title: ReadonlySignal<string> = computed(() => this.#document.value?.name ?? 'Untitled.ods');
+  readonly title: ReadonlySignal<string> = computed(
+    () => this.#document.value?.name ?? this.#untitledName.value,
+  );
   readonly canUndo: ReadonlySignal<boolean> = computed(() => (this.#version.value, this.#history.canUndo));
   readonly canRedo: ReadonlySignal<boolean> = computed(() => (this.#version.value, this.#history.canRedo));
   readonly calculationMode: ReadonlySignal<CalculationMode> = computed(
@@ -131,6 +140,14 @@ export class WorkbookSession {
     return this.#history.redoLabel;
   }
 
+  /**
+   * What the last `load` left out of an `.xlsx` it converted, or null when the open document didn't
+   * come from one (PRD §8.19).
+   */
+  get importReport(): XlsxImportReport | null {
+    return this.#imported;
+  }
+
   // ── Documents ────────────────────────────────────────────────────────────
 
   newDocument(): void {
@@ -138,15 +155,23 @@ export class WorkbookSession {
   }
 
   /**
-   * Parse bytes by file name (.ods, else CSV/TSV) and make them the open document. Throws on bad
-   * files. `saveAs` overrides the format Save writes (recovery restores ODS bytes of a CSV document).
+   * Parse bytes by file name (.ods, .xlsx, else CSV/TSV) and make them the open document. Throws on
+   * bad files. `saveAs` overrides the format Save writes (recovery restores ODS bytes of a CSV
+   * document). An `.xlsx` becomes a new, unsaved `.ods` named after it: the `.xlsx` is never written
+   * (PRD §8.19), and `importReport` says what was left out.
    */
   load(
     bytes: Uint8Array,
     ref: DocumentRef | null,
-    name = ref?.name ?? 'Untitled.ods',
+    name = ref?.name ?? UNTITLED,
     saveAs?: DocumentFormat,
   ): void {
+    if (isExcelFile(name)) {
+      const { workbook, report } = XlsxReader.read(bytes, this.locale);
+      this.#adopt(workbook, null, null, 'ods', odsNameFor(name));
+      this.#imported = report;
+      return;
+    }
     const format = formatOf(name);
     if (format === 'ods') {
       const { workbook, package: pkg } = OdsReader.readWithPackage(bytes);
@@ -211,8 +236,15 @@ export class WorkbookSession {
     return this.#generation;
   }
 
-  #adopt(wb: Workbook, pkg: OdsPackage | null, ref: DocumentRef | null, format: DocumentFormat): void {
+  #adopt(
+    wb: Workbook,
+    pkg: OdsPackage | null,
+    ref: DocumentRef | null,
+    format: DocumentFormat,
+    untitledName = UNTITLED,
+  ): void {
     this.#generation++;
+    this.#imported = null;
     this.#engine = new RecalculationEngine(wb);
     this.#engine.rebuildGraph();
     // PRD §8.6: manual calculation keeps the file's cached values until the user recalculates.
@@ -226,6 +258,7 @@ export class WorkbookSession {
       this.#workbook.value = wb;
       this.#activeIndex.value = Math.min(Math.max(wb.settings.activeSheetIndex, 0), wb.sheetCount - 1);
       this.#document.value = ref;
+      this.#untitledName.value = untitledName;
       this.#format.value = format;
       this.#modified.value = false;
       this.#circular.value = circular;
@@ -588,6 +621,17 @@ function editCodeFor(kind: string): string {
 
 function looksNumeric(s: string): boolean {
   return /^\s*[-+]?(\d[\d,.\s]*|\.\d+)(e[-+]?\d+)?%?\s*$/i.test(s);
+}
+
+/** Whether a file is an Excel workbook Cellestra reads (and never writes): `.xlsx`, `.xlsm`. */
+export function isExcelFile(name: string): boolean {
+  return /\.xls[xm]$/i.test(name);
+}
+
+/** The `.ods` name an imported Excel file is given: `Budget.xlsx` → `Budget.ods`. */
+export function odsNameFor(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? name;
+  return base.replace(/\.[^.]*$/, '') + '.ods';
 }
 
 export function formatOf(name: string): DocumentFormat {

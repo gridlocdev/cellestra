@@ -107,7 +107,15 @@ export class OdsPackage {
     return this.partNames.filter((name) => !GeneratedParts.has(name));
   }
 
-  static read(bytes: Uint8Array, maxUncompressedBytes = MAX_UNCOMPRESSED_BYTES): OdsPackage {
+  /**
+   * `streamed` names the parts kept compressed and inflated only as they are read (`textChunks`):
+   * content.xml for an `.ods`; the worksheets and shared strings for an `.xlsx`.
+   */
+  static read(
+    bytes: Uint8Array,
+    maxUncompressedBytes = MAX_UNCOMPRESSED_BYTES,
+    streamed: (name: string) => boolean = (name) => STREAMED_PARTS.has(name),
+  ): OdsPackage {
     const pkg = new OdsPackage();
     // A zip bomb declares tiny compressed entries that inflate to gigabytes. fflate inflates each
     // entry into a buffer of its declared size (and never grows it), so bounding the declared sizes
@@ -125,7 +133,7 @@ export class OdsPackage {
             );
           }
           // A streamed part stays compressed; it is found in the ZIP directory below.
-          if (STREAMED_PARTS.has(file.name) && (file.compression === 0 || file.compression === 8)) {
+          if (streamed(file.name) && (file.compression === 0 || file.compression === 8)) {
             kept.set(file.name, file.originalSize);
             return false;
           }

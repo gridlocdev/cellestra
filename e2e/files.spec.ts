@@ -35,6 +35,22 @@ test.describe('Files', () => {
     await expect(contents(page)).toHaveValue('日本語のテキスト');
   });
 
+  test('opens an .xlsx as a new .ods workbook, and the first save asks where to put it', async ({ page }) => {
+    await page.keyboard.press('ControlOrMeta+KeyO');
+    const dialog = page.getByRole('dialog', { name: 'Open from NAS' });
+    await dialog.getByRole('option', { name: 'expenses.xlsx' }).click();
+    await dialog.getByRole('button', { name: 'Open', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page).toHaveTitle('expenses.ods — Cellestra');
+    await expect(page.getByRole('status')).toContainText(
+      'Opened expenses.xlsx as a new workbook, expenses.ods.',
+    );
+    await goTo(page, 'D2');
+    await expect(contents(page)).toHaveValue('=B2+C2');
+    await page.keyboard.press('ControlOrMeta+KeyS');
+    await expect(page.getByRole('dialog', { name: 'Save to NAS' })).toBeVisible();
+  });
+
   test('an edit is saved to disk with ⌘S and is there after a reload', async ({ page }) => {
     await openFile(page, 'budget.ods');
     await enter(page, 'B2', '1300');

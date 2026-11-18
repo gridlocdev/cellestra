@@ -26,13 +26,16 @@ import {
   Workbook,
   writeOds,
   CsvOptions,
+  describeXlsxImport,
+  XlsxReader,
   type OdsPackage,
   type RecalculationResult,
 } from '@cellestra/core';
 import { CliError, UsageError } from './errors.ts';
 import type { Console } from './io.ts';
 
-export type WorkbookFormat = 'ods' | 'csv';
+/** `xlsx` is read only: Cellestra never writes Excel files (PRD §8.19). */
+export type WorkbookFormat = 'ods' | 'csv' | 'xlsx';
 
 /** A workbook plus the package it came from (null for CSV), so a save keeps unmodeled content. */
 export interface LoadedWorkbook {
@@ -43,14 +46,14 @@ export interface LoadedWorkbook {
 export const SPREADSHEET_EXTENSION = '.ods';
 
 export function isWorkbook(path: string): boolean {
-  return extname(path).toLowerCase() === SPREADSHEET_EXTENSION;
+  return extname(path).toLowerCase() === SPREADSHEET_EXTENSION || isExcelPath(path);
 }
 
-/** `cellestra <file>`: open an .ods in the app; anything else is probably a mistyped verb. */
+/** `cellestra <file>`: open an .ods (or an .xlsx, as a new .ods) in the app; anything else is probably a mistyped verb. */
 export function launch(con: Console, path: string): number {
   if (!isWorkbook(path)) {
     throw new UsageError(
-      `'${path}' isn't a workbook Cellestra opens (${SPREADSHEET_EXTENSION}). ` +
+      `'${path}' isn't a workbook Cellestra opens (${SPREADSHEET_EXTENSION} or .xlsx). ` +
         'If you meant a command, `cellestra --help` lists them.',
     );
   }
@@ -58,17 +61,33 @@ export function launch(con: Console, path: string): number {
   return con.io.launch(resolve(path));
 }
 
+/** An Excel workbook: read like any other, never written. */
+export function isExcelPath(path: string): boolean {
+  return /\.xls[xm]$/i.test(path);
+}
+
+/** Refuse to write an Excel file, before any work is done. */
+export function refuseExcelOutput(path: string): void {
+  if (isExcelPath(path))
+    throw new CliError(
+      `Cellestra reads .xlsx but never writes it, so '${path}' stays as it is. Save the result as .ods with -o <file>.ods.`,
+    );
+}
+
 export function detectFormat(path: string, explicit: WorkbookFormat | null): WorkbookFormat {
   if (explicit) return explicit;
   switch (extname(path).toLowerCase()) {
     case '.ods':
       return 'ods';
+    case '.xlsx':
+    case '.xlsm':
+      return 'xlsx';
     case '.csv':
     case '.tsv':
       return 'csv';
     default:
       throw new CliError(
-        `Can't tell the format of '${path}' from its extension — pass --from ods|csv (or --to).`,
+        `Can't tell the format of '${path}' from its extension — pass --from ods|csv|xlsx (or --to).`,
       );
   }
 }
@@ -85,7 +104,22 @@ export function load(
   locale: string | null,
   csv: CsvOptions | null = null,
 ): LoadedWorkbook {
-  const format = detectFormat(path, from);
+  // Most commands read "a workbook" (`from` = 'ods'); an Excel file is one too.
+  const format = from === 'ods' && isExcelPath(path) ? 'xlsx' : detectFormat(path, from);
+  if (format === 'xlsx') {
+    const bytes = readInputBytes(con, path);
+    let read: ReturnType<typeof XlsxReader.read>;
+    try {
+      read = XlsxReader.read(bytes, locale ?? 'en-US');
+    } catch (e) {
+      if (e instanceof CliError) throw e;
+      throw new CliError(`Could not read '${path}' as an .xlsx file: ${(e as Error).message}`);
+    }
+    if (locale !== null) read.workbook.settings.locale = locale;
+    const left = describeXlsxImport(read.report);
+    if (left) con.errLine(`${path}: ${left}`);
+    return { workbook: read.workbook, package: null };
+  }
   if (format === 'ods') {
     const bytes = readInputBytes(con, path);
     let loaded: { workbook: Workbook; package: OdsPackage };
@@ -146,6 +180,7 @@ export function saveText(con: Console, content: string, path: string): void {
  * would split the link.
  */
 export function atomicWrite(path: string, bytes: Uint8Array): void {
+  refuseExcelOutput(path);
   const full = realTarget(resolve(path));
   const target = statOrNull(full);
   if (target && !writable(full)) throw new CliError(`'${path}' is read-only; nothing was written.`);

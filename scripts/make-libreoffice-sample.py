@@ -8,7 +8,8 @@ named ranges, a note, a validation, an autofilter, hidden rows and columns. (No 
 a headless conversion saves no view settings.)
 A headless LibreOffice then opens it, calculates every formula and saves it as .ods, so the
 fixture is LibreOffice's own output: its styles, settings, cached values and package layout.
-The default output is packages/core/test/serialization/fixtures/libreoffice-sample.ods.
+The default output is packages/core/test/serialization/fixtures/libreoffice-sample.ods. LibreOffice
+also saves that .ods as .xlsx beside it, for the .xlsx reader's real-file tests.
 
     python3 scripts/make-libreoffice-sample.py --check <file.ods>
 
@@ -317,6 +318,12 @@ def make(out):
         os.makedirs(os.path.dirname(out), exist_ok=True)
         shutil.copy(made, out)
         print("wrote", out)
+        soffice(os.path.join(work, "profile"), "--convert-to", "xlsx", "--outdir", work, made)
+        xlsx = os.path.join(work, "libreoffice-sample.xlsx")
+        if not os.path.exists(xlsx):
+            sys.exit("LibreOffice wrote no .xlsx")
+        shutil.copy(xlsx, os.path.splitext(out)[0] + ".xlsx")
+        print("wrote", os.path.splitext(out)[0] + ".xlsx")
     finally:
         shutil.rmtree(work, ignore_errors=True)
 

@@ -289,6 +289,11 @@ export {
   writeContentXml,
   writeCsv,
   writeOds,
+  describeXlsxImport,
+  type XlsxImportReport,
+  type XlsxLeftOut,
+  XlsxReader,
+  type XlsxReadResult,
 } from './serialization/index.ts';
 export {
   type Condition,
