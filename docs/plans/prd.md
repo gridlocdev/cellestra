@@ -706,4 +706,4 @@ editing match spreadsheet muscle memory (§3 *Feel*). Each is implemented and te
 
 ## 11. Possible later versions (not commitments)
 
-Printing/PDF, crash auto-recovery of unsaved work (document auto-save itself landed in v1, §8.7a), conditional formatting, charts, pivot tables, ~~`.xlsx` import~~ (landed, §8.19), cell comments/notes, Excel-style structured references, fill-handle series, more functions (e.g. `SUBTOTAL`/`SUMIFS`/`XLOOKUP`), and eventually other platforms — once the core is rock-solid.
+~~Printing/PDF~~ (landed: **Print…** and **Export Sheet as PDF…**), crash auto-recovery of unsaved work (document auto-save itself landed in v1, §8.7a), conditional formatting, charts, pivot tables, ~~`.xlsx` import~~ (landed, §8.19), cell comments/notes, Excel-style structured references, fill-handle series, more functions (e.g. `SUBTOTAL`/`SUMIFS`/`XLOOKUP`), and eventually other platforms — once the core is rock-solid.
