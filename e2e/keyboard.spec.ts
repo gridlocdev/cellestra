@@ -96,6 +96,58 @@ test.describe('The keyboard', () => {
     await expect(page.getByRole('textbox', { name: 'Cell reference' })).toHaveValue('B2');
     await expect(contents(page)).toHaveValue('1200');
   });
+
+  test('Enter after Shift+Tab goes straight down', async ({ page }) => {
+    await openFile(page, 'budget.ods');
+    await goTo(page, 'B1');
+    await page.getByRole('grid', { name: 'Spreadsheet' }).focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('textbox', { name: 'Cell reference' })).toHaveValue('A3');
+  });
+
+  test('typing a row with Tab, Enter starts the next row where the typing began', async ({ page }) => {
+    await openFile(page, 'budget.ods');
+    await goTo(page, 'E1');
+    await page.getByRole('grid', { name: 'Spreadsheet' }).focus();
+    for (const text of ['a', 'b']) {
+      await page.keyboard.type(text);
+      await page.keyboard.press('Tab');
+    }
+    await page.keyboard.type('c');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('textbox', { name: 'Cell reference' })).toHaveValue('E2');
+  });
+
+  test('↓ while typing after Tabs goes straight down', async ({ page }) => {
+    await openFile(page, 'budget.ods');
+    await goTo(page, 'E1');
+    await page.getByRole('grid', { name: 'Spreadsheet' }).focus();
+    for (const text of ['a', 'b']) {
+      await page.keyboard.type(text);
+      await page.keyboard.press('Tab');
+    }
+    await page.keyboard.type('c');
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByRole('textbox', { name: 'Cell reference' })).toHaveValue('G2');
+  });
+
+  test('Enter goes straight down once the selection has moved away from the Tabs and back', async ({
+    page,
+  }) => {
+    await openFile(page, 'budget.ods');
+    await goTo(page, 'E1');
+    const grid = page.getByRole('grid', { name: 'Spreadsheet' });
+    await grid.focus();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await goTo(page, 'B5');
+    await goTo(page, 'G1');
+    await grid.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('textbox', { name: 'Cell reference' })).toHaveValue('G2');
+  });
 });
 
 test.describe('Accessibility', () => {

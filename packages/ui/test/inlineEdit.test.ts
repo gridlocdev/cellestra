@@ -82,7 +82,12 @@ describe('beginning and ending an edit', () => {
     expect(editor.selectionStart).toBe(5);
     expect(view.at).toEqual({ row: 0, column: 0 });
     editor.type('ed');
-    expect(edit.key(key('Enter'), () => lines)).toEqual({ kind: 'end', commit: true, move: [1, 0] });
+    expect(edit.key(key('Enter'), () => lines)).toEqual({
+      kind: 'end',
+      commit: true,
+      move: [1, 0],
+      cycle: true,
+    });
     expect(edit.end(true)).toBe('closed');
     expect(commits).toEqual(['started']);
     expect(view.at).toBeNull();
@@ -113,11 +118,17 @@ describe('editor keys', () => {
   it('Escape cancels, Tab commits sideways, ⌥↩ breaks the line', () => {
     const { edit } = setup();
     edit.begin({ row: 3, column: 3 }, 'x', () => {});
-    expect(edit.key(key('Escape'), () => lines)).toEqual({ kind: 'end', commit: false, move: [0, 0] });
+    expect(edit.key(key('Escape'), () => lines)).toEqual({
+      kind: 'end',
+      commit: false,
+      move: [0, 0],
+      cycle: false,
+    });
     expect(edit.key(key('Tab', { shiftKey: true }), () => lines)).toEqual({
       kind: 'end',
       commit: true,
       move: [0, -1],
+      cycle: true,
     });
     expect(edit.key(key('Enter', { altKey: true }), () => lines)).toEqual({ kind: 'newline' });
   });
@@ -128,7 +139,12 @@ describe('editor keys', () => {
     editor.setSelectionRange(1, 1);
     expect(edit.key(key('ArrowDown'), () => lines)).toBeNull();
     editor.setSelectionRange(5, 5);
-    expect(edit.key(key('ArrowDown'), () => lines)).toEqual({ kind: 'end', commit: true, move: [1, 0] });
+    expect(edit.key(key('ArrowDown'), () => lines)).toEqual({
+      kind: 'end',
+      commit: true,
+      move: [1, 0],
+      cycle: false,
+    });
   });
 });
 

@@ -32,6 +32,15 @@ describe('Tab then Enter', () => {
     expect(enterOrigin(run, { row: 0, column: 1 })).toEqual({ row: 0, column: 0 });
   });
 
+  it('goes straight down after Shift+Tab left of where the run started', () => {
+    let run = afterTab(null, { row: 1, column: 1 }, { row: 1, column: 0 });
+    expect(enterOrigin(run, { row: 1, column: 0 })).toEqual({ row: 1, column: 0 });
+    run = afterTab(null, { row: 1, column: 2 }, { row: 1, column: 3 });
+    run = afterTab(run, { row: 1, column: 3 }, { row: 1, column: 2 });
+    run = afterTab(run, { row: 1, column: 2 }, { row: 1, column: 1 });
+    expect(enterOrigin(run, { row: 1, column: 1 })).toEqual({ row: 1, column: 1 });
+  });
+
   it('starts a new run once the active cell moved away from the last Tab', () => {
     const run = afterTab(null, { row: 1, column: 2 }, { row: 1, column: 3 });
     expect(enterOrigin(run, { row: 5, column: 3 })).toEqual({ row: 5, column: 3 });

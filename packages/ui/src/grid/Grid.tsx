@@ -169,6 +169,8 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     tipCell: null as { row: number; column: number } | null,
     /** The Tab presses along the current row, so Enter can go back to where they started. */
     tabRun: null as TabRun | null,
+    /** The selection the last Tab left; any other move since (a click, the Name Box) ends the run. */
+    tabRunAt: null as unknown,
   });
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
   /** The formula aids under the editor: function names matching what is typed, or the argument hint. */
@@ -428,7 +430,12 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
   };
 
   /** False when the host rejected the value (a stop validation rule); the editor stays open. */
-  const endEdit = (commit: boolean, move: readonly [number, number] = [0, 0], refocus = true): boolean => {
+  const endEdit = (
+    commit: boolean,
+    move: readonly [number, number] = [0, 0],
+    refocus = true,
+    cycle = true,
+  ): boolean => {
     const result = edit.end(commit);
     if (result === 'refused') {
       if (refocus) editorRef.current!.select();
@@ -436,7 +443,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     }
     if (result === 'none') return true;
     if (refocus) rootRef.current?.focus();
-    if (move[0] || move[1]) moveActive(move[0], move[1], false, true);
+    if (move[0] || move[1]) moveActive(move[0], move[1], false, cycle);
     return true;
   };
 
@@ -510,7 +517,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       const m = host.sheet.value.findMerge(row, column);
       return !!m && (m.range.top !== row || m.range.left !== column);
     };
-    const run = state.current.tabRun;
+    const run = state.current.tabRunAt === selection.state.value ? state.current.tabRun : null;
     state.current.tabRun = null;
     if (cycleInRange && !extend && selection.cycle(dr, dc, skipCell)) {
       const a = selection.active.value;
@@ -532,6 +539,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     selection.select(row, column, { extend, grow: growOverSheetMerges });
     if (cycleInRange && !extend && dr === 0 && dc !== 0)
       state.current.tabRun = afterTab(run, active, selection.active.value);
+    state.current.tabRunAt = selection.state.value;
     // Extending a whole-row (or whole-column) selection must not scroll to its far end.
     reveal(row, column, extend ? { x: dc !== 0, y: dr !== 0 } : undefined);
   };
@@ -624,7 +632,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
     const action = edit.key(e, () => state.current.viewport ?? viewport());
     if (!action) return;
     e.preventDefault();
-    if (action.kind === 'end') endEdit(action.commit, action.move);
+    if (action.kind === 'end') endEdit(action.commit, action.move, true, action.cycle);
     // Inserted here rather than left to the textarea: macOS doesn't reliably insert one for ⌥↩.
     else if (action.kind === 'newline') insertLineBreak(e.currentTarget as HTMLTextAreaElement);
   };

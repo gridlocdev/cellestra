@@ -12,6 +12,8 @@
 - **Clearer chart messages.** When a chart can't switch to Table mode, the message names the range or series at fault. **Make a Table…** lists the column names the table will get.
 - **Whole columns in charts.** A chart range can be a whole column or row, such as `Data.A:A`; it is saved as cells so other apps read it, and the chart stops at the last used row. The CLI's chart options take them too.
 - Removing a series no longer opens or folds the series after it.
+- Enter after **Shift+Tab** goes straight down instead of back to the column you started in, when that column is to the right.
+- **↓** while typing in a cell goes straight down, even after **Tab**; only **Enter** goes back to where the **Tab**s started. Clicking or jumping to another cell forgets the **Tab**s.
 - The axis titles and **Show legend** are together in a folded **Labels** group.
 - The **Aggregate** list is now **Combine rows with the same label**, and the name cell field is **Take name from cell**.
 

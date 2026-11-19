@@ -35,11 +35,15 @@ interface At {
   readonly column: number;
 }
 
-/** The run after a Tab (or Shift+Tab) from `from` to `to`; a Tab that changed rows ends it. */
+/**
+ * The run after a Tab (or Shift+Tab) from `from` to `to`; a Tab that changed rows ends it. A
+ * Shift+Tab past the start moves the start with it, so Enter never steps back to the right.
+ */
 export function afterTab(run: TabRun | null, from: At, to: At): TabRun | null {
   if (to.row !== from.row) return null;
   const continues = run !== null && run.row === from.row && run.column === from.column;
-  return { row: to.row, startColumn: continues ? run.startColumn : from.column, column: to.column };
+  const start = continues ? run.startColumn : from.column;
+  return { row: to.row, startColumn: Math.min(start, to.column), column: to.column };
 }
 
 /** Where Enter starts its step down from: the run's first column while the run holds, else `at`. */

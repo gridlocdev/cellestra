@@ -91,7 +91,13 @@ export interface EditorKey {
  */
 export type EditorKeyResult =
   | { readonly kind: 'handled' }
-  | { readonly kind: 'end'; readonly commit: boolean; readonly move: readonly [number, number] }
+  | {
+      readonly kind: 'end';
+      readonly commit: boolean;
+      readonly move: readonly [number, number];
+      /** Enter and Tab: the step cycles in a selected range and follows a Tab run; arrows just step. */
+      readonly cycle: boolean;
+    }
   | { readonly kind: 'newline' }
   | null;
 
@@ -310,11 +316,12 @@ export class InlineEdit {
       this.pointAt(e.shiftKey && p ? p.anchor : to, to);
       return { kind: 'handled' };
     }
-    if (e.key === 'Escape') return { kind: 'end', commit: false, move: [0, 0] };
-    if (e.key === 'Enter' && !e.shiftKey && !e.altKey) return { kind: 'end', commit: true, move: [1, 0] };
+    if (e.key === 'Escape') return { kind: 'end', commit: false, move: [0, 0], cycle: false };
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey)
+      return { kind: 'end', commit: true, move: [1, 0], cycle: true };
     // ⌥↩ / ⇧↩ start a new line in the cell.
     if (e.key === 'Enter') return { kind: 'newline' };
-    if (e.key === 'Tab') return { kind: 'end', commit: true, move: [0, e.shiftKey ? -1 : 1] };
+    if (e.key === 'Tab') return { kind: 'end', commit: true, move: [0, e.shiftKey ? -1 : 1], cycle: true };
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && plain) {
       // ↑/↓ commit and move a cell, like Enter. In multi-line text they move between lines
       // first, and only leave the cell from the first or last line.
@@ -324,7 +331,7 @@ export class InlineEdit {
       const onEdgeLine = up
         ? !editor.value.slice(0, caret).includes('\n')
         : !editor.value.slice(caret).includes('\n');
-      return onEdgeLine ? { kind: 'end', commit: true, move: [up ? -1 : 1, 0] } : null;
+      return onEdgeLine ? { kind: 'end', commit: true, move: [up ? -1 : 1, 0], cycle: false } : null;
     }
     return null;
   }
