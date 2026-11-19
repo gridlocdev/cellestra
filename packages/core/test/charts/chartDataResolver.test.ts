@@ -34,6 +34,16 @@ describe('ChartDataResolver', () => {
     expect(resolved.isEmpty).toBe(false);
   });
 
+  it('plots whole columns up to the last used row', () => {
+    const chart = createChart({
+      categoriesReference: 'Sheet1.A:A',
+      series: [createSeries({ valuesReference: 'Sheet1.B:B' })],
+    });
+    const resolved = ChartDataResolver.resolve(buildData(), chart);
+    expect(resolved.categories).toEqual(['Category', 'Jan', 'Feb', 'Mar']);
+    expect(resolved.series[0]!.values).toEqual([Number.NaN, 5, 8, 3]);
+  });
+
   it('an unqualified reference defaults to the first data sheet', () => {
     const chart = createChart({ series: [createSeries({ valuesReference: 'B2:B4' })] }); // no sheet qualifier
 

@@ -212,6 +212,31 @@ test.describe('Charts', () => {
     await expect(values).not.toHaveAttribute('aria-invalid', 'true');
   });
 
+  test('removing a series leaves the next one folded or open as it was', async ({ page }) => {
+    await goTo(page, 'A1:C3');
+    await runCommand(page, 'Chart Sheet');
+    const rent = page.getByRole('button', { name: /^Rent/ });
+    const groceries = page.getByRole('button', { name: /^Groceries/ });
+    await rent.click();
+    await expect(rent).toHaveAttribute('aria-expanded', 'true');
+    await expect(groceries).toHaveAttribute('aria-expanded', 'false');
+    await page.getByRole('button', { name: 'Remove Rent' }).click();
+    await expect(groceries).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('a whole column plots, written out as cells', async ({ page }) => {
+    await goTo(page, 'A1:C3');
+    await runCommand(page, 'Chart Sheet');
+    const categories = page.getByRole('textbox', { name: 'Category labels' });
+    await categories.click();
+    await page.keyboard.press('ControlOrMeta+KeyA');
+    await page.keyboard.type('Sheet1.A:A');
+    await page.keyboard.press('Enter');
+    await expect(categories).toHaveValue('Sheet1.A1:A1048576');
+    await expect(categories).not.toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByText('Month, January, February')).toBeVisible();
+  });
+
   test('the Chart commands change the type and swap rows and columns', async ({ page }) => {
     await goTo(page, 'A1:C3');
     await runCommand(page, 'Chart Sheet');

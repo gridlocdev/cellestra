@@ -9,8 +9,9 @@ import {
   type ChartType,
 } from '@cellestra/charts';
 import {
-  CellRange,
   ChartTableBinding,
+  expandWholeLines,
+  parseChartRange,
   findTableByName,
   seedChartFromRange,
   type Workbook,
@@ -328,10 +329,13 @@ function parseAggregate(text: string | null, type: ChartType): ChartAggregate {
   return aggregate;
 }
 
-/** Check a chart data reference parses as a range, and return it verbatim for storage. */
+/**
+ * Check a chart data reference parses as a range, and return it for storage, whole columns and
+ * rows written out as cells (`Data.A:A` → `Data.A1:A1048576`).
+ */
 function requireRange(reference: string, option: string): string {
-  if (!CellRange.tryParse(reference)) {
+  if (!parseChartRange(reference)) {
     throw new CliError(`'${reference}' is not a valid range for ${option} (e.g. Sheet1.B2:B7).`);
   }
-  return reference;
+  return expandWholeLines(reference);
 }

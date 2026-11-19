@@ -9,6 +9,7 @@ import { CellRange } from '../model/cellRange.ts';
 import { SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
+import { parseChartRange } from './chartReference.ts';
 
 /** What a table column mostly holds, for picking defaults. */
 export type TableColumnKind = 'number' | 'text' | 'empty';
@@ -90,7 +91,7 @@ function kindOf(sheet: Worksheet, table: Table, column: number): TableColumnKind
 /** The sheet column a stored chart reference starts in, when it is on `sheet` inside `table`. */
 function storedColumn(reference: string | null | undefined, sheet: Worksheet, table: Table): number | null {
   if (!reference) return null;
-  const range = CellRange.tryParse(reference.trim());
+  const range = parseChartRange(reference);
   if (!range) return null;
   if (range.sheet !== null && range.sheet.toLowerCase() !== sheet.name.toLowerCase()) return null;
   const column = range.left;
@@ -283,7 +284,7 @@ export const ChartTableBinding = {
     if (chart.series.length === 0 || references.length === 0)
       return fail('noData', 'Add a series first: there is no data to match to a table.');
     const fallbackSheet = fallbackSheetName(workbook);
-    const parsed = references.map((r) => CellRange.tryParse(r.trim()));
+    const parsed = references.map((r) => parseChartRange(r));
     const first = parsed[0];
     if (!first || parsed.some((r) => r === null))
       return fail('notRanges', 'One of the ranges isn’t a cell range.');
@@ -316,7 +317,7 @@ export const ChartTableBinding = {
       );
     }
     const nameOf = (reference: string | null): string | null => {
-      const range = reference ? CellRange.tryParse(reference.trim()) : null;
+      const range = parseChartRange(reference);
       return range ? (labels[range.left - table.range.left] ?? null) : null;
     };
     const source: ChartTableSource = {
@@ -438,7 +439,7 @@ export const ChartTableBinding = {
     const fallbackSheet = fallbackSheetName(workbook);
     const ranges: CellRange[] = [];
     for (const reference of references) {
-      const range = CellRange.tryParse(reference.trim());
+      const range = parseChartRange(reference);
       if (!range || range.left !== range.right) return null;
       ranges.push(range);
     }

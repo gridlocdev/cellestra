@@ -110,4 +110,20 @@ describe('ChartChecks.sample', () => {
     expect(ChartChecks.sample(wb, 'Nowhere.A1')).toBeNull();
     expect(ChartChecks.sample(wb, '')).toBeNull();
   });
+
+  it('counts a whole column or row only up to the last used cell', () => {
+    const wb = book();
+    expect(ChartChecks.sample(wb, 'Data.A:A')).toBe('Region, R1, R2 … 4 cells');
+    expect(ChartChecks.sample(wb, 'Data.2:2')).toBe('R1, 1, 2');
+    expect(ChartChecks.sample(wb, 'Data.E:E')).toBe('Empty cells');
+  });
+
+  it('finds no problem in whole columns that line up', () => {
+    const wb = book();
+    const chart = createChart({
+      categoriesReference: 'Data.A:A',
+      series: [createSeries({ valuesReference: 'Data.B:B' })],
+    });
+    expect(messages(wb, chart)).toEqual([]);
+  });
 });

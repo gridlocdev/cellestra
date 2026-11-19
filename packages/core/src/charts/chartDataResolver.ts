@@ -11,6 +11,7 @@ import { Defaults } from '../defaults.ts';
 import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
 import { CellRange } from '../model/cellRange.ts';
 import { ChartGrouping, type GroupingSeries } from './chartGrouping.ts';
+import { expandWholeLines } from './chartReference.ts';
 import { ChartTableBinding } from './chartTableBinding.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
@@ -65,7 +66,7 @@ function resolveRange(
   fallbackSheet: string,
 ): { range: CellRange; sheet: Worksheet } | null {
   if (!reference || reference.trim() === '') return null;
-  const range = CellRange.tryParse(qualify(reference, fallbackSheet));
+  const range = CellRange.tryParse(expandWholeLines(qualify(reference, fallbackSheet)));
   if (!range) return null;
   const sheet = workbook.findSheet(range.sheet ?? fallbackSheet);
   if (!sheet) return null;

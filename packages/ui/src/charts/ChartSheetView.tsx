@@ -397,6 +397,14 @@ export function ChartSheetView(props: ChartSheetViewProps) {
     draft.source,
     draft.aggregate,
   ]);
+  // A key per series row, so a row's open/folded state stays with its series when one above is
+  // removed. Removing and adding keep the keys in step; a change from elsewhere that adds or drops
+  // series (undo, Swap Rows and Columns) starts the rows afresh.
+  const rowKeys = useRef<number[]>([]);
+  const nextRowKey = useRef(0);
+  const newRowKey = () => nextRowKey.current++;
+  if (rowKeys.current.length !== draft.series.length) rowKeys.current = draft.series.map(newRowKey);
+
   const failureKey = `${dataKey}|${props.version}`;
   const failure = modeFailure?.key === failureKey ? modeFailure.result : null;
   const data = useMemo(
@@ -496,15 +504,25 @@ export function ChartSheetView(props: ChartSheetViewProps) {
       ? { 'aria-invalid': true as const, 'aria-describedby': problemId(field) }
       : {};
 
+  /** The draft as it is committed: whole columns typed as `A:A` written out as cells. */
+  const settle = (draftNow: ChartDefinition): ChartDefinition => {
+    const next = ChartFields.expandWholeLines(draftNow);
+    if (next !== draftNow) {
+      draftRef.current = next;
+      setDraft(next);
+    }
+    return next;
+  };
   const update = (mutate: (c: ChartDefinition) => void, commit: boolean, notice?: string) => {
     const next = cloneChart(draftRef.current);
     mutate(next);
     draftRef.current = next;
     setDraft(next);
-    if (commit) props.onChange(next, notice);
+    if (commit) props.onChange(settle(next), notice);
   };
   const commitDraft = () => {
-    if (draftRef.current !== source) props.onChange(draftRef.current);
+    const next = settle(draftRef.current);
+    if (next !== source) props.onChange(next);
   };
   /** Props for a text input bound to a draft field. */
   const text = (value: string, set: (c: ChartDefinition, v: string) => void): TextInputProps => ({
@@ -711,7 +729,7 @@ export function ChartSheetView(props: ChartSheetViewProps) {
                 const title = data.series[i]?.name ?? `Series ${i + 1}`;
                 return (
                   <SeriesRow
-                    key={i}
+                    key={rowKeys.current[i]}
                     series={series}
                     title={title}
                     family={family}
@@ -727,15 +745,16 @@ export function ChartSheetView(props: ChartSheetViewProps) {
                         c.series[i]!.type = t;
                       }, true)
                     }
-                    onRemove={() =>
+                    onRemove={() => {
+                      rowKeys.current.splice(i, 1);
                       update(
                         (c) => {
                           c.series.splice(i, 1);
                         },
                         true,
                         `Removed ${title}`,
-                      )
-                    }
+                      );
+                    }}
                   />
                 );
               })}
@@ -748,11 +767,12 @@ export function ChartSheetView(props: ChartSheetViewProps) {
                   ? 'Add another set of points to plot. Give each its own X and Y values.'
                   : 'Add another set of values to plot (a second column, line, etc.). Give each its own values range.'
               }
-              onClick={() =>
+              onClick={() => {
+                rowKeys.current.push(newRowKey());
                 update((c) => {
                   c.series.push(createSeries({ valuesReference: '' }));
-                }, true)
-              }
+                }, true);
+              }}
             >
               + Add series
             </button>

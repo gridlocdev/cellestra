@@ -4,6 +4,7 @@ import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
 import { CellRange } from '../model/cellRange.ts';
 import type { Workbook } from '../model/workbook.ts';
 import { fallbackSheetName } from './chartTableBinding.ts';
+import { parseChartRange } from './chartReference.ts';
 
 /** A chart with its rows and columns swapped, or why it can't be. */
 export type ChartSwapResult =
@@ -35,7 +36,7 @@ export const ChartSwap = {
       );
     if (ChartTypes.isXY(chart.type))
       return fail('Scatter and bubble charts plot X against Y, so they have no rows and columns to swap.');
-    const values = chart.series.map((s) => CellRange.tryParse(s.valuesReference.trim()));
+    const values = chart.series.map((s) => parseChartRange(s.valuesReference));
     const first = values[0];
     if (!first || values.some((r) => r === null))
       return fail('Every series needs a range of cells before rows and columns can swap.');
@@ -74,7 +75,7 @@ export const ChartSwap = {
     // The categories run along the series in a lane of their own.
     let categoryLane: number | null = null;
     if (chart.categoriesReference?.trim()) {
-      const c = CellRange.tryParse(chart.categoriesReference.trim());
+      const c = parseChartRange(chart.categoriesReference);
       const lines =
         c &&
         onSheet(c) &&
@@ -87,9 +88,7 @@ export const ChartSwap = {
     }
 
     // The series' name cells become the new categories when they sit in one line across the lanes.
-    const names = chart.series.map((s) =>
-      s.nameReference ? CellRange.tryParse(s.nameReference.trim()) : null,
-    );
+    const names = chart.series.map((s) => parseChartRange(s.nameReference));
     const at = (r: CellRange) => (layout === 'columns' ? r.top : r.left);
     const nameAt = names[0] ? at(names[0]) : null;
     const namesInLine =

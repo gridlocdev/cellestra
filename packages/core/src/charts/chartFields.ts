@@ -3,6 +3,7 @@ import { cloneChart, createSeries } from '@cellestra/charts';
 import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
 import { CellRange } from '../model/cellRange.ts';
 import type { Workbook } from '../model/workbook.ts';
+import { expandWholeLines, parseChartRange } from './chartReference.ts';
 
 /** The cell-range fields of a chart a reference can be picked for on the sheet. */
 export type ChartSeriesFieldKind = 'values' | 'xValues' | 'bubbleSizes' | 'nameCell';
@@ -37,6 +38,34 @@ function seriesReference(series: ChartSeries | undefined, kind: ChartSeriesField
  * know which sheet to show while picking.
  */
 export const ChartFields = {
+  /**
+   * The chart with whole columns and rows in its references written out as cells (`Data.A:A` →
+   * `Data.A1:A1048576`), as the file stores them; the same object when there are none.
+   */
+  expandWholeLines(chart: ChartDefinition): ChartDefinition {
+    const expand = (text: string | null) => (text && text.includes(':') ? expandWholeLines(text) : text);
+    const same = (text: string | null) => expand(text) === text;
+    const unchanged =
+      same(chart.categoriesReference) &&
+      chart.series.every(
+        (s) =>
+          same(s.valuesReference) &&
+          same(s.xValuesReference) &&
+          same(s.bubbleSizeReference) &&
+          same(s.nameReference),
+      );
+    if (unchanged) return chart;
+    const next = cloneChart(chart);
+    next.categoriesReference = expand(next.categoriesReference);
+    for (const s of next.series) {
+      s.valuesReference = expand(s.valuesReference) ?? '';
+      s.xValuesReference = expand(s.xValuesReference);
+      s.bubbleSizeReference = expand(s.bubbleSizeReference);
+      s.nameReference = expand(s.nameReference);
+    }
+    return next;
+  },
+
   /** The reference in `field`, or null when it is empty or the series doesn't exist. */
   get(chart: ChartDefinition, field: ChartField): string | null {
     const text =
@@ -97,7 +126,7 @@ export const ChartFields = {
   ): { sheet: string; range: CellRange | null } | null {
     const fallback = workbook.worksheets.find((s) => !s.isChartSheet)?.name ?? null;
     const parse = (text: string | null) => {
-      const range = text ? CellRange.tryParse(text.trim()) : null;
+      const range = parseChartRange(text);
       if (!range) return null;
       const sheet = workbook.findSheet(range.sheet ?? fallback ?? '');
       return sheet && !sheet.isChartSheet ? { sheet: sheet.name, range: range.withSheet(null) } : null;

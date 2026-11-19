@@ -7,6 +7,7 @@ import type { Workbook } from '../model/workbook.ts';
 import { labelOf } from './chartLabels.ts';
 import type { ChartField } from './chartFields.ts';
 import { fallbackSheetName, plottedReferences } from './chartTableBinding.ts';
+import { parseChartRange } from './chartReference.ts';
 
 /** A reference field of a chart that can't plot as typed, and what to do about it. */
 export interface ChartFieldProblem {
@@ -41,11 +42,22 @@ export const ChartChecks = {
    */
   sample(workbook: Workbook, reference: string | null): string | null {
     if (!reference || reference.trim() === '') return null;
-    const range = CellRange.tryParse(reference.trim());
+    const range = parseChartRange(reference);
     const sheet = range ? workbook.findSheet(range.sheet ?? fallbackSheetName(workbook)) : null;
     if (!range || !sheet || sheet.isChartSheet) return null;
     if (range.rowCount > 1 && range.columnCount > 1) return null;
-    const cells = range.cellCount;
+    // Count up to the last used cell, as the chart plots: a whole column isn't a million cells.
+    const used = sheet.getUsedRange();
+    const outside = !used || (range.rowCount > 1 ? range.left > used.right : range.top > used.bottom);
+    const cells = outside
+      ? 0
+      : Math.max(
+          0,
+          range.rowCount > 1
+            ? Math.min(range.bottom, used?.bottom ?? -1) - range.top + 1
+            : Math.min(range.right, used?.right ?? -1) - range.left + 1,
+        );
+    if (cells === 0) return range.cellCount === 1 ? 'An empty cell' : 'Empty cells';
     const shown: string[] = [];
     for (let i = 0; i < Math.min(cells, SAMPLE_CELLS); i++) {
       const row = range.rowCount > 1 ? range.top + i : range.top;
@@ -74,7 +86,7 @@ export const ChartChecks = {
         out.push({ field, message });
         return null;
       };
-      const range = CellRange.tryParse(text.trim());
+      const range = parseChartRange(text);
       if (!range) return problem(`“${text.trim()}” isn’t a cell range. Write it like Sheet1.B2:B7.`);
       const name = range.sheet ?? fallback;
       const sheet = workbook.findSheet(name);
@@ -137,7 +149,7 @@ export const ChartChecks = {
         : `${head}: ${plotted} by ${source.categoryColumn}.`;
     }
     const ranges = plottedReferences(chart)
-      .map((r) => CellRange.tryParse(r.trim()))
+      .map((r) => parseChartRange(r))
       .filter((r): r is CellRange => r !== null);
     if (ranges.length === 0) return 'No data yet.';
     const fallback = fallbackSheetName(workbook);

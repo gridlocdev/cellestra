@@ -3,13 +3,14 @@ import { ChartTypes, cloneChart, createChart, createSeries } from '@cellestra/ch
 import { findTableByName } from '../data/tables.ts';
 import { ChartTableBinding } from '../charts/chartTableBinding.ts';
 import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
-import { CellRange } from '../model/cellRange.ts';
+import type { CellRange } from '../model/cellRange.ts';
 import { SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import { ActionCommand, type EditCommand, EditResult, requireSheet } from './editCommand.ts';
 import { clampToUsed, EditCommands, OVERSIZED_CELL_CAP } from './editCommands.ts';
 import { tableNameError, TableCommands } from './tableCommands.ts';
+import { parseChartRange } from '../charts/chartReference.ts';
 
 const letters = (column: number): string => SheetDimensions.columnToLetters(column);
 
@@ -147,7 +148,7 @@ export const ChartEditCommands = {
     if (region) return { sheet: region.sheet, range: region.range };
     const fallback = workbook.worksheets.find((s) => !s.isChartSheet)?.name ?? null;
     for (const text of [chart.categoriesReference, ...chart.series.map((s) => s.valuesReference)]) {
-      const range = text ? CellRange.tryParse(text.trim()) : null;
+      const range = parseChartRange(text);
       const sheet = range ? workbook.findSheet(range.sheet ?? fallback ?? '') : null;
       if (sheet && !sheet.isChartSheet) return { sheet: sheet.name, range: null };
     }

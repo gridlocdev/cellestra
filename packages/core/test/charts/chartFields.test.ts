@@ -35,4 +35,20 @@ describe('ChartFields', () => {
       range: null,
     });
   });
+
+  it('writes whole columns and rows out as cells, and leaves a chart without them as it is', () => {
+    const chart = createChart({
+      categoriesReference: 'Data.A:A',
+      series: [
+        createSeries({ valuesReference: 'Data.B:B', nameReference: 'Data.B1', xValuesReference: 'Data.2:2' }),
+      ],
+    });
+    const next = ChartFields.expandWholeLines(chart);
+    expect(next.categoriesReference).toBe('Data.A1:A1048576');
+    expect(next.series[0]!.valuesReference).toBe('Data.B1:B1048576');
+    expect(next.series[0]!.nameReference).toBe('Data.B1');
+    expect(next.series[0]!.xValuesReference).toBe('Data.A2:XFD2');
+    expect(chart.categoriesReference).toBe('Data.A:A');
+    expect(ChartFields.expandWholeLines(next)).toBe(next);
+  });
 });

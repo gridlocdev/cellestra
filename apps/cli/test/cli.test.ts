@@ -1245,6 +1245,16 @@ describe('chart sheets', () => {
     expect(chart.series[0]!.nameReference).toBe('Sheet1.B1');
   });
 
+  it('a chart given whole columns stores them as cell ranges', () => {
+    const ods = chartDataBook();
+    expect(run('chart', ods, '--categories', 'Sheet1.A:A', '--values', 'Sheet1.B:B', '--in-place').exit).toBe(
+      0,
+    );
+    const doc = json(run('charts', 'show', ods, 'Chart1').out);
+    expect(doc.categories).toBe('Sheet1.A1:A1048576');
+    expect(doc.series[0].values).toBe('Sheet1.B1:B1048576');
+  });
+
   it('a chart from a range on a sheet whose name needs quotes keeps the quotes in its references', () => {
     const ods = chartDataBook();
     expect(run('rename-sheet', ods, 'Sheet1', 'Q Sales', '--in-place').exit).toBe(0);
