@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.0
+
+Cellestra 1.0.0 is the first stable release. Nothing changed since 0.4.0.
+
 ## 0.4.0
 
 ### What's new
