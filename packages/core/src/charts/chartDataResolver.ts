@@ -1,3 +1,4 @@
+import { labelOf } from './chartLabels.ts';
 import type {
   ChartAggregate,
   ChartDefinition,
@@ -7,14 +8,12 @@ import type {
 } from '@cellestra/charts';
 import { ChartTypes } from '@cellestra/charts';
 import { Defaults } from '../defaults.ts';
-import { fixedDigits } from '../formulas/evaluation/decimalDigits.ts';
 import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
 import { CellRange } from '../model/cellRange.ts';
 import { ChartGrouping, type GroupingSeries } from './chartGrouping.ts';
 import { ChartTableBinding } from './chartTableBinding.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
-import type { CellValue } from '../values/cellValue.ts';
 
 /** One series resolved to concrete numbers ready to plot. `NaN` marks a blank/non-numeric cell (a gap). */
 export interface ResolvedSeries {
@@ -46,30 +45,6 @@ export interface ResolvedChart {
   readonly rowCounts?: readonly number[] | null;
   /** True when there is nothing to draw (no series, or every series is empty). */
   readonly isEmpty: boolean;
-}
-
-/** .NET `ToString("0.######", InvariantCulture)`. */
-function invariantLabel(n: number): string {
-  if (!Number.isFinite(n)) return Number.isNaN(n) ? 'NaN' : n > 0 ? 'Infinity' : '-Infinity';
-  const { integer, fraction } = fixedDigits(Math.abs(n), 6);
-  const trimmed = fraction.replace(/0+$/, '');
-  const body = integer + (trimmed ? '.' + trimmed : '');
-  return n < 0 && /[1-9]/.test(body) ? '-' + body : body;
-}
-
-function labelOf(value: CellValue): string {
-  switch (value.kind) {
-    case 'text':
-      return value.value;
-    case 'number':
-      return invariantLabel(value.value);
-    case 'boolean':
-      return value.value ? 'TRUE' : 'FALSE';
-    case 'empty':
-    case 'error':
-    default:
-      return '';
-  }
 }
 
 /** Qualify a sheet-less reference with the fallback sheet so it resolves to a real sheet. */

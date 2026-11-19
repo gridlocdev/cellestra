@@ -13,6 +13,7 @@ export function ChartPane({ app }: { readonly app: AppController }) {
       onChange={(next, notice) => app.setChart(next, notice)}
       onPick={(field) => app.startChartPick(field)}
       onMakeTable={(name) => app.makeChartTable(name)}
+      onEditDataRange={() => app.startChartDataPick()}
     />
   );
 }

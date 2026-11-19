@@ -657,6 +657,15 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
       run: () => app.toggleChartLegend(),
     },
     {
+      id: 'chart.editDataRange',
+      title: 'Edit Data Range…',
+      description: 'Pick one block of cells for the chart to plot',
+      group: 'Chart',
+      icon: 'grid-2x2',
+      enabled: () => (s.version.value, app.activeChart !== null),
+      run: () => app.startChartDataPick(),
+    },
+    {
       id: 'chart.swapRowsColumns',
       title: 'Swap Rows and Columns',
       description: 'Plot the series as categories and the categories as series',

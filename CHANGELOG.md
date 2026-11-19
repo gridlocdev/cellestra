@@ -7,6 +7,10 @@
 - **Chart types as pictures.** Types the table's columns can't fill are greyed out with the reason.
 - **Shorter series list.** Each series folds to one line and opens when you need its fields. Removing a series shows a notice with **Undo**.
 - **Chart menu.** Each chart type, **Show Legend** and **Swap Rows and Columns** are in a new **Chart** menu and the command menu. `F11` inserts a chart sheet.
+- **Edit Data Range…** re-plots a chart from one block you select on the sheet, keeping its type and look. It's in the chart panel and the **Chart** menu.
+- **See what a range holds.** Each range field shows its first few values underneath, and an empty chart says how to start.
+- **Clearer chart messages.** When a chart can't switch to Table mode, the message names the range or series at fault. **Make a Table…** lists the column names the table will get.
+- The axis titles and **Show legend** are together in a folded **Labels** group.
 - The **Aggregate** list is now **Combine rows with the same label**, and the name cell field is **Take name from cell**.
 
 ## 1.0.0

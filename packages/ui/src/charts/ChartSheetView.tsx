@@ -9,6 +9,7 @@ import { cloneChart, createChart, createSeries, ChartTypes } from '@cellestra/ch
 import {
   ChartChecks,
   ChartDataResolver,
+  ChartFields,
   ChartTableBinding,
   quoteSheetIfNeeded,
   TableCommands,
@@ -50,6 +51,11 @@ export interface ChartSheetViewProps {
    * doesn't offer it.
    */
   readonly onMakeTable?: (name: string) => string | null;
+  /**
+   * "Edit Data Range…": the host shows the data sheet, lets the user select one block, and re-plots
+   * the chart from it. Omitted, the button doesn't show.
+   */
+  readonly onEditDataRange?: () => void;
 }
 
 /** The data shape a chart type needs; drives which fields the panel shows. */
@@ -146,6 +152,8 @@ function Field(props: {
   label: string;
   tip: string;
   problem?: { readonly id: string; readonly text: string } | null;
+  /** What the field's reference points at ("Jan, Feb, Mar … 12 cells"), shown when it has no problem. */
+  sample?: string | null;
   children: ComponentChildren;
 }) {
   return (
@@ -154,10 +162,12 @@ function Field(props: {
         <span>{props.label}</span>
         {props.children}
       </label>
-      {props.problem && (
+      {props.problem ? (
         <p class="cs-chart-problem" id={props.problem.id}>
           {props.problem.text}
         </p>
+      ) : (
+        props.sample && <p class="cs-chart-sample">{props.sample}</p>
       )}
     </div>
   );
@@ -240,7 +250,7 @@ function ChartTypePicker(props: {
  */
 function MakeTableOffer(props: {
   workbook: Workbook;
-  region: { readonly sheet: string; readonly range: CellRange };
+  region: { readonly sheet: string; readonly range: CellRange; readonly header: readonly string[] | null };
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
@@ -284,6 +294,11 @@ function MakeTableOffer(props: {
       }}
     >
       <p>Make {place} a table. The chart then plots its columns by name.</p>
+      <p class="cs-chart-sample">
+        {region.header
+          ? `Column names: ${region.header.map((h, i) => h || `Column${i + 1}`).join(', ')}.`
+          : 'The data has no row of labels, so a header row named Column1, Column2… is added above it.'}
+      </p>
       <div class="cs-chart-field-wrap">
         <label class="cs-chart-field">
           <span>Table name</span>
@@ -462,6 +477,8 @@ export function ChartSheetView(props: ChartSheetViewProps) {
     const text = problems.get(fieldKey(field));
     return text ? { id: problemId(field), text } : null;
   };
+  /** The first cells a field's reference points at, re-read as it is typed. */
+  const sampleOf = (field: ChartField) => ChartChecks.sample(props.workbook, ChartFields.get(draft, field));
   /** `aria-invalid` and the message's id for a reference input with a problem. */
   const invalid = (field: ChartField) =>
     problems.has(fieldKey(field))
@@ -507,7 +524,11 @@ export function ChartSheetView(props: ChartSheetViewProps) {
 
   const family = chartFamily(draft.type);
   const categoryField = (
-    <Field {...categoryCopy(family)} problem={problemOf({ kind: 'categories' })}>
+    <Field
+      {...categoryCopy(family)}
+      problem={problemOf({ kind: 'categories' })}
+      sample={sampleOf({ kind: 'categories' })}
+    >
       <div class="cs-chart-ref">
         <input
           placeholder="e.g. Sheet1.A2:A7"
@@ -534,6 +555,13 @@ export function ChartSheetView(props: ChartSheetViewProps) {
         <p class="cs-chart-summary" role="status">
           {summary}
         </p>
+        {data.series.length === 0 && (
+          <p class="cs-chart-hint cs-chart-howto">
+            {tableMode
+              ? 'Pick a table below, then tick the columns to plot.'
+              : 'Type a range such as Sheet1.B2:B7 into a field and press Enter, or press ⌖ beside it to select the cells on the sheet.'}
+          </p>
+        )}
         <Field label="Title" tip="The heading shown above the chart. Leave blank for no title.">
           <input
             {...text(draft.title, (c, v) => {
@@ -601,6 +629,16 @@ export function ChartSheetView(props: ChartSheetViewProps) {
             )}
           </div>
         )}
+        {props.onEditDataRange && (
+          <button
+            type="button"
+            class="cs-btn cs-chart-data-range"
+            title="Select one block on the sheet: labels in the first column, a series in each other column."
+            onClick={props.onEditDataRange}
+          >
+            Edit Data Range…
+          </button>
+        )}
         {!tableMode && region && props.onMakeTable && (
           <MakeTableOffer
             key={where(region)}
@@ -629,6 +667,7 @@ export function ChartSheetView(props: ChartSheetViewProps) {
               label="Slice values"
               tip="The cells holding the value for each slice: one per slice label, e.g. Sheet1.B2:B7."
               problem={problemOf(sliceValues)}
+              sample={sampleOf(sliceValues)}
             >
               <div class="cs-chart-ref">
                 <input
@@ -670,6 +709,7 @@ export function ChartSheetView(props: ChartSheetViewProps) {
                     text={(value, set) => text(value, (c, v) => set(c.series[i]!, v))}
                     pick={(kind) => pick({ kind, series: i })}
                     problem={(kind) => problemOf({ kind, series: i })}
+                    sample={(kind) => sampleOf({ kind, series: i })}
                     invalid={(kind) => invalid({ kind, series: i })}
                     onTypeChange={(t) =>
                       update((c) => {
@@ -733,46 +773,50 @@ export function ChartSheetView(props: ChartSheetViewProps) {
 
         <hr />
 
-        {(family === 'cartesian' || family === 'xy') && (
-          <details class="cs-chart-more" open={draft.xAxisTitle !== null || draft.yAxisTitle !== null}>
-            <summary>Axis titles</summary>
-            <Field label="X-axis title" tip="Optional label drawn beneath the horizontal axis.">
-              <input
-                {...text(draft.xAxisTitle ?? '', (c, v) => {
-                  c.xAxisTitle = blank(v);
-                })}
-              />
-            </Field>
-            <Field label="Y-axis title" tip="Optional label for the value axis.">
-              <input
-                {...text(draft.yAxisTitle ?? '', (c, v) => {
-                  c.yAxisTitle = blank(v);
-                })}
-              />
-            </Field>
-          </details>
-        )}
-
-        <label
-          class="cs-chart-check"
-          title={
-            family === 'partToWhole'
-              ? 'Show a key naming each slice.'
-              : 'Show a key naming each series. Hide it when a single series needs no label.'
-          }
+        <details
+          class="cs-chart-more"
+          open={draft.xAxisTitle !== null || draft.yAxisTitle !== null || !draft.showLegend}
         >
-          <input
-            type="checkbox"
-            checked={draft.showLegend}
-            onChange={(e) => {
-              const v = (e.currentTarget as HTMLInputElement).checked;
-              update((c) => {
-                c.showLegend = v;
-              }, true);
-            }}
-          />
-          Show legend
-        </label>
+          <summary>Labels</summary>
+          {(family === 'cartesian' || family === 'xy') && (
+            <>
+              <Field label="X-axis title" tip="Optional label drawn beneath the horizontal axis.">
+                <input
+                  {...text(draft.xAxisTitle ?? '', (c, v) => {
+                    c.xAxisTitle = blank(v);
+                  })}
+                />
+              </Field>
+              <Field label="Y-axis title" tip="Optional label for the value axis.">
+                <input
+                  {...text(draft.yAxisTitle ?? '', (c, v) => {
+                    c.yAxisTitle = blank(v);
+                  })}
+                />
+              </Field>
+            </>
+          )}
+          <label
+            class="cs-chart-check"
+            title={
+              family === 'partToWhole'
+                ? 'Show a key naming each slice.'
+                : 'Show a key naming each series. Hide it when a single series needs no label.'
+            }
+          >
+            <input
+              type="checkbox"
+              checked={draft.showLegend}
+              onChange={(e) => {
+                const v = (e.currentTarget as HTMLInputElement).checked;
+                update((c) => {
+                  c.showLegend = v;
+                }, true);
+              }}
+            />
+            Show legend
+          </label>
+        </details>
       </aside>
     </div>
   );
@@ -845,6 +889,7 @@ function SeriesRow(props: {
   /** The "Pick on sheet" button for one of this series' reference fields. */
   pick: (kind: ChartSeriesFieldKind) => ComponentChildren;
   problem: (kind: ChartSeriesFieldKind) => { readonly id: string; readonly text: string } | null;
+  sample: (kind: ChartSeriesFieldKind) => string | null;
   invalid: (kind: ChartSeriesFieldKind) => Record<string, unknown>;
   onTypeChange: (type: ChartType | null) => void;
   onRemove: () => void;
@@ -894,6 +939,7 @@ function SeriesRow(props: {
             label="Take name from cell"
             tip="A single cell whose text names the series (e.g. the column header Sheet1.B1). It wins over the typed name."
             problem={props.problem('nameCell')}
+            sample={props.sample('nameCell')}
           >
             <div class="cs-chart-ref">
               <input
@@ -911,6 +957,7 @@ function SeriesRow(props: {
               label="X values"
               tip="The horizontal position of each point, e.g. Sheet1.A2:A7. Defaults to 1, 2, 3… when blank."
               problem={props.problem('xValues')}
+              sample={props.sample('xValues')}
             >
               <div class="cs-chart-ref">
                 <input
@@ -932,6 +979,7 @@ function SeriesRow(props: {
                 : "The cells holding this series' numbers: one per category, e.g. Sheet1.B2:B7. This is the data that gets plotted."
             }
             problem={props.problem('values')}
+            sample={props.sample('values')}
           >
             <div class="cs-chart-ref">
               <input
@@ -970,6 +1018,7 @@ function SeriesRow(props: {
               label="Bubble size"
               tip="The value that sizes each bubble: one per point, e.g. Sheet1.C2:C7."
               problem={props.problem('bubbleSizes')}
+              sample={props.sample('bubbleSizes')}
             >
               <div class="cs-chart-ref">
                 <input

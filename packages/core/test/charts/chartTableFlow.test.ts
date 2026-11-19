@@ -49,8 +49,25 @@ describe('ChartTableBinding.fromRanges failure codes', () => {
     expect(ChartTableBinding.fromRanges(wb, rangeChart(2, 3))).toMatchObject({
       ok: false,
       code: 'notWholeColumns',
+      reason: expect.stringContaining('Data.A2:A3 is only part of the column “Region”.'),
     });
     expect(ChartTableBinding.toTable(Workbook.createNew(), createChart())).toMatchObject({ code: 'noTable' });
+  });
+
+  it('names the series whose X column differs', () => {
+    const wb = book();
+    wb.findSheet('Data')!.addTable(makeTable('Sales', CellRange.parse('A1:C4')));
+    const chart = createChart({
+      type: 'scatter',
+      series: [
+        createSeries({ name: 'Sales', xValuesReference: 'Data.A2:A4', valuesReference: 'Data.B2:B4' }),
+        createSeries({ name: 'Cost', xValuesReference: 'Data.B2:B4', valuesReference: 'Data.C2:C4' }),
+      ],
+    });
+    expect(ChartTableBinding.fromRanges(wb, chart)).toMatchObject({
+      code: 'mixedX',
+      reason: expect.stringMatching(/^“Cost” takes its X values from another column than “Sales”\./),
+    });
   });
 
   it('with wholeColumns, binds each range to the column it sits in', () => {
@@ -68,7 +85,9 @@ describe('ChartTableBinding.tableRegion', () => {
     expect(ChartTableBinding.tableRegion(book(), rangeChart())).toEqual({
       sheet: 'Data',
       range: CellRange.fromBounds(0, 0, 3, 2),
+      header: ['Region', 'Sales', 'Cost'],
     });
+    expect(ChartTableBinding.tableRegion(book(false), rangeChart(1, 3))?.header).toBeNull();
   });
 
   it('keeps a block with no labels above as it is', () => {
@@ -144,5 +163,35 @@ describe('ChartEditCommands.makeTableForChart', () => {
     expect(ChartEditCommands.makeTableForChart(wb, sheet.name, 'A1')).toMatchObject({ ok: false });
     const empty = wb.addChartSheet(createChart());
     expect(ChartEditCommands.makeTableForChart(wb, empty.name, 'Sales')).toMatchObject({ ok: false });
+  });
+});
+
+describe('Edit Data Range', () => {
+  it('re-plots a range chart from one block, keeping its type and look', () => {
+    const wb = book();
+    const chart = { ...rangeChart(), type: 'line' as const, title: 'Costs', showLegend: false };
+    const next = ChartEditCommands.withDataRange(wb, chart, 'Data', CellRange.parse('A1:B4'));
+    expect(next).toMatchObject({ type: 'line', title: 'Costs', showLegend: false, source: null });
+    expect(next!.categoriesReference).toBe('Data.A2:A4');
+    expect(next!.series.map((s) => s.valuesReference)).toEqual(['Data.B2:B4']);
+    expect(next!.series[0]!.nameReference).toBe('Data.B1');
+  });
+
+  it('binds to the table the block sits in, and has nothing for an empty block', () => {
+    const wb = book();
+    wb.findSheet('Data')!.addTable(makeTable('Sales', CellRange.parse('A1:C4')));
+    expect(
+      ChartEditCommands.withDataRange(wb, rangeChart(), 'Data', CellRange.parse('A2:C3'))?.source?.table,
+    ).toBe('Sales');
+    expect(ChartEditCommands.withDataRange(wb, rangeChart(), 'Data', CellRange.parse('F1:F1'))).toBeNull();
+  });
+
+  it('starts the pick on the chart’s block, its table, or its sheet', () => {
+    const wb = book();
+    expect(ChartEditCommands.dataRangeTarget(wb, rangeChart())).toEqual({
+      sheet: 'Data',
+      range: CellRange.fromBounds(0, 0, 3, 2),
+    });
+    expect(ChartEditCommands.dataRangeTarget(wb, createChart())).toEqual({ sheet: 'Data', range: null });
   });
 });

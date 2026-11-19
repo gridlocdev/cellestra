@@ -688,8 +688,9 @@ function ChartPickBanner({ app }: { readonly app: AppController }) {
   return (
     <div class="cs-pick-banner" role="status">
       <span>
-        Select the cells for {pick.label} of the chart “{pick.chartSheet.name}”, then press Enter. Esc
-        cancels.
+        {pick.field === 'data'
+          ? `Select the data for the chart “${pick.chartSheet.name}”: labels in the first column, a series in each other column. Then press Enter. Esc cancels.`
+          : `Select the cells for ${pick.label} of the chart “${pick.chartSheet.name}”, then press Enter. Esc cancels.`}
       </span>
       <button type="button" class="cs-btn" onClick={() => app.finishChartPick()}>
         Use selection

@@ -174,6 +174,27 @@ test.describe('Charts', () => {
     await expect(series).toHaveCount(2);
   });
 
+  test('a range field shows the first values it holds', async ({ page }) => {
+    await goTo(page, 'A1:C3');
+    await runCommand(page, 'Chart Sheet');
+    const panel = page.getByRole('complementary', { name: 'Chart data' });
+    await expect(panel.getByText('January, February', { exact: true })).toBeVisible();
+  });
+
+  test('Edit Data Range re-plots the chart from the block picked on the sheet', async ({ page }) => {
+    await goTo(page, 'A1:C3');
+    await runCommand(page, 'Chart Sheet');
+    await expect(page.locator('.cs-chart-series')).toHaveCount(2);
+    await page.getByRole('button', { name: 'Edit Data Range…' }).click();
+    await expect(page.getByText(/^Select the data for the chart/)).toBeVisible();
+    await goTo(page, 'A1:B3');
+    await page.getByRole('button', { name: 'Use selection' }).click();
+    await expect(page.locator('.cs-chart-series')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Remove Rent' })).toBeVisible();
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(page.locator('.cs-chart-series')).toHaveCount(2);
+  });
+
   test('the Chart commands change the type and swap rows and columns', async ({ page }) => {
     await goTo(page, 'A1:C3');
     await runCommand(page, 'Chart Sheet');

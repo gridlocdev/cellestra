@@ -449,3 +449,22 @@
 .cs-chart-more[open] > summary {
   margin-bottom: 6px;
 }
+
+/* What a reference points at, under its field. */
+.cs-chart-sample {
+  margin: 0;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--cs-text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-chart-offer > .cs-chart-sample {
+  white-space: normal;
+}
+.cs-chart-howto {
+  margin-top: -4px;
+}
+.cs-chart-data-range {
+  align-self: flex-start;
+}

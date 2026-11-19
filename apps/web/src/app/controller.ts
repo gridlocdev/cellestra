@@ -178,7 +178,8 @@ export type DialogState =
 /** A chart field being picked on a data sheet: the chart sheet to return to and the field to set. */
 export interface ChartPick {
   readonly chartSheet: Worksheet;
-  readonly field: ChartField;
+  /** The field to set, or `data`: Edit Data Range, which re-plots the chart from one block. */
+  readonly field: ChartField | 'data';
   /** How the prompt names the field: “the category labels”. */
   readonly label: string;
 }
@@ -1902,17 +1903,45 @@ export class AppController {
     queueMicrotask(() => this.grid.current?.focus());
   }
 
+  /**
+   * Chart › Edit Data Range: show the chart's data selected on its sheet, and on Enter re-plot the
+   * chart from the block picked (labels in the first column, a series in each other column).
+   */
+  startChartDataPick(): void {
+    const chartSheet = this.sheet;
+    const chart = chartSheet.chart;
+    if (!chartSheet.isChartSheet || !chart) return;
+    const wb = this.session.workbook.peek();
+    const target = ChartEditCommands.dataRangeTarget(wb, chart);
+    const sheet = target ? wb.findSheet(target.sheet) : null;
+    if (!target || !sheet) return this.info('There is no sheet with cells to pick.');
+    this.session.setActiveSheet(wb.indexOf(sheet));
+    const r = target.range;
+    if (r) this.selection.selectRange({ top: r.top, left: r.left, bottom: r.bottom, right: r.right });
+    this.chartPick.value = { chartSheet, field: 'data', label: 'the chart’s data' };
+    queueMicrotask(() => this.grid.current?.focus());
+  }
+
   /** Enter while picking: put the selection in the chart's field and go back to the chart. */
   finishChartPick(): void {
     const pick = this.chartPick.peek();
     if (!pick) return;
-    const reference = ChartFields.reference(this.sheetName, this.range);
+    const sheetName = this.sheetName;
+    const range = this.range;
     this.#endChartPick(pick);
     const chart = pick.chartSheet.chart;
-    if (chart)
-      this.run(
-        ChartEditCommands.setChart(pick.chartSheet.name, ChartFields.set(chart, pick.field, reference)),
-      );
+    if (!chart) return;
+    if (pick.field === 'data') {
+      const next = ChartEditCommands.withDataRange(this.session.workbook.peek(), chart, sheetName, range);
+      if (!next) return this.info('Select cells with numbers to chart.');
+      return this.setChart(next, `The chart now plots ${ChartFields.reference(sheetName, range)}.`);
+    }
+    this.run(
+      ChartEditCommands.setChart(
+        pick.chartSheet.name,
+        ChartFields.set(chart, pick.field, ChartFields.reference(sheetName, range)),
+      ),
+    );
   }
 
   /** Escape while picking: go back to the chart and change nothing. */

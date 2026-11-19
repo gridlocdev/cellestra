@@ -3,6 +3,7 @@ import { ChartTypes } from '@cellestra/charts';
 import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
 import { CellRange } from '../model/cellRange.ts';
 import type { Workbook } from '../model/workbook.ts';
+import { labelOf } from './chartLabels.ts';
 import type { ChartField } from './chartFields.ts';
 import { ChartTableBinding, fallbackSheetName, plottedReferences } from './chartTableBinding.ts';
 
@@ -23,12 +24,38 @@ function listOf(names: readonly string[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
+/** How many cells a sample shows before it says how many there are. */
+const SAMPLE_CELLS = 3;
+
 /**
  * What the chart panel says about a chart's data: the problems in the ranges typed into it, so a
  * field explains why the chart is empty instead of plotting nothing, and a one-line summary of
  * what the chart plots.
  */
 export const ChartChecks = {
+  /**
+   * What `reference` points at, for the line under its field: its first few cells (`January,
+   * February, March … 12 cells`), or "Empty cells". Null when it is blank or can't be read, which
+   * `problems` explains instead.
+   */
+  sample(workbook: Workbook, reference: string | null): string | null {
+    if (!reference || reference.trim() === '') return null;
+    const range = CellRange.tryParse(reference.trim());
+    const sheet = range ? workbook.findSheet(range.sheet ?? fallbackSheetName(workbook)) : null;
+    if (!range || !sheet || sheet.isChartSheet) return null;
+    if (range.rowCount > 1 && range.columnCount > 1) return null;
+    const cells = range.cellCount;
+    const shown: string[] = [];
+    for (let i = 0; i < Math.min(cells, SAMPLE_CELLS); i++) {
+      const row = range.rowCount > 1 ? range.top + i : range.top;
+      const column = range.rowCount > 1 ? range.left : range.left + i;
+      shown.push(labelOf(sheet.getValue(row, column)).trim() || '(empty)');
+    }
+    if (shown.every((t) => t === '(empty)') && cells <= SAMPLE_CELLS)
+      return cells === 1 ? 'An empty cell' : 'Empty cells';
+    return cells > SAMPLE_CELLS ? `${shown.join(', ')} … ${cells} cells` : shown.join(', ');
+  },
+
   /**
    * Every reference field that can't plot as typed: not a cell range, a sheet that doesn't exist
    * or holds a chart, a block where one row or column is needed, a name cell that is more than one

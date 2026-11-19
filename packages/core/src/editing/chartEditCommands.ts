@@ -1,8 +1,9 @@
 import type { ChartDefinition } from '@cellestra/charts';
-import { ChartTypes, createChart, createSeries } from '@cellestra/charts';
+import { ChartTypes, cloneChart, createChart, createSeries } from '@cellestra/charts';
+import { findTableByName } from '../data/tables.ts';
 import { ChartTableBinding } from '../charts/chartTableBinding.ts';
 import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
-import type { CellRange } from '../model/cellRange.ts';
+import { CellRange } from '../model/cellRange.ts';
 import { SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
@@ -128,5 +129,53 @@ export const ChartEditCommands = {
     if (source && source.series.length > 0) return ChartTableBinding.bind(workbook, definition, source);
     seedChartFromRange(definition, sheet, range);
     return definition;
+  },
+
+  /**
+   * Edit Data Range: where to start picking one block for the whole chart: its table, the block its
+   * ranges span (with the labels above them), else just the sheet its data is on.
+   */
+  dataRangeTarget(
+    workbook: Workbook,
+    chart: ChartDefinition,
+  ): { sheet: string; range: CellRange | null } | null {
+    if (chart.source) {
+      const found = findTableByName(workbook, chart.source.table);
+      if (found) return { sheet: found.sheet.name, range: found.table.range };
+    }
+    const region = ChartTableBinding.tableRegion(workbook, chart);
+    if (region) return { sheet: region.sheet, range: region.range };
+    const fallback = workbook.worksheets.find((s) => !s.isChartSheet)?.name ?? null;
+    for (const text of [chart.categoriesReference, ...chart.series.map((s) => s.valuesReference)]) {
+      const range = text ? CellRange.tryParse(text.trim()) : null;
+      const sheet = range ? workbook.findSheet(range.sheet ?? fallback ?? '') : null;
+      if (sheet && !sheet.isChartSheet) return { sheet: sheet.name, range: null };
+    }
+    return fallback === null ? null : { sheet: fallback, range: null };
+  },
+
+  /**
+   * Edit Data Range: the chart re-plotted from one block, as Chart Sheet seeds a new chart (the
+   * first column labels the categories, the others are series named from a header row), keeping
+   * its type and look. A block inside a table binds the chart to that table. Null when the block
+   * has nothing to plot.
+   */
+  withDataRange(
+    workbook: Workbook,
+    chart: ChartDefinition,
+    sheetName: string,
+    range: CellRange,
+  ): ChartDefinition | null {
+    const sheet = workbook.findSheet(sheetName);
+    if (!sheet || sheet.isChartSheet) return null;
+    const next = cloneChart(chart);
+    next.categoriesReference = null;
+    next.series = [];
+    next.source = null;
+    const table = sheet.tables.find((t) => t.range.contains(range.top, range.left));
+    const source = table ? ChartTableBinding.seed(workbook, table.name, chart.type) : null;
+    if (source && source.series.length > 0) return ChartTableBinding.bind(workbook, next, source);
+    seedChartFromRange(next, sheet, range);
+    return next.series.length > 0 ? next : null;
   },
 } as const;

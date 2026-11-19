@@ -5,6 +5,7 @@ import {
   CellValue,
   ChartChecks,
   ChartTableBinding,
+  quoteSheetIfNeeded,
   table as makeTable,
   Workbook,
 } from '../../src/index.ts';
@@ -91,5 +92,22 @@ describe('ChartChecks.summary', () => {
     expect(ChartChecks.summary(wb, scatter)).toBe('From table “Sales”: Cost against Sales.');
     wb.findSheet('Data')!.removeTable(wb.findSheet('Data')!.tables[0]!);
     expect(ChartChecks.summary(wb, bound)).toBe('From table “Sales”, which no longer exists.');
+  });
+});
+
+describe('ChartChecks.sample', () => {
+  it('shows the first few cells a reference points at', () => {
+    const wb = Workbook.createNew();
+    const s = wb.activeSheet;
+    ['Jan', 'Feb', 'Mar', 'Apr'].forEach((m, r) => s.setValue(r, 0, CellValue.text(m)));
+    [1, 2.5].forEach((n, c) => s.setValue(0, c + 1, CellValue.number(n)));
+    const name = quoteSheetIfNeeded(s.name);
+    expect(ChartChecks.sample(wb, `${name}.A1:A2`)).toBe('Jan, Feb');
+    expect(ChartChecks.sample(wb, 'A1:A4')).toBe('Jan, Feb, Mar … 4 cells');
+    expect(ChartChecks.sample(wb, `${name}.B1:C1`)).toBe('1, 2.5');
+    expect(ChartChecks.sample(wb, `${name}.D1:D2`)).toBe('Empty cells');
+    expect(ChartChecks.sample(wb, `${name}.A1:B2`)).toBeNull();
+    expect(ChartChecks.sample(wb, 'Nowhere.A1')).toBeNull();
+    expect(ChartChecks.sample(wb, '')).toBeNull();
   });
 });

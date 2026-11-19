@@ -1,3 +1,4 @@
+import { labelOf } from './chartLabels.ts';
 import type { ChartDefinition, ChartSeries, ChartTableSource, ChartType } from '@cellestra/charts';
 import { ChartTypes, cloneChart, cloneSource, createSeries } from '@cellestra/charts';
 import { DataRegion } from '../data/dataRegion.ts';
@@ -298,12 +299,22 @@ export const ChartTableBinding = {
       range.left >= table.range.left &&
       range.left <= table.range.right &&
       (options.wholeColumns === true || (range.top === rows.top && range.bottom === table.range.bottom));
-    if (!parsed.every((r) => fits(r!)))
+    const labels = tableHeaderLabels(table, sheet);
+    const misfit = parsed.findIndex((r) => !fits(r!));
+    if (misfit >= 0) {
+      const range = parsed[misfit]!;
+      const column =
+        range.left === range.right && range.left >= table.range.left && range.left <= table.range.right
+          ? labels[range.left - table.range.left]
+          : undefined;
+      const what = column
+        ? `${references[misfit]!.trim()} is only part of the column “${column}”.`
+        : `${references[misfit]!.trim()} isn’t one column of the table “${table.name}”.`;
       return fail(
         'notWholeColumns',
-        `Each range must be one whole column of the table “${table.name}”’s data, without its header.`,
+        `${what} Each range must be one whole column of the table’s data, without its header.`,
       );
-    const labels = tableHeaderLabels(table, sheet);
+    }
     const nameOf = (reference: string | null): string | null => {
       const range = reference ? CellRange.tryParse(reference.trim()) : null;
       return range ? (labels[range.left - table.range.left] ?? null) : null;
@@ -317,8 +328,16 @@ export const ChartTableBinding = {
         sizeColumn: chart.type === 'bubble' ? nameOf(s.bubbleSizeReference) : null,
       })),
     };
-    if (xy && new Set(chart.series.map((s) => nameOf(s.xValuesReference))).size > 1)
-      return fail('mixedX', 'Every series must share one X column to plot from a table.');
+    const firstX = nameOf(chart.series[0]?.xValuesReference ?? null);
+    const odd = xy ? chart.series.findIndex((s) => nameOf(s.xValuesReference) !== firstX) : -1;
+    if (odd > 0) {
+      const name = (i: number): string =>
+        chart.series[i]!.name ?? nameOf(chart.series[i]!.valuesReference) ?? `Series ${i + 1}`;
+      return fail(
+        'mixedX',
+        `“${name(odd)}” takes its X values from another column than “${name(0)}”. Every series must share one X column to plot from a table.`,
+      );
+    }
     return { ok: true, chart: ChartTableBinding.bind(workbook, chart, source) };
   },
 
@@ -409,7 +428,10 @@ export const ChartTableBinding = {
    * chart is bound or plots nothing, a range isn't a single column, the ranges span sheets, or the
    * block overlaps a table.
    */
-  tableRegion(workbook: Workbook, chart: ChartDefinition): { sheet: string; range: CellRange } | null {
+  tableRegion(
+    workbook: Workbook,
+    chart: ChartDefinition,
+  ): { sheet: string; range: CellRange; header: string[] | null } | null {
     if (chart.source) return null;
     const references = plottedReferences(chart);
     if (references.length === 0) return null;
@@ -433,7 +455,11 @@ export const ChartTableBinding = {
     if (top > 0 && !labelsAt(top) && labelsAt(top - 1)) top--;
     const range = CellRange.fromBounds(top, left, bottom, right);
     if (sheet.tables.some((t) => t.range.intersects(range))) return null;
-    return { sheet: sheet.name, range };
+    // The labels that become the column names; null when the table gets a new header row instead.
+    const header = labelsAt(top)
+      ? Array.from({ length: right - left + 1 }, (_, i) => labelOf(sheet.getValue(top, left + i)).trim())
+      : null;
+    return { sheet: sheet.name, range, header };
   },
 
   /**
