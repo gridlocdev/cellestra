@@ -53,4 +53,16 @@ describe('EditHistory', () => {
     expect(history.canUndo).toBe(true);
     expect(history.canRedo).toBe(false);
   });
+
+  it('names the step Undo would undo next, so a notice can tell its edit is still the last', () => {
+    const history = new EditHistory(Workbook.createNew());
+    const first = flaky().command;
+    const second = flaky().command;
+    expect(history.lastCommand).toBeNull();
+    history.execute(first);
+    history.execute(second);
+    expect(history.lastCommand).toBe(second);
+    history.undo();
+    expect(history.lastCommand).toBe(first);
+  });
 });

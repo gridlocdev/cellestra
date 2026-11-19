@@ -19,6 +19,7 @@ import {
   TableCommands,
   tableNameError,
   findTableByName,
+  ChartChecks,
   ChartEditCommands,
   ChartFields,
   ChartSwap,
@@ -297,10 +298,10 @@ export class AppController {
 
   readonly dialog = signal<DialogState | null>(null);
   /**
-   * The status-bar notice. `undoAt` is the session version just after an undoable edit: the notice
-   * offers Undo only while no other edit has landed since.
+   * The status-bar notice. `undo` is the edit it announces: the notice offers Undo only while that
+   * edit is the last one (`WorkbookSession.isLastEdit`).
    */
-  readonly toast = signal<{ text: string; tone: 'info' | 'error'; undoAt?: number } | null>(null);
+  readonly toast = signal<{ text: string; tone: 'info' | 'error'; undo?: EditCommand } | null>(null);
   readonly paletteOpen = signal(false);
   readonly sheetPickerOpen = signal(false);
   readonly recentOpen = signal(false);
@@ -856,26 +857,32 @@ export class AppController {
   }
 
   /** A notice for the edit just made, with an Undo button while it is still the last edit. */
-  undoableInfo(text: string): void {
-    this.#showToast(text, 'info', this.session.version.peek());
+  undoableInfo(text: string, command: EditCommand): void {
+    this.#showToast(text, 'info', command);
+  }
+
+  /** Whether the notice's Undo applies: its edit is still the last one. */
+  get noticeCanUndo(): boolean {
+    const undo = this.toast.value?.undo;
+    return undo !== undefined && (this.session.version.value, this.session.isLastEdit(undo));
   }
 
   /** The notice's Undo: undo its edit, unless another edit has landed since. */
   undoFromNotice(): void {
-    const toast = this.toast.peek();
-    if (toast?.undoAt === undefined || toast.undoAt !== this.session.version.peek()) return;
+    const undo = this.toast.peek()?.undo;
+    if (!undo || !this.session.isLastEdit(undo)) return;
     this.session.undo();
     this.toast.value = null;
   }
 
-  #showToast(text: string, tone: 'info' | 'error', undoAt?: number): void {
-    this.toast.value = undoAt === undefined ? { text, tone } : { text, tone, undoAt };
+  #showToast(text: string, tone: 'info' | 'error', undo?: EditCommand): void {
+    this.toast.value = undo === undefined ? { text, tone } : { text, tone, undo };
     this.#cancelToast?.();
     // Long notices (what an .xlsx import left out) stay up long enough to read; one with Undo
     // stays long enough to reach the button.
     const readable = Math.min(12_000, text.length * 60);
     this.#cancelToast = after(
-      Math.max(tone === 'error' ? 6000 : undoAt === undefined ? 2500 : 8000, readable),
+      Math.max(tone === 'error' ? 6000 : undo === undefined ? 2500 : 8000, readable),
       () => (this.toast.value = null),
     );
   }
@@ -1835,8 +1842,9 @@ export class AppController {
   /** Replace the active chart sheet's chart (one undo step); `notice` announces it with Undo. */
   setChart(next: ChartDefinition, notice?: string): void {
     if (!this.activeChart) return;
-    this.run(ChartEditCommands.setChart(this.sheetName, next));
-    if (notice) this.undoableInfo(notice);
+    const command = ChartEditCommands.setChart(this.sheetName, next);
+    this.run(command);
+    if (notice && this.session.isLastEdit(command)) this.undoableInfo(notice, command);
   }
 
   /**
@@ -1848,7 +1856,8 @@ export class AppController {
     const plan = ChartEditCommands.makeTableForChart(this.session.workbook.peek(), this.sheetName, name);
     if (!plan.ok) return plan.reason;
     this.run(plan.command);
-    this.undoableInfo(`Made table “${name.trim()}”.`);
+    if (!this.session.isLastEdit(plan.command)) return 'The table couldn’t be made here.';
+    this.undoableInfo(`Made table “${name.trim()}”.`, plan.command);
     return null;
   }
 
@@ -1862,10 +1871,26 @@ export class AppController {
   /** Whether the active chart's data can be drawn as `type` (a bound chart may lack the columns). */
   chartTypeAvailable(type: ChartType): boolean {
     const chart = this.activeChart;
-    return (
-      chart !== null && !ChartTableBinding.unavailableTypes(this.session.workbook.peek(), chart).has(type)
-    );
+    if (!chart) return false;
+    // Ten Chart commands ask this on every menu refresh, and each answer reads the whole table:
+    // work it out once per chart and workbook version.
+    const version = this.session.version.peek();
+    let cached = this.#unavailableTypes;
+    if (!cached || cached.chart !== chart || cached.version !== version) {
+      cached = {
+        chart,
+        version,
+        types: ChartTableBinding.unavailableTypes(this.session.workbook.peek(), chart),
+      };
+      this.#unavailableTypes = cached;
+    }
+    return !cached.types.has(type);
   }
+  #unavailableTypes: {
+    readonly chart: ChartDefinition;
+    readonly version: number;
+    readonly types: ReadonlyMap<ChartType, string>;
+  } | null = null;
 
   toggleChartLegend(): void {
     const chart = this.activeChart;
@@ -1934,7 +1959,8 @@ export class AppController {
     if (pick.field === 'data') {
       const next = ChartEditCommands.withDataRange(this.session.workbook.peek(), chart, sheetName, range);
       if (!next) return this.info('Select cells with numbers to chart.');
-      return this.setChart(next, `The chart now plots ${ChartFields.reference(sheetName, range)}.`);
+      const summary = ChartChecks.summary(this.session.workbook.peek(), next);
+      return this.setChart(next, `The chart now plots ${summary.charAt(0).toLowerCase()}${summary.slice(1)}`);
     }
     this.run(
       ChartEditCommands.setChart(

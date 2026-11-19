@@ -172,10 +172,10 @@ export const ChartEditCommands = {
     next.categoriesReference = null;
     next.series = [];
     next.source = null;
-    const table = sheet.tables.find((t) => t.range.contains(range.top, range.left));
-    const source = table ? ChartTableBinding.seed(workbook, table.name, chart.type) : null;
-    if (source && source.series.length > 0) return ChartTableBinding.bind(workbook, next, source);
     seedChartFromRange(next, sheet, range);
-    return next.series.length > 0 ? next : null;
+    if (next.series.length === 0) return null;
+    // Columns picked whole from a table (header and every data row) plot the table by name.
+    const bound = ChartTableBinding.fromRanges(workbook, next);
+    return bound.ok ? bound.chart : next;
   },
 } as const;

@@ -181,15 +181,19 @@ function ChartTypePicker(props: {
   onPick: (type: ChartType) => void;
 }) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  // Arrow keys move focus only; Space, Enter or a click picks. Picking on every arrow press would
+  // add an undo step per type passed and let a pie on the way drop a bound chart's columns.
+  const [focused, setFocused] = useState<ChartType | null>(null);
   const usable = CHART_TYPE_LABELS.map(([t]) => t).filter(
     (t) => t === props.value || !props.unavailable.has(t),
   );
+  const current = focused !== null && usable.includes(focused) ? focused : props.value;
   const step = (by: number | 'first' | 'last') => {
-    const at = usable.indexOf(props.value);
+    const at = usable.indexOf(current);
     const i =
       by === 'first' ? 0 : by === 'last' ? usable.length - 1 : (at + by + usable.length) % usable.length;
     const next = usable[i]!;
-    if (next !== props.value) props.onPick(next);
+    setFocused(next);
     buttons.current[CHART_TYPE_LABELS.findIndex(([t]) => t === next)]?.focus();
   };
   const keys: Record<string, number | 'first' | 'last'> = {
@@ -220,10 +224,11 @@ function ChartTypePicker(props: {
               aria-checked={on}
               aria-disabled={why ? true : undefined}
               aria-label={label}
-              tabIndex={on ? 0 : -1}
+              tabIndex={type === current ? 0 : -1}
               title={why ? `${label}: ${why}` : label}
               class={on ? 'cs-chart-type cs-chart-type-on' : 'cs-chart-type'}
               onClick={() => {
+                setFocused(null);
                 if (!why && !on) props.onPick(type);
               }}
               onKeyDown={(e) => {
@@ -297,7 +302,7 @@ function MakeTableOffer(props: {
       <p class="cs-chart-sample">
         {region.header
           ? `Column names: ${region.header.map((h, i) => h || `Column${i + 1}`).join(', ')}.`
-          : 'The data has no row of labels, so a header row named Column1, Column2… is added above it.'}
+          : 'The data has no row of labels, so a header row named Column 1, Column 2… is added above it.'}
       </p>
       <div class="cs-chart-field-wrap">
         <label class="cs-chart-field">
@@ -361,7 +366,11 @@ export function ChartSheetView(props: ChartSheetViewProps) {
   // Table or Range: a bound chart is always in table mode; otherwise the user's last choice, else
   // table mode when there is a table to plot and nothing plotted yet.
   const [chosenMode, setChosenMode] = useState<'table' | 'range' | null>(null);
-  const [modeFailure, setModeFailure] = useState<Extract<FromRangesResult, { ok: false }> | null>(null);
+  // Why the last switch to Table failed, kept only while the chart and cells are as they were then.
+  const [modeFailure, setModeFailure] = useState<{
+    readonly result: Extract<FromRangesResult, { ok: false }>;
+    readonly key: string;
+  } | null>(null);
   const [offerOpen, setOfferOpen] = useState(false);
   useEffect(() => {
     setChosenMode(null);
@@ -388,6 +397,8 @@ export function ChartSheetView(props: ChartSheetViewProps) {
     draft.source,
     draft.aggregate,
   ]);
+  const failureKey = `${dataKey}|${props.version}`;
+  const failure = modeFailure?.key === failureKey ? modeFailure.result : null;
   const data = useMemo(
     () => ChartDataResolver.resolve(props.workbook, draft),
     [props.workbook, dataKey, props.version],
@@ -440,7 +451,7 @@ export function ChartSheetView(props: ChartSheetViewProps) {
       setModeFailure(null);
       setOfferOpen(true);
     } else {
-      setModeFailure(result);
+      setModeFailure({ result, key: failureKey });
     }
   };
   /** "Use Whole Columns": bind each range to the table column it sits in. */
@@ -449,7 +460,7 @@ export function ChartSheetView(props: ChartSheetViewProps) {
     if (result.ok) {
       setChosenMode('table');
       replaceChart(result.chart);
-    } else setModeFailure(result);
+    } else setModeFailure({ result, key: failureKey });
   };
   const makeTable = (name: string): string | null => {
     const why = props.onMakeTable?.(name) ?? null;
@@ -619,10 +630,10 @@ export function ChartSheetView(props: ChartSheetViewProps) {
             </button>
           ))}
         </div>
-        {modeFailure && (
+        {failure && (
           <div class="cs-chart-offer cs-chart-offer-error" role="alert">
-            <p>{modeFailure.reason}</p>
-            {modeFailure.code === 'notWholeColumns' && (
+            <p>{failure.reason}</p>
+            {failure.code === 'notWholeColumns' && (
               <button type="button" class="cs-btn" onClick={bindWholeColumns}>
                 Use Whole Columns
               </button>
@@ -897,7 +908,11 @@ function SeriesRow(props: {
   const { series, family } = props;
   const [open, setOpen] = useState(() => series.valuesReference.trim() === '');
   const hasProblem = seriesFieldKinds(family, props.bubble).some((k) => props.problem(k) !== null);
-  const shown = open || hasProblem;
+  // A problem opens the row, and it stays open once fixed: folding it while the user types in it
+  // would take the field away mid-edit.
+  const held = useRef(false);
+  if (hasProblem) held.current = true;
+  const shown = open || held.current;
   return (
     <fieldset class="cs-chart-series">
       <legend>
@@ -906,7 +921,10 @@ function SeriesRow(props: {
           class="cs-chart-series-toggle"
           aria-expanded={shown}
           title={shown ? 'Hide this series’ fields.' : 'Show this series’ fields.'}
-          onClick={() => setOpen(!shown)}
+          onClick={() => {
+            held.current = false;
+            setOpen(!shown);
+          }}
         >
           <Icon name={shown ? 'chevron-down' : 'chevron-right'} />
           <span class="cs-chart-series-name">{props.title}</span>

@@ -324,7 +324,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
         >
           {/* The announcer reads the text; the Undo button is for keyboard and screen-reader users. */}
           <span aria-hidden="true">{app.toast.value.text}</span>
-          {app.toast.value.undoAt !== undefined && app.toast.value.undoAt === app.session.version.value && (
+          {app.noticeCanUndo && (
             <button type="button" class="cs-toast-undo" onClick={() => app.undoFromNotice()}>
               Undo
             </button>

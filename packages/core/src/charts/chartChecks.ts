@@ -1,11 +1,12 @@
 import type { ChartDefinition } from '@cellestra/charts';
 import { ChartTypes } from '@cellestra/charts';
 import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
+import { findTableByName } from '../data/tables.ts';
 import { CellRange } from '../model/cellRange.ts';
 import type { Workbook } from '../model/workbook.ts';
 import { labelOf } from './chartLabels.ts';
 import type { ChartField } from './chartFields.ts';
-import { ChartTableBinding, fallbackSheetName, plottedReferences } from './chartTableBinding.ts';
+import { fallbackSheetName, plottedReferences } from './chartTableBinding.ts';
 
 /** A reference field of a chart that can't plot as typed, and what to do about it. */
 export interface ChartFieldProblem {
@@ -125,7 +126,7 @@ export const ChartChecks = {
   summary(workbook: Workbook, chart: ChartDefinition): string {
     const source = chart.source;
     if (source) {
-      if (!ChartTableBinding.columns(workbook, source.table))
+      if (!findTableByName(workbook, source.table))
         return `From table “${source.table}”, which no longer exists.`;
       const plotted = listOf(source.series.map((s) => s.column));
       const head = `From table “${source.table}”`;

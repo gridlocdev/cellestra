@@ -132,6 +132,11 @@ export class WorkbookSession {
     return this.#workbook.peek().settings.effectiveLocale;
   }
 
+  /** Whether `command` is the step Undo would undo next (no other edit has landed since). */
+  isLastEdit(command: EditCommand): boolean {
+    return this.#history.lastCommand === command;
+  }
+
   get undoLabel(): string | null {
     return this.#history.undoLabel;
   }

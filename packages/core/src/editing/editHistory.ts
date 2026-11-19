@@ -21,6 +21,10 @@ export class EditHistory {
   get undoLabel(): string | null {
     return this.undoStack.at(-1)?.label ?? null;
   }
+  /** The step Undo would undo next, or null. */
+  get lastCommand(): EditCommand | null {
+    return this.undoStack.at(-1) ?? null;
+  }
   get redoLabel(): string | null {
     return this.redoStack.at(-1)?.label ?? null;
   }

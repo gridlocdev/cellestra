@@ -446,10 +446,19 @@ export const ChartTableBinding = {
     if (names.size !== 1) return null;
     const sheet = workbook.findSheet(ranges[0]!.sheet ?? fallbackSheet);
     if (!sheet || sheet.isChartSheet) return null;
+    if (ChartTypes.isXY(chart.type)) {
+      // Every series must share one X column, or the new table couldn't be plotted by name.
+      const xs = new Set(chart.series.map((s) => s.xValuesReference?.trim().toLowerCase() ?? ''));
+      if (xs.size > 1) return null;
+    }
     let top = Math.min(...ranges.map((r) => r.top));
     const left = Math.min(...ranges.map((r) => r.left));
-    const bottom = Math.max(...ranges.map((r) => r.bottom));
     const right = Math.max(...ranges.map((r) => r.right));
+    // A whole column picked from its header ends at the sheet's last row: stop at the last used one.
+    const used = sheet.getUsedRange();
+    if (!used) return null;
+    const bottom = Math.min(Math.max(...ranges.map((r) => r.bottom)), used.bottom);
+    if (bottom < top) return null;
     const labelsAt = (row: number) =>
       DataRegion.firstRowIsLabels(sheet, CellRange.fromBounds(row, left, row, right));
     if (top > 0 && !labelsAt(top) && labelsAt(top - 1)) top--;

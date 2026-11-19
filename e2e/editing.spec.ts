@@ -195,12 +195,32 @@ test.describe('Charts', () => {
     await expect(page.locator('.cs-chart-series')).toHaveCount(2);
   });
 
+  test('a series opened by a problem stays open while you fix it', async ({ page }) => {
+    await goTo(page, 'A1:C3');
+    await runCommand(page, 'Chart Sheet');
+    const categories = page.getByRole('textbox', { name: 'Category labels' });
+    await categories.click();
+    await page.keyboard.press('ControlOrMeta+KeyA');
+    await page.keyboard.type('Sheet1.A2:A4');
+    await page.keyboard.press('Enter');
+    const values = page.getByRole('textbox', { name: 'Values Pick on sheet' }).first();
+    await expect(values).toHaveAttribute('aria-invalid', 'true');
+    await values.click();
+    await page.keyboard.press('ControlOrMeta+KeyA');
+    await page.keyboard.type('Sheet1.B2:B4');
+    await expect(values).toBeFocused();
+    await expect(values).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
   test('the Chart commands change the type and swap rows and columns', async ({ page }) => {
     await goTo(page, 'A1:C3');
     await runCommand(page, 'Chart Sheet');
     await runCommand(page, 'Bar Chart');
     await expect(page.getByRole('radio', { name: 'Bar' })).toBeChecked();
     await page.getByRole('radio', { name: 'Bar' }).press('ArrowRight');
+    await expect(page.getByRole('radio', { name: 'Line' })).toBeFocused();
+    await expect(page.getByRole('radio', { name: 'Bar' })).toBeChecked();
+    await page.keyboard.press('Enter');
     await expect(page.getByRole('radio', { name: 'Line' })).toBeChecked();
     await runCommand(page, 'Swap Rows and Columns');
     await expect(page.getByRole('button', { name: 'Remove January' })).toBeVisible();
