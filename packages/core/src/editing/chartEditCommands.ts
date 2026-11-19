@@ -7,7 +7,8 @@ import { SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import { ActionCommand, type EditCommand, EditResult, requireSheet } from './editCommand.ts';
-import { clampToUsed, OVERSIZED_CELL_CAP } from './editCommands.ts';
+import { clampToUsed, EditCommands, OVERSIZED_CELL_CAP } from './editCommands.ts';
+import { tableNameError, TableCommands } from './tableCommands.ts';
 
 const letters = (column: number): string => SheetDimensions.columnToLetters(column);
 
@@ -50,6 +51,10 @@ export function seedChartFromRange(definition: ChartDefinition, sheet: Worksheet
   }
 }
 
+/** The edit that makes a chart's data a table and binds the chart to it, or why it can't. */
+export type ChartTablePlan =
+  { readonly ok: true; readonly command: EditCommand } | { readonly ok: false; readonly reason: string };
+
 export const ChartEditCommands = {
   /** Replace a chart sheet's definition (undo restores the previous one). */
   setChart(sheet: string, next: ChartDefinition): EditCommand {
@@ -67,6 +72,42 @@ export const ChartEditCommands = {
         return EditResult.none;
       },
     );
+  },
+
+  /**
+   * "Make a table" from the chart panel, as one undo step: the block the chart's ranges cover
+   * (`ChartTableBinding.tableRegion`) becomes a table called `name`, with a header row of labels
+   * (one is added when the data has none), and the chart on `chartSheet` then plots the table's
+   * columns by name. Each range binds to the column it sits in, so a range a row short still binds.
+   */
+  makeTableForChart(workbook: Workbook, chartSheet: string, name: string): ChartTablePlan {
+    const chart = workbook.findSheet(chartSheet)?.chart ?? null;
+    const region = chart ? ChartTableBinding.tableRegion(workbook, chart) : null;
+    if (!region) return { ok: false, reason: 'The chart’s data can’t be made into one table.' };
+    const error = tableNameError(workbook, name.trim());
+    if (error) return { ok: false, reason: error };
+    const plan = TableCommands.create(workbook, region.sheet, region.range, {
+      header: 'labels',
+      name: name.trim(),
+    });
+    if (!plan.ok) return { ok: false, reason: 'The chart’s data overlaps a table.' };
+    let previous: ChartDefinition | null = null;
+    const bind = new ActionCommand(
+      'Plot Table Columns',
+      (wb) => {
+        // The table exists now, and a header row it inserted has moved the chart's ranges down.
+        const target = requireSheet(wb, chartSheet);
+        previous = target.chart;
+        const result = previous ? ChartTableBinding.fromRanges(wb, previous, { wholeColumns: true }) : null;
+        if (result?.ok) target.chart = result.chart;
+        return EditResult.none;
+      },
+      (wb) => {
+        requireSheet(wb, chartSheet).chart = previous;
+        return EditResult.none;
+      },
+    );
+    return { ok: true, command: EditCommands.composite('Make Table', [plan.command, bind]) };
   },
 
   /**

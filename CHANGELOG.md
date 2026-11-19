@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Make a table from the chart panel.** A range chart whose cells could be a table offers **Make a Table…**: name it, and the cells become a table the chart plots by column name, in one undo step. **Use Whole Columns** and **Keep These Cells** give a way forward when switching between Table and Range can't go as asked.
+- **The chart panel says what's wrong.** A line under the heading says where the data comes from, and a range that can't plot says why under its field.
+- **Chart types as pictures.** Types the table's columns can't fill are greyed out with the reason.
+- **Shorter series list.** Each series folds to one line and opens when you need its fields. Removing a series shows a notice with **Undo**.
+- **Chart menu.** Each chart type, **Show Legend** and **Swap Rows and Columns** are in a new **Chart** menu and the command menu. `F11` inserts a chart sheet.
+- The **Aggregate** list is now **Combine rows with the same label**, and the name cell field is **Take name from cell**.
+
 ## 1.0.0
 
 Cellestra 1.0.0 is the first stable release. Nothing changed since 0.4.0.

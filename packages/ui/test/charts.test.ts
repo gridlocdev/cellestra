@@ -19,7 +19,14 @@ import {
   wedgePath,
 } from '../src/charts/chartMath.ts';
 import { barRects, buildChartScene, type Shape } from '../src/charts/chartScene.ts';
-import { chartFamily, drawAsOptions } from '../src/charts/ChartSheetView.tsx';
+import {
+  CHART_TYPE_ICONS,
+  CHART_TYPE_LABELS,
+  chartFamily,
+  drawAsOptions,
+  fieldKey,
+  seriesFieldKinds,
+} from '../src/charts/ChartSheetView.tsx';
 
 const S = (values: number[], type: ChartType = 'column', name = 's'): ResolvedSeries => ({
   name,
@@ -334,5 +341,23 @@ describe('Draw as', () => {
     const plain = chart([S([1, 2], 'column'), S([3, 4], 'column')], { type: 'column' });
     expect(filled(mixed)).toBe(filled(plain));
     expect(filled(mixed)).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('chart panel helpers', () => {
+  it('gives each reference field its own key, so problems land under the right field', () => {
+    expect(fieldKey({ kind: 'categories' })).toBe('categories');
+    expect(fieldKey({ kind: 'values', series: 2 })).toBe('values-2');
+    expect(fieldKey({ kind: 'nameCell', series: 0 })).not.toBe(fieldKey({ kind: 'values', series: 0 }));
+  });
+
+  it('lists only the fields a series of each family plots', () => {
+    expect(seriesFieldKinds('cartesian', false)).toEqual(['nameCell', 'values']);
+    expect(seriesFieldKinds('xy', false)).toEqual(['nameCell', 'xValues', 'values']);
+    expect(seriesFieldKinds('xy', true)).toEqual(['nameCell', 'xValues', 'values', 'bubbleSizes']);
+  });
+
+  it('has a picture for every chart type', () => {
+    for (const [type] of CHART_TYPE_LABELS) expect(CHART_TYPE_ICONS[type]).toMatch(/^chart-/);
   });
 });

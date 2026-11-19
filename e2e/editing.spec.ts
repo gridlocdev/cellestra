@@ -131,4 +131,58 @@ test.describe('Charts', () => {
     await openFile(page, 'budget.ods');
     await expect(page.getByRole('tablist', { name: 'Sheets' }).getByRole('tab')).toHaveCount(2);
   });
+
+  test('Make a Table turns the chart’s cells into a table it plots by name, and Undo puts the cells back', async ({
+    page,
+  }) => {
+    await goTo(page, 'A1:C3');
+    await page.keyboard.press('F11');
+    const panel = page.getByRole('complementary', { name: 'Chart data' });
+    await expect(panel.getByText(/^From cells /)).toBeVisible();
+    await panel.getByRole('button', { name: 'Make a Table…' }).click();
+    const form = panel.getByRole('form', { name: 'Make a table' });
+    await expect(form.getByRole('textbox', { name: 'Table name' })).toBeFocused();
+    await page.keyboard.press('ControlOrMeta+KeyA');
+    await page.keyboard.type('Costs');
+    await form.getByRole('button', { name: 'Create Table' }).click();
+    await expect(panel.getByText('From table “Costs”: Rent and Groceries by Month.')).toBeVisible();
+    await expect(panel.getByRole('radio', { name: 'Table' })).toBeChecked();
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(panel.getByText(/^From cells /)).toBeVisible();
+  });
+
+  test('a range that can’t plot says why under its field', async ({ page }) => {
+    await goTo(page, 'A1:C3');
+    await runCommand(page, 'Chart Sheet');
+    const field = page.getByRole('textbox', { name: 'Category labels' });
+    await field.click();
+    await page.keyboard.press('ControlOrMeta+KeyA');
+    await page.keyboard.type('Nowhere.A2:A3');
+    await page.keyboard.press('Enter');
+    await expect(field).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByText('There is no sheet called “Nowhere”.')).toBeVisible();
+  });
+
+  test('removing a series offers Undo in the status bar', async ({ page }) => {
+    await goTo(page, 'A1:C3');
+    await runCommand(page, 'Chart Sheet');
+    const series = page.locator('.cs-chart-series');
+    await expect(series).toHaveCount(2);
+    await page.getByRole('button', { name: 'Remove Rent' }).click();
+    await expect(series).toHaveCount(1);
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(series).toHaveCount(2);
+  });
+
+  test('the Chart commands change the type and swap rows and columns', async ({ page }) => {
+    await goTo(page, 'A1:C3');
+    await runCommand(page, 'Chart Sheet');
+    await runCommand(page, 'Bar Chart');
+    await expect(page.getByRole('radio', { name: 'Bar' })).toBeChecked();
+    await page.getByRole('radio', { name: 'Bar' }).press('ArrowRight');
+    await expect(page.getByRole('radio', { name: 'Line' })).toBeChecked();
+    await runCommand(page, 'Swap Rows and Columns');
+    await expect(page.getByRole('button', { name: 'Remove January' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Remove February' })).toBeVisible();
+  });
 });

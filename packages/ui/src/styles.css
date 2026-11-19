@@ -599,6 +599,23 @@ button {
   z-index: 200;
   box-shadow: var(--cs-shadow);
   max-width: 80vw;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cs-toast-undo {
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: var(--cs-radius);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cs-toast-undo:focus-visible {
+  outline: 2px solid var(--cs-accent);
+  outline-offset: 1px;
 }
 /* Picking cells for a chart field: a prompt bar above the grid. */
 .cs-pick-banner {

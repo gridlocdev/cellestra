@@ -160,6 +160,9 @@
   flex-direction: column;
   gap: 10px;
 }
+.cs-chart-panel > * {
+  flex-shrink: 0; /* a long panel scrolls; its parts never squash */
+}
 .cs-chart-panel h2 {
   margin: 0;
   font-size: 14px;
@@ -304,4 +307,145 @@
 .cs-chart-kind {
   font-size: 11px;
   color: var(--cs-text-2);
+}
+
+/* Where the data comes from, under the panel heading. */
+.cs-chart-summary {
+  margin: -6px 0 0;
+  font-size: 12px;
+  color: var(--cs-text-2);
+}
+.cs-chart-field-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cs-chart-label {
+  font-size: 11px;
+  color: var(--cs-text-2);
+}
+/* A reference that can't plot: the message under its field, the field outlined. */
+.cs-chart-problem {
+  margin: 0;
+  font-size: 11px;
+  color: var(--cs-danger);
+}
+.cs-chart-field input[aria-invalid='true'] {
+  border-color: var(--cs-danger);
+}
+
+/* Chart type: one picture button per type. */
+.cs-chart-types {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+.cs-chart-type {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 2px 4px;
+  border: 1px solid var(--cs-border);
+  border-radius: var(--cs-radius);
+  background: var(--cs-bg);
+  color: var(--cs-text);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.cs-chart-type > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-chart-type.cs-chart-type-on {
+  border-color: var(--cs-accent);
+  background: var(--cs-accent);
+  color: var(--cs-accent-text);
+}
+.cs-chart-type[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
+.cs-chart-type:focus-visible {
+  outline: 2px solid var(--cs-accent);
+  outline-offset: 1px;
+}
+
+/* An offer or a refusal with a way out: "Make a Table…", "Use Whole Columns". */
+.cs-chart-offer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--cs-border);
+  border-radius: 4px;
+  background: var(--cs-bg);
+}
+.cs-chart-offer > p {
+  margin: 0;
+  font-size: 12px;
+}
+.cs-chart-offer > .cs-btn,
+.cs-chart-offer-buttons > .cs-btn {
+  align-self: flex-start;
+  border: 1px solid var(--cs-border);
+}
+.cs-chart-offer-buttons {
+  display: flex;
+  gap: 6px;
+}
+.cs-chart-offer-error {
+  border-color: var(--cs-danger);
+}
+
+/* A series row folds to one line: its name and values range. */
+.cs-chart-series-toggle {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--cs-text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.cs-chart-series-name,
+.cs-chart-series-ref {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-chart-series-ref {
+  flex: 1;
+  min-width: 0;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--cs-text-2);
+}
+.cs-chart-series-toggle:focus-visible {
+  outline: 2px solid var(--cs-accent);
+  outline-offset: 1px;
+}
+
+/* Axis titles, folded away until wanted. */
+.cs-chart-more {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cs-chart-more > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cs-chart-more[open] > summary {
+  margin-bottom: 6px;
 }

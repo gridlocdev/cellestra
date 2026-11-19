@@ -1,4 +1,3 @@
-import { ChartEditCommands } from '@cellestra/core';
 import { ChartSheetView } from '@cellestra/ui';
 import type { AppController } from './controller.ts';
 
@@ -11,8 +10,9 @@ export function ChartPane({ app }: { readonly app: AppController }) {
       sheet={s.activeSheet.value}
       version={s.version.value}
       dark={app.isDark.value}
-      onChange={(next) => app.run(ChartEditCommands.setChart(app.sheetName, next))}
+      onChange={(next, notice) => app.setChart(next, notice)}
       onPick={(field) => app.startChartPick(field)}
+      onMakeTable={(name) => app.makeChartTable(name)}
     />
   );
 }

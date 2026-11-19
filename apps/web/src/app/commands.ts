@@ -8,7 +8,7 @@ import {
   type HorizontalAlignment,
   type VerticalAlignment,
 } from '@cellestra/core';
-import { CommandCatalog, isMac, type CommandSpec } from '@cellestra/ui';
+import { CHART_TYPE_ICONS, CHART_TYPE_LABELS, CommandCatalog, isMac, type CommandSpec } from '@cellestra/ui';
 import type { AppController } from './controller.ts';
 import { MAX_ZOOM, MIN_ZOOM, NAS_BUILD } from './controller.ts';
 
@@ -620,6 +620,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
       title: 'Chart Sheet',
       description: 'Chart the selected data on a new sheet',
       group: 'Insert',
+      shortcut: 'f11',
       icon: 'chart-column',
       run: () => {
         try {
@@ -630,6 +631,39 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
           app.error(e);
         }
       },
+    },
+    // Chart: the active chart sheet's type, legend and layout; disabled on sheets of cells.
+    ...CHART_TYPE_LABELS.map(([type, label]) => ({
+      id: `chart.type.${type}`,
+      title: `${label} Chart`,
+      description: `Draw this chart as a ${label.toLowerCase()} chart`,
+      group: 'Chart' as const,
+      icon: CHART_TYPE_ICONS[type],
+      active: () => app.activeChart?.type === type,
+      enabled: () => (
+        s.version.value,
+        app.activeChart !== null && app.activeChart.type !== type && app.chartTypeAvailable(type)
+      ),
+      run: () => app.setChartType(type),
+    })),
+    {
+      id: 'chart.legend',
+      title: 'Show Legend',
+      description: 'Show or hide the key naming each series',
+      group: 'Chart',
+      icon: 'list',
+      active: () => app.activeChart?.showLegend === true,
+      enabled: () => (s.version.value, app.activeChart !== null),
+      run: () => app.toggleChartLegend(),
+    },
+    {
+      id: 'chart.swapRowsColumns',
+      title: 'Swap Rows and Columns',
+      description: 'Plot the series as categories and the categories as series',
+      group: 'Chart',
+      icon: 'arrow-left-right',
+      enabled: () => (s.version.value, app.activeChart !== null),
+      run: () => app.swapChartRowsColumns(),
     },
     {
       id: 'insert.date',

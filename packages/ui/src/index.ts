@@ -162,6 +162,7 @@ export {
 } from './components/formatCells.ts';
 export { ChartSvg, type ChartSvgProps } from './charts/ChartSvg.tsx';
 export {
+  CHART_TYPE_ICONS,
   CHART_TYPE_LABELS,
   chartFamily,
   type ChartFamily,

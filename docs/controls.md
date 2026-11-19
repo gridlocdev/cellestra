@@ -27,6 +27,7 @@
 | Move rows up / down | `⌥↑` / `⌥↓` | `Alt+↑` / `Alt+↓` |
 | Move columns left / right | `⌥←` / `⌥→` | `Alt+←` / `Alt+→` |
 | Insert sheet | `⇧F11` | `Shift+F11` |
+| Insert chart sheet | `F11` | `F11` |
 | Insert function | `⌃⌥F` | `Ctrl+Alt+F` |
 | Hyperlink | `⌥⌘K` | `Ctrl+Alt+K` |
 | Today's date / current time | `⌘;` / `⇧⌘;` | `Ctrl+;` / `Ctrl+Shift+;` |

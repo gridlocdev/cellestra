@@ -17,6 +17,7 @@ const MENU_ORDER: readonly CommandGroup[] = [
   'Format',
   'Data',
   'Sheet',
+  'Chart',
   'Help',
 ];
 /** Clipboard items use Electron roles so the page gets real copy/cut/paste events. */

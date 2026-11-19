@@ -1,5 +1,6 @@
 import type { ChartDefinition, ChartSeries, ChartTableSource, ChartType } from '@cellestra/charts';
 import { ChartTypes, cloneChart, cloneSource, createSeries } from '@cellestra/charts';
+import { DataRegion } from '../data/dataRegion.ts';
 import { findTableByName, tableHeaderLabels } from '../data/tables.ts';
 import type { Table } from '../data/types.ts';
 import { quoteSheetIfNeeded } from '../model/cellAddress.ts';
@@ -20,9 +21,38 @@ export interface TableColumnInfo {
   readonly kind: TableColumnKind;
 }
 
-/** Why a chart's ranges can't become a table binding. */
+/**
+ * Why a chart's ranges can't become a table binding: no data yet, a reference that isn't a cell
+ * range, ranges outside every table, ranges that aren't whole table columns, series with different
+ * X columns, or no table in the workbook at all.
+ */
+export type FromRangesFailure =
+  'noData' | 'notRanges' | 'notInTable' | 'notWholeColumns' | 'mixedX' | 'noTable';
+
+/** A chart's ranges as a table binding, or why not: a code for the panel and a sentence to show. */
 export type FromRangesResult =
-  { readonly ok: true; readonly chart: ChartDefinition } | { readonly ok: false; readonly reason: string };
+  | { readonly ok: true; readonly chart: ChartDefinition }
+  | { readonly ok: false; readonly code: FromRangesFailure; readonly reason: string };
+
+const fail = (code: FromRangesFailure, reason: string): FromRangesResult => ({ ok: false, code, reason });
+
+/** Every cell-range reference a chart plots from (not its name cells), skipping blanks. */
+export function plottedReferences(chart: ChartDefinition): string[] {
+  const xy = ChartTypes.isXY(chart.type);
+  return [
+    xy ? null : chart.categoriesReference,
+    ...chart.series.flatMap((s) => [
+      s.valuesReference,
+      xy ? s.xValuesReference : null,
+      chart.type === 'bubble' ? s.bubbleSizeReference : null,
+    ]),
+  ].filter((r): r is string => r !== null && r.trim() !== '');
+}
+
+/** The sheet an unqualified chart reference points at: the first sheet with cells. */
+export function fallbackSheetName(workbook: Workbook): string {
+  return workbook.worksheets.find((s) => !s.isChartSheet)?.name ?? '';
+}
 
 const letters = (column: number): string => SheetDimensions.columnToLetters(column);
 
@@ -242,40 +272,37 @@ export const ChartTableBinding = {
    * same chart bound to the table by column names (series take the column headers as their names).
    * Otherwise why not, in a sentence for the panel.
    */
-  fromRanges(workbook: Workbook, chart: ChartDefinition): FromRangesResult {
+  fromRanges(
+    workbook: Workbook,
+    chart: ChartDefinition,
+    options: { readonly wholeColumns?: boolean } = {},
+  ): FromRangesResult {
     const xy = ChartTypes.isXY(chart.type);
-    const references = [
-      xy ? null : chart.categoriesReference,
-      ...chart.series.flatMap((s) => [
-        s.valuesReference,
-        xy ? s.xValuesReference : null,
-        chart.type === 'bubble' ? s.bubbleSizeReference : null,
-      ]),
-    ].filter((r): r is string => r !== null && r.trim() !== '');
+    const references = plottedReferences(chart);
     if (chart.series.length === 0 || references.length === 0)
-      return { ok: false, reason: 'Add a series first: there is no data to match to a table.' };
-    const fallbackSheet = workbook.worksheets.find((s) => !s.isChartSheet)?.name ?? '';
+      return fail('noData', 'Add a series first: there is no data to match to a table.');
+    const fallbackSheet = fallbackSheetName(workbook);
     const parsed = references.map((r) => CellRange.tryParse(r.trim()));
     const first = parsed[0];
     if (!first || parsed.some((r) => r === null))
-      return { ok: false, reason: 'One of the ranges isn’t a cell range.' };
+      return fail('notRanges', 'One of the ranges isn’t a cell range.');
     const sheet = workbook.findSheet(first.sheet ?? fallbackSheet);
     const table = sheet?.tables.find((t) => t.range.contains(first.top, first.left));
     if (!sheet || !table)
-      return { ok: false, reason: 'The ranges aren’t inside a table. Make the data a table first.' };
+      return fail('notInTable', 'The ranges aren’t inside a table. Make the data a table first.');
     const rows = dataRows(table);
+    // `wholeColumns` matches each range to the table column it sits in, whatever rows it covers.
     const fits = (range: CellRange): boolean =>
       (range.sheet ?? fallbackSheet).toLowerCase() === sheet.name.toLowerCase() &&
       range.left === range.right &&
       range.left >= table.range.left &&
       range.left <= table.range.right &&
-      range.top === rows.top &&
-      range.bottom === table.range.bottom;
+      (options.wholeColumns === true || (range.top === rows.top && range.bottom === table.range.bottom));
     if (!parsed.every((r) => fits(r!)))
-      return {
-        ok: false,
-        reason: `Each range must be one whole column of the table “${table.name}”’s data, without its header.`,
-      };
+      return fail(
+        'notWholeColumns',
+        `Each range must be one whole column of the table “${table.name}”’s data, without its header.`,
+      );
     const labels = tableHeaderLabels(table, sheet);
     const nameOf = (reference: string | null): string | null => {
       const range = reference ? CellRange.tryParse(reference.trim()) : null;
@@ -290,8 +317,8 @@ export const ChartTableBinding = {
         sizeColumn: chart.type === 'bubble' ? nameOf(s.bubbleSizeReference) : null,
       })),
     };
-    if (xy && new Set(chart.series.map((s) => s.xValuesReference ?? '')).size > 1)
-      return { ok: false, reason: 'Every series must share one X column to plot from a table.' };
+    if (xy && new Set(chart.series.map((s) => nameOf(s.xValuesReference))).size > 1)
+      return fail('mixedX', 'Every series must share one X column to plot from a table.');
     return { ok: true, chart: ChartTableBinding.bind(workbook, chart, source) };
   },
 
@@ -312,8 +339,7 @@ export const ChartTableBinding = {
     if (!hasData(chart)) {
       const name = table ?? ChartTableBinding.tableNames(workbook)[0];
       const source = name ? ChartTableBinding.seed(workbook, name, chart.type) : null;
-      if (!source)
-        return { ok: false, reason: 'There is no table in the workbook. Make the data a table first.' };
+      if (!source) return fail('noTable', 'There is no table in the workbook. Make the data a table first.');
       return { ok: true, chart: ChartTableBinding.bind(workbook, chart, source) };
     }
     return ChartTableBinding.fromRanges(workbook, chart);
@@ -375,6 +401,58 @@ export const ChartTableBinding = {
     }
     if (type === 'pie' || type === 'doughnut') next.source.series = next.source.series.slice(0, 1);
     return ChartTableBinding.bind(workbook, next, next.source);
+  },
+
+  /**
+   * Where a new table would hold the chart's data, for the panel's "Make a table": the block its
+   * ranges span on one sheet, plus the row of labels just above it when there is one. Null when the
+   * chart is bound or plots nothing, a range isn't a single column, the ranges span sheets, or the
+   * block overlaps a table.
+   */
+  tableRegion(workbook: Workbook, chart: ChartDefinition): { sheet: string; range: CellRange } | null {
+    if (chart.source) return null;
+    const references = plottedReferences(chart);
+    if (references.length === 0) return null;
+    const fallbackSheet = fallbackSheetName(workbook);
+    const ranges: CellRange[] = [];
+    for (const reference of references) {
+      const range = CellRange.tryParse(reference.trim());
+      if (!range || range.left !== range.right) return null;
+      ranges.push(range);
+    }
+    const names = new Set(ranges.map((r) => (r.sheet ?? fallbackSheet).toLowerCase()));
+    if (names.size !== 1) return null;
+    const sheet = workbook.findSheet(ranges[0]!.sheet ?? fallbackSheet);
+    if (!sheet || sheet.isChartSheet) return null;
+    let top = Math.min(...ranges.map((r) => r.top));
+    const left = Math.min(...ranges.map((r) => r.left));
+    const bottom = Math.max(...ranges.map((r) => r.bottom));
+    const right = Math.max(...ranges.map((r) => r.right));
+    const labelsAt = (row: number) =>
+      DataRegion.firstRowIsLabels(sheet, CellRange.fromBounds(row, left, row, right));
+    if (top > 0 && !labelsAt(top) && labelsAt(top - 1)) top--;
+    const range = CellRange.fromBounds(top, left, bottom, right);
+    if (sheet.tables.some((t) => t.range.intersects(range))) return null;
+    return { sheet: sheet.name, range };
+  },
+
+  /**
+   * The chart types a bound chart's table can't fill, each with why, for the panel's type picker:
+   * every chart needs a number column, a scatter chart two (X and Y), a bubble chart three.
+   */
+  unavailableTypes(workbook: Workbook, chart: ChartDefinition): Map<ChartType, string> {
+    const out = new Map<ChartType, string>();
+    const columns = chart.source ? ChartTableBinding.columns(workbook, chart.source.table) : null;
+    if (!columns) return out;
+    const numbers = columns.filter((c) => c.kind === 'number').length;
+    for (const type of ChartTypes.all) {
+      if (numbers === 0) out.set(type, 'The table has no column of numbers to plot.');
+      else if (type === 'bubble' && numbers < 3)
+        out.set(type, 'A bubble chart needs three columns of numbers: X, Y and bubble size.');
+      else if (type === 'scatter' && numbers < 2)
+        out.set(type, 'A scatter chart needs two columns of numbers: X and Y.');
+    }
+    return out;
   },
 
   /** The chart with its binding pointed at `to` when it was bound to `from` (ignoring case). */

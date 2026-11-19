@@ -1,7 +1,8 @@
 import { formatShortcut, matchKind, parseShortcut, type Shortcut } from './shortcut.ts';
 
 /** Menu groups — the native menu bar and the palette's section labels. */
-export type CommandGroup = 'File' | 'Edit' | 'View' | 'Insert' | 'Format' | 'Data' | 'Sheet' | 'Help';
+export type CommandGroup =
+  'File' | 'Edit' | 'View' | 'Insert' | 'Format' | 'Data' | 'Sheet' | 'Chart' | 'Help';
 
 export interface CommandSpec {
   readonly id: string;

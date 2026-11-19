@@ -21,6 +21,8 @@ import {
   findTableByName,
   ChartEditCommands,
   ChartFields,
+  ChartSwap,
+  ChartTableBinding,
   type ChartField,
   DataScope,
   EdgeNavigator,
@@ -95,7 +97,7 @@ import {
   type RecentEntry,
 } from '@cellestra/ui';
 
-import type { ChartDefinition } from '@cellestra/charts';
+import { cloneChart, type ChartDefinition, type ChartType } from '@cellestra/charts';
 import { DocumentStores } from './documentStores.ts';
 import { DocumentLifecycle } from './documentLifecycle.ts';
 import { message } from './lifecycleHost.ts';
@@ -293,7 +295,11 @@ export class AppController {
   readonly nasAvailable = signal(false);
 
   readonly dialog = signal<DialogState | null>(null);
-  readonly toast = signal<{ text: string; tone: 'info' | 'error' } | null>(null);
+  /**
+   * The status-bar notice. `undoAt` is the session version just after an undoable edit: the notice
+   * offers Undo only while no other edit has landed since.
+   */
+  readonly toast = signal<{ text: string; tone: 'info' | 'error'; undoAt?: number } | null>(null);
   readonly paletteOpen = signal(false);
   readonly sheetPickerOpen = signal(false);
   readonly recentOpen = signal(false);
@@ -848,13 +854,27 @@ export class AppController {
     this.#showToast(message(e), 'error');
   }
 
-  #showToast(text: string, tone: 'info' | 'error'): void {
-    this.toast.value = { text, tone };
+  /** A notice for the edit just made, with an Undo button while it is still the last edit. */
+  undoableInfo(text: string): void {
+    this.#showToast(text, 'info', this.session.version.peek());
+  }
+
+  /** The notice's Undo: undo its edit, unless another edit has landed since. */
+  undoFromNotice(): void {
+    const toast = this.toast.peek();
+    if (toast?.undoAt === undefined || toast.undoAt !== this.session.version.peek()) return;
+    this.session.undo();
+    this.toast.value = null;
+  }
+
+  #showToast(text: string, tone: 'info' | 'error', undoAt?: number): void {
+    this.toast.value = undoAt === undefined ? { text, tone } : { text, tone, undoAt };
     this.#cancelToast?.();
-    // Long notices (what an .xlsx import left out) stay up long enough to read.
+    // Long notices (what an .xlsx import left out) stay up long enough to read; one with Undo
+    // stays long enough to reach the button.
     const readable = Math.min(12_000, text.length * 60);
     this.#cancelToast = after(
-      Math.max(tone === 'error' ? 6000 : 2500, readable),
+      Math.max(tone === 'error' ? 6000 : undoAt === undefined ? 2500 : 8000, readable),
       () => (this.toast.value = null),
     );
   }
@@ -1803,6 +1823,64 @@ export class AppController {
   insertChartSheet(chart: ChartDefinition | null): void {
     if (!chart) return this.info('Select a range with numbers to chart.');
     this.session.insertSheet((wb) => wb.addChartSheet(chart));
+  }
+
+  /** The chart on the active sheet, when it is a chart sheet. */
+  get activeChart(): ChartDefinition | null {
+    const sheet = this.sheet;
+    return sheet.isChartSheet ? sheet.chart : null;
+  }
+
+  /** Replace the active chart sheet's chart (one undo step); `notice` announces it with Undo. */
+  setChart(next: ChartDefinition, notice?: string): void {
+    if (!this.activeChart) return;
+    this.run(ChartEditCommands.setChart(this.sheetName, next));
+    if (notice) this.undoableInfo(notice);
+  }
+
+  /**
+   * "Make a Table" from the chart panel: make the chart's cells a table called `name` and plot its
+   * columns by name, as one undo step. Returns why it couldn't, or null.
+   */
+  makeChartTable(name: string): string | null {
+    if (!this.activeChart) return 'This isn’t a chart sheet.';
+    const plan = ChartEditCommands.makeTableForChart(this.session.workbook.peek(), this.sheetName, name);
+    if (!plan.ok) return plan.reason;
+    this.run(plan.command);
+    this.undoableInfo(`Made table “${name.trim()}”.`);
+    return null;
+  }
+
+  /** Chart › Type: draw the active chart as `type`, keeping what it plots where it can. */
+  setChartType(type: ChartType): void {
+    const chart = this.activeChart;
+    if (!chart || chart.type === type) return;
+    this.setChart(ChartTableBinding.retype(this.session.workbook.peek(), chart, type));
+  }
+
+  /** Whether the active chart's data can be drawn as `type` (a bound chart may lack the columns). */
+  chartTypeAvailable(type: ChartType): boolean {
+    const chart = this.activeChart;
+    return (
+      chart !== null && !ChartTableBinding.unavailableTypes(this.session.workbook.peek(), chart).has(type)
+    );
+  }
+
+  toggleChartLegend(): void {
+    const chart = this.activeChart;
+    if (!chart) return;
+    const next = cloneChart(chart);
+    next.showLegend = !chart.showLegend;
+    this.setChart(next);
+  }
+
+  /** Chart › Swap Rows and Columns: series become categories and categories series. */
+  swapChartRowsColumns(): void {
+    const chart = this.activeChart;
+    if (!chart) return;
+    const result = ChartSwap.swap(this.session.workbook.peek(), chart);
+    if (!result.ok) return this.info(result.reason);
+    this.setChart(result.chart, 'Swapped rows and columns.');
   }
 
   /**

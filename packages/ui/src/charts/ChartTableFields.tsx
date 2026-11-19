@@ -12,6 +12,8 @@ export interface ChartTableFieldsProps {
   readonly family: ChartFamily;
   /** A committed edit. */
   readonly onChange: (next: ChartDefinition) => void;
+  /** "Keep These Cells": go back to plotting the cells as ranges (when the table is gone). */
+  readonly onKeepCells?: () => void;
 }
 
 function Picker(props: { label: string; tip: string; children: ComponentChildren }) {
@@ -118,10 +120,17 @@ export function ChartTableFields(props: ChartTableFieldsProps) {
     return (
       <>
         {tablePicker}
-        <p class="cs-chart-hint" role="status">
-          There is no table called “{source.table}” any more, so the chart shows the cells it last plotted.
-          Pick another table, or switch to Range.
-        </p>
+        <div class="cs-chart-offer" role="status">
+          <p>
+            There is no table called “{source.table}” any more, so the chart shows the cells it last plotted.
+            Pick another table, or keep plotting those cells.
+          </p>
+          {props.onKeepCells && (
+            <button type="button" class="cs-btn" onClick={props.onKeepCells}>
+              Keep These Cells
+            </button>
+          )}
+        </div>
       </>
     );
 

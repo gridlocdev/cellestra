@@ -308,8 +308,11 @@ export {
 export { ChartDataResolver, type ResolvedChart, type ResolvedSeries } from './charts/chartDataResolver.ts';
 export { type GroupedData, ChartGrouping, type GroupingSeries } from './charts/chartGrouping.ts';
 export { type ChartField, ChartFields, type ChartSeriesFieldKind } from './charts/chartFields.ts';
+export { ChartChecks, type ChartFieldProblem } from './charts/chartChecks.ts';
+export { ChartSwap, type ChartSwapResult } from './charts/chartSwap.ts';
 export {
   ChartTableBinding,
+  type FromRangesFailure,
   type FromRangesResult,
   type TableColumnInfo,
   type TableColumnKind,
@@ -326,6 +329,7 @@ export {
   type ChangedCell,
   type ChangedLines,
   ChartEditCommands,
+  type ChartTablePlan,
   seedChartFromRange,
   clampToUsed,
   ClipboardBlock,
