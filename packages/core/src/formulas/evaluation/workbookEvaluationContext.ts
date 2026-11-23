@@ -4,8 +4,10 @@ import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import { CellError } from '../../values/cellError.ts';
 import { CellValue } from '../../values/cellValue.ts';
+import type { Expr } from '../ast/expr.ts';
 import { systemClock, type CivilDateTime } from './dateConversion.ts';
 import type { EvaluationContext } from './evaluationContext.ts';
+import { namedExpressionOf } from './namedExpressions.ts';
 
 /**
  * An `EvaluationContext` backed by a live `Workbook`. Unqualified references resolve against
@@ -81,5 +83,9 @@ export class WorkbookEvaluationContext implements EvaluationContext {
 
   resolveName(name: string): CellRange | null {
     return this.#workbook.findNamedRange(name, this.currentSheet)?.target ?? null;
+  }
+
+  nameExpression(name: string): Expr | null {
+    return namedExpressionOf(this.#workbook, name, this.currentSheet);
   }
 }

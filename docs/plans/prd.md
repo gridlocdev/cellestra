@@ -85,7 +85,7 @@ If I open a Cellestra-saved file in LibreOffice and notice nothing wrong, the ba
 - An **Insert Function** picker and **autocomplete with argument hints** while typing.
 - The function library in §8.2.
 - Cell and range references, including **absolute vs relative** (`$A$1` vs `A1`).
-- **References across sheets** (`Sheet2.A1`) and **named ranges** (e.g. `TaxRate`).
+- **References across sheets** (`Sheet2.A1`) and **names**: a name holds a range (`Prices` = `Data.C3:C9`) or a value or formula (`TaxRate` = `0.2`, a named expression, saved as `table:named-expression`). A named expression works wherever its value does, may use other names (a name that ends up using itself is `#REF!`), and its references follow structural edits like a formula's.
 - Automatic recalculation when inputs change, plus a manual "recalculate now" and an automatic/manual calculation toggle.
 - Clear error values (`#DIV/0!`, `#REF!`, `#VALUE!`, `#NAME?`, `#N/A`, `#NUM!` for a result too large for a number, and `#NULL!` when typed or loaded) with readable explanations.
 - References update correctly when you copy/fill formulas or insert/delete rows and columns.

@@ -202,7 +202,9 @@ export function validationReport(v: DataValidation): Record<string, unknown> {
 }
 
 export function namedRangeReport(named: NamedRange): Record<string, unknown> {
-  return { name: named.name, target: named.target.toString(), scope: named.scope ?? 'workbook' };
+  return named.target
+    ? { name: named.name, target: named.target.toString(), scope: named.scope ?? 'workbook' }
+    : { name: named.name, expression: named.expression, scope: named.scope ?? 'workbook' };
 }
 
 function layout<T>(

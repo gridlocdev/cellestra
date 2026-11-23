@@ -43,6 +43,7 @@ export { InputParser, type ParsedInput } from './inputParser.ts';
 export { SetPageSetupCommand } from './pageSetupCommand.ts';
 export { PasteBlockCommand, type PasteMode, type ProjectedWrite } from './pasteBlockCommand.ts';
 export { type PastePlan, PastePlanner } from './pastePlanner.ts';
+export { moveSheet } from './moveSheet.ts';
 export { RenameSheetCommand } from './renameSheetCommand.ts';
 export { SheetLayoutCommands } from './sheetLayoutCommands.ts';
 export { SortFilterCommands } from './sortFilterCommands.ts';

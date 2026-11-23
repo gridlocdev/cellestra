@@ -3,17 +3,19 @@ import type { ComponentChildren } from 'preact';
 import {
   CellAddress,
   CellRange,
-  FunctionRegistry,
-  InputParser,
   CHIP_COLORS,
   type ChipColor,
-  dataValidation,
-  nextChipColor,
-  sameChipColor,
   type ColumnFilter,
+  dataValidation,
   type DataValidation,
   type FilterSpec,
   type FunctionMetadata,
+  FunctionRegistry,
+  InputParser,
+  namedRangeDefinition,
+  nextChipColor,
+  readNameDefinition,
+  sameChipColor,
   type SortLevel,
   type ValidationKind,
   type ValidationOperator,
@@ -692,14 +694,10 @@ export function NamedRangesDialog({ app }: { app: AppController }) {
   const [problem, setProblem] = useState('');
   const done = () => close(app);
   const add = () => {
-    const target =
-      CellRange.tryParse(ref.trim().replace(/\$/g, '')) ??
-      (CellAddress.tryParse(ref.trim().replace(/\$/g, ''))
-        ? new CellRange(CellAddress.parse(ref.trim().replace(/\$/g, '')))
-        : null);
+    const definition = readNameDefinition(ref);
     if (!name.trim()) return setProblem('Type a name.');
-    if (!target) return setProblem('The range isn’t like A1 or B2:D9.');
-    const err = app.addNamedRange({ name: name.trim(), target, scope: scope || null });
+    if (!definition) return setProblem('Type a range like B2:D9, or a value or formula like 0.2 or =B1*2.');
+    const err = app.addNamedRange({ name: name.trim(), ...definition, scope: scope || null });
     if (err) return setProblem(err);
     setProblem('');
     setName('');
@@ -717,14 +715,16 @@ export function NamedRangesDialog({ app }: { app: AppController }) {
       }
     >
       {wb.namedRanges.length === 0 ? (
-        <p class="cs-muted">No names yet. Formulas can use a name in place of a range, e.g. =SUM(Sales).</p>
+        <p class="cs-muted">
+          No names yet. A name can stand for a range, as in =SUM(Sales), or a value, as in =A1*TaxRate.
+        </p>
       ) : (
         <table class="cs-names">
           <tbody>
             {wb.namedRanges.map((n) => (
               <tr key={`${n.scope ?? ''}!${n.name}`}>
                 <td>{n.name}</td>
-                <td>{n.target.toString()}</td>
+                <td>{namedRangeDefinition(n)}</td>
                 <td class="cs-muted">{n.scope ?? 'Workbook'}</td>
                 <td>
                   <button
@@ -751,7 +751,13 @@ export function NamedRangesDialog({ app }: { app: AppController }) {
           autofocus
           onInput={(e) => setName(e.currentTarget.value)}
         />
-        <input type="text" aria-label="Range" value={ref} onInput={(e) => setRef(e.currentTarget.value)} />
+        <input
+          type="text"
+          aria-label="Refers to"
+          placeholder="B2:D9 or =0.2"
+          value={ref}
+          onInput={(e) => setRef(e.currentTarget.value)}
+        />
         <select aria-label="Scope" value={scope} onChange={(e) => setScope(e.currentTarget.value)}>
           <option value="">Workbook</option>
           {app.session.sheetNames.value.map((s) => (

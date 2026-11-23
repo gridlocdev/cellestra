@@ -6,6 +6,7 @@ import { CellValue } from '../values/cellValue.ts';
 import type { Expr } from '../formulas/ast/expr.ts';
 import { systemClock, type CivilDateTime } from '../formulas/evaluation/dateConversion.ts';
 import { evaluateFormula } from '../formulas/evaluation/evaluateFormula.ts';
+import { namedExpressionOf } from '../formulas/evaluation/namedExpressions.ts';
 import { FunctionRegistry } from '../formulas/functions/functionRegistry.ts';
 import { Parser } from '../formulas/parsing/parser.ts';
 import { CellRef, type RangeRef } from './cellRef.ts';
@@ -201,6 +202,7 @@ export class RecalculationEngine {
       largeRanges,
       this.#sheetsBetween,
       this.#functions,
+      (n) => namedExpressionOf(this.#workbook, n, cell.sheet),
     );
     this.#graph.setPrecedents(cell, precedents.values());
     this.#setLargeRanges(key, largeRanges);

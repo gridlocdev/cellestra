@@ -15,6 +15,11 @@ const fixture = (name: string) => new URL(`./fixtures/${name}`, import.meta.url)
 const bytes = new Uint8Array(readFileSync(fixture('libreoffice-sample.ods')));
 const libreOffice = shownByLibreOffice(readFileSync(fixture('libreoffice-sample.shown.txt'), 'utf8'));
 
+/** Calc's Err:502 (a bad argument) has no standard code; Calc saves it to .xlsx as #VALUE!. */
+function sameError(shown: string): string {
+  return shown === 'Err:502' ? '#VALUE!' : shown;
+}
+
 /** `== Sheet` headings, each followed by that sheet as CSV, into address → shown text. */
 function shownByLibreOffice(text: string): Map<string, Map<string, string>> {
   const sheets = new Map<string, Map<string, string>>();
@@ -23,7 +28,7 @@ function shownByLibreOffice(text: string): Map<string, Map<string, string>> {
     const cells = new Map<string, string>();
     parseCsv(part.slice(newline + 1)).forEach((row, r) =>
       row.forEach((value, c) => {
-        if (value !== '') cells.set(new CellAddress(c, r).toString(), value);
+        if (value !== '') cells.set(new CellAddress(c, r).toString(), sameError(value));
       }),
     );
     sheets.set(part.slice(0, newline), cells);
@@ -40,7 +45,7 @@ function shownByCellestra(workbook: Workbook): Map<string, Map<string, string>> 
     for (const [row, column, cell] of sheet.enumerateCells()) {
       const code = workbook.styles.get(sheet.effectiveStyleId(row, column)).numberFormat.code;
       const text = NumberFormatter.format(cell.value, code, locale);
-      if (text !== '') cells.set(new CellAddress(column, row).toString(), text);
+      if (text !== '') cells.set(new CellAddress(column, row).toString(), sameError(text));
     }
     sheets.set(sheet.name, cells);
   }

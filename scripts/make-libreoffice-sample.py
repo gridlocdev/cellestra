@@ -235,6 +235,10 @@ LOOKUPS = [
     ("INDEX area", "INDEX(([$Data.A3:.B4]~[$Data.G3:.H4]);2;1;2)"),
     ("Intersection", "SUM([$Data.A3:.C5]![$Data.B4:.D8])"),
     ("No overlap", "SUM([.A1]![.B2])"),
+    ("INDEX area 0", "INDEX(([$Data.A3:.B4]~[$Data.G3:.H4]);1;1;0)"),
+    ("INDEX one area 0", "INDEX([$Data.A3:.B4];2;2;0)"),
+    ("INDEX area 3", "INDEX(([$Data.A3:.B4]~[$Data.G3:.H4]);1;1;3)"),
+    ("Tax", "[$Data.C3]*TaxRate"),
 ]
 
 
@@ -273,7 +277,6 @@ def extras():
 
 
 def named():
-    # No formula uses TaxRate: Cellestra doesn't evaluate named expressions yet, only keeps them on save.
     return (
         "<table:named-expressions>"
         '<table:named-range table:name="Prices" table:base-cell-address="$Data.$A$1" table:cell-range-address="$Data.$C$%d:.$C$%d"/>'

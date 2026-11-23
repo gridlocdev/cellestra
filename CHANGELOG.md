@@ -16,6 +16,11 @@
 - **↓** while typing in a cell goes straight down, even after **Tab**; only **Enter** goes back to where the **Tab**s started. Clicking or jumping to another cell forgets the **Tab**s.
 - The axis titles and **Show legend** are together in a folded **Labels** group.
 - The **Aggregate** list is now **Combine rows with the same label**, and the name cell field is **Take name from cell**.
+- **Names for values.** A name can hold a value or a formula, not only a range: type `0.2` or `=B1*2` in **Named Ranges…** and `=A1*TaxRate` works. Such names from LibreOffice and Excel files now calculate instead of showing `#NAME?`, and they are saved as named expressions. Their references follow inserted rows and renamed sheets. The CLI's `name add` and the `name` apply op take `=0.2` too.
+- **3D ranges are outlined while you edit a formula.** A range across sheets, such as `Sheet1.A1:Sheet3.B5`, is outlined on every sheet it covers.
+- **Moving a sheet keeps 3D ranges in order.** When a sheet move puts a 3D range's last sheet before its first, the formula swaps them, as LibreOffice does.
+- `INDEX` with area number 0 gives `#VALUE!`, as LibreOffice does, instead of `#REF!`.
+- The sheet tabs use all the space up to the status text, and the active sheet's tab stays in view when there are more tabs than fit.
 
 ## 1.0.0
 

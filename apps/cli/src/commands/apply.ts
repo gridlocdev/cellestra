@@ -1,33 +1,35 @@
 import {
   Argb,
+  type ArgbColor,
   BorderEdges,
+  type BorderLineStyle,
   Borders,
   CellAddress,
   CellRange,
-  CellValue,
-  DataEditCommands,
-  DeleteSheetCommand,
-  EditCommands,
-  Fills,
-  InputParser,
-  namedRangeError,
-  tableNameError,
-  planCellEntry,
-  RenameSheetCommand,
-  StructuralEditCommand,
-  TableCommands,
-  dataValidation,
-  type ArgbColor,
-  type BorderLineStyle,
   type CellStyle,
+  CellValue,
   type ColumnFilter,
+  DataEditCommands,
+  dataValidation,
   type DataValidation,
+  DeleteSheetCommand,
   type EditCommand,
+  EditCommands,
   type Fill,
+  Fills,
   type HorizontalAlignment,
+  InputParser,
+  moveSheet,
+  namedRangeError,
+  planCellEntry,
+  readNameDefinition,
+  RenameSheetCommand,
   type StructuralAxis,
+  StructuralEditCommand,
   type StructuralOperation,
   type Table,
+  TableCommands,
+  tableNameError,
   type ValidationKind,
   type ValidationOperator,
   type ValidationResponse,
@@ -338,7 +340,7 @@ function run(session: EditSession, op: Op, kind: string): void {
       if (to < 1 || to > wb.sheetCount) {
         throw new CliError(`"to" must be a 1-based position from 1 to ${wb.sheetCount}.`);
       }
-      wb.moveSheet(wb.indexOf(sheet), to - 1);
+      moveSheet(wb, wb.indexOf(sheet), to - 1);
       return;
     }
     case 'settings':
@@ -797,7 +799,7 @@ function addSheet(session: EditSession, op: Op): void {
     if (at < 1 || at > wb.sheetCount) {
       throw new CliError(`"at" must be a 1-based position from 1 to ${wb.sheetCount}.`);
     }
-    wb.moveSheet(wb.indexOf(sheet), at - 1);
+    moveSheet(wb, wb.indexOf(sheet), at - 1);
   }
   session.field('sheet', sheet.name);
 }
@@ -1089,10 +1091,20 @@ function tableOptions(session: EditSession, op: Op): void {
 }
 
 function name(session: EditSession, op: Op): void {
-  const { sheet, range } = rangeOf(session, op, 'range');
   const named = op.require('name');
   const error = namedRangeError(session.workbook, named);
   if (error !== null) throw new CliError(error);
+  // `"range": "=0.2"` names a value or formula rather than cells.
+  const typed = op.require('range').trim();
+  if (typed.startsWith('=')) {
+    const definition = readNameDefinition(typed);
+    if (!definition) throw new CliError(`'${typed}' is not a formula.`);
+    if ('expression' in definition) {
+      session.workbook.addNamedRange({ name: named, expression: definition.expression });
+      return;
+    }
+  }
+  const { sheet, range } = rangeOf(session, op, 'range');
   // Stored fully sheet-qualified, so the name resolves whatever sheet is active.
   session.workbook.addNamedRange({ name: named, target: range.withSheet(range.sheet ?? sheet.name) });
 }

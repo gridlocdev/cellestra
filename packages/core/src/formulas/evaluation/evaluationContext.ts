@@ -1,5 +1,6 @@
 import type { CellRange } from '../../model/cellRange.ts';
 import type { CellValue } from '../../values/cellValue.ts';
+import type { Expr } from '../ast/expr.ts';
 import type { CivilDateTime } from './dateConversion.ts';
 
 /**
@@ -39,8 +40,13 @@ export interface EvaluationContext {
   rowHiddenBy?(sheet: string | null, row: number): 'filtered' | 'hidden' | null;
   /** A cell's formula text, or null when it holds none. Leaving it out means no cell does. */
   cellFormula?(sheet: string | null, row: number, column: number): string | null;
-  /** Resolve a defined name to its range; null for an unknown name. */
+  /** Resolve a defined name to its range; null for an unknown name or one that holds an expression. */
   resolveName(name: string): CellRange | null;
+  /**
+   * The parsed expression a name holds (`TaxRate` = `0.2`), or null when it holds a range or is
+   * unknown. Leaving it out means no name holds an expression.
+   */
+  nameExpression?(name: string): Expr | null;
   /**
    * The last row and column of a sheet that can hold a value (null when it has none), so a range
    * like A:A reads only up to it. `undefined` (or leaving it out) means unknown: read every cell.

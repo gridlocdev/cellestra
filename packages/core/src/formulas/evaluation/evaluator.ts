@@ -55,6 +55,8 @@ function concat(left: CellValue, right: CellValue): CellValue {
 export class Evaluator implements FunctionEvaluator {
   readonly context: EvaluationContext;
   readonly #functions: FunctionRegistry;
+  /** Names whose expression is being worked out, so a name that uses itself stops. */
+  readonly #namesInUse = new Set<string>();
 
   constructor(context: EvaluationContext, functions: FunctionRegistry) {
     this.context = context;
@@ -96,8 +98,32 @@ export class Evaluator implements FunctionEvaluator {
 
   #name(node: NameExpr): CellValue {
     const range = this.context.resolveName(node.name);
-    if (!range) return CellValue.error(CellError.name(`Unknown name '${node.name}'.`));
-    return this.intersect(range);
+    if (range) return this.intersect(range);
+    return (
+      this.#throughName(node.name, (body) => this.evaluate(body), CellValue.error(this.#nameCycle(node))) ??
+      CellValue.error(CellError.name(`Unknown name '${node.name}'.`))
+    );
+  }
+
+  /**
+   * `use` applied to the expression a name holds (`TaxRate` = `0.2`); `cycle` when the name is
+   * already being worked out (it uses itself); undefined when the name holds no expression.
+   */
+  #throughName<T>(name: string, use: (body: Expr) => T, cycle: T): T | undefined {
+    const body = this.context.nameExpression?.(name);
+    if (!body) return undefined;
+    const key = name.toLowerCase();
+    if (this.#namesInUse.has(key)) return cycle;
+    this.#namesInUse.add(key);
+    try {
+      return use(body);
+    } finally {
+      this.#namesInUse.delete(key);
+    }
+  }
+
+  #nameCycle(node: NameExpr): CellError {
+    return CellError.circular(`The name '${node.name}' uses itself.`);
   }
 
   /** The same cells on every sheet a 3D range spans, or #REF! when either end's sheet is gone. */
@@ -195,8 +221,11 @@ export class Evaluator implements FunctionEvaluator {
         return this.#sheetSpanAreas(expr);
       case 'name': {
         const named = this.context.resolveName(expr.name);
-        if (!named) return CellValue.error(CellError.name(`Unknown name '${expr.name}'.`));
-        return this.#missingSheet(expr) ?? [named];
+        if (named) return this.#missingSheet(expr) ?? [named];
+        return (
+          this.#throughName(expr.name, (body) => this.#areas(body), CellValue.error(this.#nameCycle(expr))) ??
+          CellValue.error(CellError.name(`Unknown name '${expr.name}'.`))
+        );
       }
       case 'refError':
         return CellValue.error(CellError.reference('A referenced cell was deleted.'));
@@ -293,6 +322,10 @@ export class Evaluator implements FunctionEvaluator {
       const areas = this.#sheetSpanAreas(expr);
       return Array.isArray(areas) ? areas.map((a) => new RangeValues(a, this.context)) : null;
     }
+    if (expr.kind === 'name' && !this.context.resolveName(expr.name)) {
+      const through = this.#throughName(expr.name, (body) => this.tryEvaluateAreas(body), null);
+      if (through !== undefined) return through;
+    }
     if (expr.kind !== 'binary') {
       const range = this.tryEvaluateRange(expr);
       return range ? [range] : null;
@@ -312,7 +345,8 @@ export class Evaluator implements FunctionEvaluator {
         return new RangeValues(new CellRange(expr.address), this.context);
       case 'name': {
         const named = this.context.resolveName(expr.name);
-        return named ? new RangeValues(named, this.context) : null;
+        if (named) return new RangeValues(named, this.context);
+        return this.#throughName(expr.name, (body) => this.tryEvaluateRange(body), null) ?? null;
       }
       case 'binary': {
         // A union of one area, or an intersection that leaves one, is a plain range.

@@ -1,4 +1,5 @@
 import { Defaults } from '../../defaults.ts';
+import { Parser } from '../../formulas/parsing/parser.ts';
 import { CellRange } from '../../model/cellRange.ts';
 import { SheetName } from '../../model/sheetName.ts';
 import { Workbook } from '../../model/workbook.ts';
@@ -198,15 +199,23 @@ function readDefinedNames(
     if (scope === undefined) continue;
     const internal = excelToInternal(el.value.trim());
     const range = internal === null ? null : CellRange.tryParse(internal);
-    if (!range || range.sheet === null || (range.end.sheet !== null && range.end.sheet !== range.sheet)) {
-      report.leftOut.add('names');
-      continue;
-    }
     const key = name.toLowerCase();
     const taken = workbook.namedRanges.some(
       (n) => n.name.toLowerCase() === key && (n.scope ?? null)?.toLowerCase() === scope?.toLowerCase(),
     );
-    if (taken) continue;
-    workbook.addNamedRange(scope === null ? { name, target: range } : { name, target: range, scope });
+    if (range && range.sheet !== null && (range.end.sheet === null || range.end.sheet === range.sheet)) {
+      if (!taken)
+        workbook.addNamedRange(scope === null ? { name, target: range } : { name, target: range, scope });
+      continue;
+    }
+    // Anything else that reads as a formula is a name for a value (`TaxRate` = `0.2`).
+    if (range === null && internal !== null && Parser.tryParse(internal).ok) {
+      if (!taken)
+        workbook.addNamedRange(
+          scope === null ? { name, expression: internal } : { name, expression: internal, scope },
+        );
+      continue;
+    }
+    report.leftOut.add('names');
   }
 }

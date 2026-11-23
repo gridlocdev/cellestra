@@ -5,19 +5,20 @@ import type { NamedRange } from '../../model/namedRange.ts';
 import type { Workbook } from '../../model/workbook.ts';
 import type { Worksheet } from '../../model/worksheet.ts';
 import { XmlElement } from '../../xml/index.ts';
-import { odfCellAddress, odfRangeAddress } from './odsContentShared.ts';
+import { odfCellAddress, odfRangeAddress, odfSheetName } from './odsContentShared.ts';
 import { Table } from './odsXmlNames.ts';
 
 /**
- * Named ranges in `content.xml`: `table:named-expressions`, global under `office:spreadsheet` and
- * sheet-local inside a `table:table`. What the model can't hold (a named expression) is kept
+ * Names in `content.xml`: `table:named-expressions`, global under `office:spreadsheet` and
+ * sheet-local inside a `table:table`. A `table:named-range` holds cells and a
+ * `table:named-expression` a formula (`Rate = of:=0.07`). What the model can't hold is kept
  * verbatim and written back unless the model now holds that name itself.
  */
 
 /**
- * Read a `table:named-expressions` block: each `table:named-range` the model can hold becomes a
- * named range (sheet-local when `scope` is a sheet name); everything else — a named expression
- * (`Rate = of:=0.07`), a range the model cannot parse — is returned to be kept verbatim.
+ * Read a `table:named-expressions` block: each named range or named expression the model can hold
+ * becomes a name (sheet-local when `scope` is a sheet name); everything else — a range or a
+ * formula the model cannot parse — is returned to be kept verbatim.
  */
 export function readNamedExpressions(
   container: XmlElement,
@@ -25,7 +26,27 @@ export function readNamedExpressions(
   scope: string | null,
 ): XmlElement[] {
   const preserved: XmlElement[] = [];
+  const taken = (name: string): boolean => {
+    const key = name.toLowerCase();
+    return workbook.namedRanges.some(
+      (n) => n.name.toLowerCase() === key && (n.scope ?? null)?.toLowerCase() === scope?.toLowerCase(),
+    );
+  };
+  const add = (named: NamedRange): void => {
+    if (!taken(named.name)) workbook.addNamedRange(scope === null ? named : { ...named, scope });
+  };
   for (const named of container.elements()) {
+    if (named.is(Table('named-expression'))) {
+      const name = named.attr(Table('name'));
+      const expression = named.attr(Table('expression'));
+      if (name !== null && expression !== null) {
+        const read = OpenFormulaTranslator.read(expression);
+        if (read.source === null) {
+          add({ name, expression: read.formula });
+          continue;
+        }
+      }
+    }
     if (named.is(Table('named-range'))) {
       const name = named.attr(Table('name'));
       const address = named.attr(Table('cell-range-address'));
@@ -35,12 +56,7 @@ export function readNamedExpressions(
         );
         const range = CellRange.tryParse(internalRef);
         if (range) {
-          const key = name.toLowerCase();
-          const taken = workbook.namedRanges.some(
-            (n) => n.name.toLowerCase() === key && (n.scope ?? null)?.toLowerCase() === scope?.toLowerCase(),
-          );
-          if (!taken)
-            workbook.addNamedRange(scope === null ? { name, target: range } : { name, target: range, scope });
+          add({ name, target: range });
           continue;
         }
       }
@@ -51,8 +67,8 @@ export function readNamedExpressions(
 }
 
 /**
- * The workbook's global names: every modeled named range, then each preserved entry (a named
- * expression such as `Rate = of:=0.07`) whose name the model does not now hold itself.
+ * The workbook's global names: every modeled name, then each preserved entry (one the model could
+ * not read) whose name the model does not now hold itself.
  */
 export function addNamedExpressions(
   spreadsheet: XmlElement,
@@ -88,6 +104,15 @@ function namedExpressionsElement(
   const taken = new Set<string>();
   for (const named of modeled) {
     taken.add(named.name.toLowerCase());
+    if (named.expression !== undefined) {
+      container.add(
+        new XmlElement(Table('named-expression'))
+          .setAttr(Table('name'), named.name)
+          .setAttr(Table('expression'), OpenFormulaTranslator.toOpenFormula(named.expression))
+          .setAttr(Table('base-cell-address'), `$${odfSheetName(fallbackSheet)}.$A$1`),
+      );
+      continue;
+    }
     container.add(
       new XmlElement(Table('named-range'))
         .setAttr(Table('name'), named.name)

@@ -79,6 +79,7 @@ export function resolveName(
   const named = workbook.findNamedRange(name, home?.name ?? null);
   if (named) {
     const target = named.target;
+    if (!target) throw new CliError(`'${name}' holds a value (=${named.expression}), not cells.`);
     let sheet: Worksheet;
     if (target.sheet !== null) {
       const found = workbook.findSheet(target.sheet);

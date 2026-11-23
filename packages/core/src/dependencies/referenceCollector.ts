@@ -43,6 +43,7 @@ export const ReferenceCollector = {
    * Collect the cells `expr` reads into `destination` (keyed by `CellRef.key`). Ranges larger than
    * `MAX_EXPANDED_CELLS` add only their corners there and, when `largeRanges` is given, their full
    * extent there. `sheetsBetween` gives the sheets a 3D range (`Sheet1.A1:Sheet3.B2`) spans.
+   * `nameExpression` gives the expression a name holds (`TaxRate` = `0.2`), whose reads count too.
    */
   collect(
     expr: Expr,
@@ -52,8 +53,9 @@ export const ReferenceCollector = {
     largeRanges?: RangeRef[],
     sheetsBetween?: (first: string, last: string) => readonly string[] | null,
     functions: FunctionRegistry = FunctionRegistry.standard,
+    nameExpression?: (name: string) => Expr | null,
   ): void {
-    const recurse = (e: Expr): void =>
+    const recurse = (e: Expr, names = nameExpression): void =>
       ReferenceCollector.collect(
         e,
         homeSheet,
@@ -62,6 +64,7 @@ export const ReferenceCollector = {
         largeRanges,
         sheetsBetween,
         functions,
+        names,
       );
     switch (expr.kind) {
       case 'reference': {
@@ -81,7 +84,14 @@ export const ReferenceCollector = {
       }
       case 'name': {
         const named = resolveName(expr.name);
-        if (named) expand(named, homeSheet, destination, largeRanges);
+        if (named) {
+          expand(named, homeSheet, destination, largeRanges);
+          break;
+        }
+        const body = nameExpression?.(expr.name);
+        // Inside the name's own expression the name is gone, so a name that uses itself stops.
+        const key = expr.name.toLowerCase();
+        if (body) recurse(body, (n) => (n.toLowerCase() === key ? null : nameExpression!(n)));
         break;
       }
       case 'unary':

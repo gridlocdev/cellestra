@@ -1,6 +1,7 @@
 import type { CellRef } from '../dependencies/cellRef.ts';
 import { ReferenceCollector } from '../dependencies/referenceCollector.ts';
 import type { Expr } from '../formulas/ast/expr.ts';
+import { namedExpressionOf } from '../formulas/evaluation/namedExpressions.ts';
 import { Parser } from '../formulas/parsing/parser.ts';
 import { CellRange } from '../model/cellRange.ts';
 import { ReferenceAdjuster } from '../formulas/references/referenceAdjuster.ts';
@@ -118,7 +119,16 @@ export function sheetDeletionImpact(workbook: Workbook, sheetName: string): Shee
       const parsed = Parser.tryParse(cell.formula);
       if (!parsed.ok) continue;
       const read = new Map<string, CellRef>();
-      ReferenceCollector.collect(parsed.expr, sheet.name, resolve, read, undefined, sheetsBetween);
+      ReferenceCollector.collect(
+        parsed.expr,
+        sheet.name,
+        resolve,
+        read,
+        undefined,
+        sheetsBetween,
+        undefined,
+        (name) => namedExpressionOf(workbook, name, sheet.name),
+      );
       if ([...read.values()].some((ref) => isDeleted(ref.sheet))) formulas++;
     }
     const chart = sheet.chart;

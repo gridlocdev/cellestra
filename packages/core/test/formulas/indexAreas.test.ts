@@ -45,7 +45,8 @@ describe('INDEX with an area number', () => {
 
   it.each([
     ['INDEX((A1:B2,D1:E2),1,1,3)', '#REF!'],
-    ['INDEX((A1:B2,D1:E2),1,1,0)', '#REF!'],
+    ['INDEX((A1:B2,D1:E2),1,1,0)', '#VALUE!'], // as LibreOffice (Err:502)
+    ['INDEX(A1:B2,1,1,0)', '#VALUE!'],
     ['INDEX(A1:B2,1,1,2)', '#REF!'],
     ['INDEX((A1:B2,D1:E2),3,1,2)', '#REF!'],
     ['INDEX((A1:B2,D1:E2),1,1,"x")', '#VALUE!'],

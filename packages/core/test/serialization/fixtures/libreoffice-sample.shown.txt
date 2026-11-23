@@ -44,6 +44,10 @@ Percent of total,3.6%
 INDEX area,$59.97
 Intersection,$63.24
 No overlap,#NULL!
+INDEX area 0,Err:502
+INDEX one area 0,Err:502
+INDEX area 3,#REF!
+Tax,$0.70
 == Q2 Sales
 Month,Sales
 April,"$1,200.00"

@@ -57,6 +57,8 @@ export interface InlineEditHost {
   commit(row: number, column: number, text: string): boolean | void;
   /** The editor's text as it is typed, and null once the edit ends. */
   draft?(text: string | null): void;
+  /** The sheets a 3D range from `first` to `last` spans, in tab order; null when either is missing. */
+  sheetsBetween?(first: string, last: string): readonly string[] | null;
 }
 
 /** What the grid does on screen when the edit changes. */
@@ -204,7 +206,11 @@ export class InlineEdit {
     const text = editor.value;
     const caret = editor.selectionStart;
     const formula = text.startsWith('=');
-    this.references = formula ? formulaReferences(text, this.deps.host.sheet.name) : [];
+    this.references = formula
+      ? formulaReferences(text, this.deps.host.sheet.name, (first, last) =>
+          this.deps.host.sheetsBetween ? this.deps.host.sheetsBetween(first, last) : null,
+        )
+      : [];
     const prefix = formula && editor.selectionEnd === caret ? functionPrefix(text, caret) : null;
     const suggestions = prefix ? functionSuggestions(prefix.prefix) : [];
     const hint = formula ? (signatureHint(text, caret)?.parts ?? null) : null;

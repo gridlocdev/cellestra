@@ -1,5 +1,9 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { Icon } from './Icon.tsx';
+
+/** Scroll a tab into view within the strip, only as far as needed. */
+const reveal = (tab: HTMLElement | null): void =>
+  tab?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
 
 export interface SheetTabsProps {
   readonly names: readonly string[];
@@ -22,6 +26,15 @@ export function SheetTabs(props: SheetTabsProps) {
   useEffect(() => {
     if (renaming !== null) input.current?.select();
   }, [renaming]);
+  // The strip narrows when the status text beside it grows; keep the active tab showing.
+  const resizes = useRef<ResizeObserver | null>(null);
+  const watchStrip = useCallback((el: HTMLDivElement | null) => {
+    resizes.current?.disconnect();
+    resizes.current = null;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    resizes.current = new ResizeObserver(() => reveal(el.querySelector('[aria-selected="true"]')));
+    resizes.current.observe(el);
+  }, []);
 
   const commit = () => {
     if (renaming === null) return;
@@ -34,7 +47,7 @@ export function SheetTabs(props: SheetTabsProps) {
   };
 
   return (
-    <div class="cs-tabs" role="tablist" aria-label="Sheets">
+    <div class="cs-tabs" role="tablist" aria-label="Sheets" ref={watchStrip}>
       {props.names.map((name, i) =>
         renaming === i ? (
           <input
@@ -64,6 +77,8 @@ export function SheetTabs(props: SheetTabsProps) {
             class="cs-tab"
             role="tab"
             aria-selected={i === props.active}
+            // The active sheet's tab comes into view, also when there are more tabs than fit.
+            ref={i === props.active ? reveal : undefined}
             draggable
             onClick={() => props.onSelect(i)}
             onDblClick={() => {

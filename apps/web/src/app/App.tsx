@@ -104,6 +104,11 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       display: (value: CellValue, style) => ({ text: s.display(value, style) }),
       conditionalStyle: (style, row, column) => app.conditionalStyle(style, row, column),
       editText: (row, column) => s.editText(row, column),
+      sheetsBetween: (first, last) =>
+        s.workbook
+          .peek()
+          .sheetsBetween(first, last)
+          ?.map((sheet) => sheet.name) ?? null,
       draft: (text) => (draft.value = text),
       commit: (row, column, text) => app.commit(row, column, text),
       clearSelection: () => void app.clearContents(),
@@ -543,7 +548,6 @@ function Footer({ app }: { readonly app: AppController }) {
         onMove={(from, to) => s.moveSheet(from, to)}
         onMenu={(index, x, y) => setMenu({ index, x, y })}
       />
-      <span style={{ flex: 1 }} />
       {s.lastAction.value && (
         <span class="cs-status cs-last-action" title={s.lastAction.value}>
           {s.lastAction.value}

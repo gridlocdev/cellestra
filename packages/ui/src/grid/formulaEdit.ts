@@ -45,11 +45,20 @@ export function referenceText(r: GridRange): string {
     : `${a(r.top, r.left)}:${a(r.bottom, r.right)}`;
 }
 
-/** The ranges a formula refers to on `sheetName`, each with its colour. Empty when it doesn't parse. */
-export function formulaReferences(text: string, sheetName: string): { range: GridRange; color: string }[] {
+/**
+ * The ranges a formula refers to on `sheetName`, each with its colour. Empty when it doesn't parse.
+ * A 3D range (`Sheet1.A1:Sheet3.B2`) shows when `sheetName` is one of the sheets it spans, which
+ * `sheetsBetween` gives in tab order; without it, only when `sheetName` is one of its ends.
+ */
+export function formulaReferences(
+  text: string,
+  sheetName: string,
+  sheetsBetween?: (first: string, last: string) => readonly string[] | null,
+): { range: GridRange; color: string }[] {
   if (text.length < 2 || !text.startsWith('=')) return [];
   const parsed = Parser.tryParse(text);
   if (!parsed.ok) return [];
+  const here = sheetName.toLowerCase();
   const found: { range: GridRange; sheet: string | null }[] = [];
   const walk = (e: Expr): void => {
     switch (e.kind) {
@@ -70,6 +79,16 @@ export function formulaReferences(text: string, sheetName: string): { range: Gri
           sheet: e.range.start.sheet,
         });
         return;
+      case 'sheetSpan': {
+        const first = e.range.start.sheet!;
+        const spanned = sheetsBetween?.(first, e.lastSheet) ?? [first, e.lastSheet];
+        const onThisSheet = spanned.some((s) => s.toLowerCase() === here);
+        found.push({
+          range: { top: e.range.top, left: e.range.left, bottom: e.range.bottom, right: e.range.right },
+          sheet: onThisSheet ? sheetName : first,
+        });
+        return;
+      }
       case 'unary':
         walk(e.operand);
         return;
@@ -84,7 +103,6 @@ export function formulaReferences(text: string, sheetName: string): { range: Gri
       case 'literal':
       case 'name':
       case 'refError':
-      case 'sheetSpan':
       default:
         return;
     }
@@ -93,7 +111,7 @@ export function formulaReferences(text: string, sheetName: string): { range: Gri
   const out: { range: GridRange; color: string }[] = [];
   found.forEach((f, i) => {
     // A reference to another sheet can't be shown here, but it still takes its colour slot.
-    if (f.sheet !== null && f.sheet.toLowerCase() !== sheetName.toLowerCase()) return;
+    if (f.sheet !== null && f.sheet.toLowerCase() !== here) return;
     out.push({ range: f.range, color: REFERENCE_COLORS[i % REFERENCE_COLORS.length]! });
   });
   return out;

@@ -71,6 +71,7 @@ Data
                       "value1":1, "value2":100, "response":"stop|warning|information|none", "inputMessage":"…", "errorMessage":"…"}   a date bound may be "2026-01-31"
   {"op":"validation", "range":"B2:B50", "remove":true}
   {"op":"name", "name":"TaxRate", "range":"Config.B1"}   {"op":"unname", "name":"TaxRate"}
+  {"op":"name", "name":"TaxRate", "range":"=0.2"}   a "range" starting with = names a value or formula
   {"op":"hyperlink", "cell":"A2", "url":"https://…", "tooltip":"…"}   "url": null removes it
   {"op":"chart", "type":"column", "title":"Sales", "from":"A1:C13",          or "values":["B2:B13"], "names":["Q1"], "categories":"A2:A13",
                  "stacking":"none", "aggregate":"sum", "legend":true, "xTitle":"Month", "yTitle":"USD"}   scatter: "xValues"; bubble: + "bubbleSizes"
@@ -122,10 +123,10 @@ Reads
                 "widths":{"A":120}, "heights":{"1":28}, "hiddenColumns":["C"], "hiddenRows":["5"],
                 "validations":[{"range","kind","operator","value1","value2","list","source","response"}],
                 "pageSetup":{"paper","orientation","margins","scale"|"fitWidth","fitHeight"|"pages","gridlines","headers","center","order"}}…]   (absent keys = default)
-  info      → {"file", "sheets": […], "namedRanges": [{"name","target","scope"}…], "locale", "calculation", "populatedCells"}
+  info      → {"file", "sheets": […], "namedRanges": [{"name","target"|"expression","scope"}…], "locale", "calculation", "populatedCells"}
   stats     → {"sheet","range","count","numeric","sum","average","min","max"}
   functions → [{"name","signature","category","returns","summary","arguments":[{"name","kind","required","repeatable","description"}],"example"}…]
-  name list → [{"name","target","scope"}…]
+  name list → [{"name","target"|"expression","scope"}…]
   print     → {"output", "sheet", "pages", "format": "pdf"|"html"}
   man       → the whole command tree
 

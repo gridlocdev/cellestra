@@ -1059,6 +1059,21 @@ describe('data, structural, and layout edits', () => {
     expect(run('name', 'list', ods).out).not.toContain('TaxRate');
   });
 
+  it('a name can hold a value, and formulas use it', () => {
+    const ods = path2('rate.ods');
+    run('new', ods);
+    expect(run('name', 'add', ods, 'TaxRate', '=0.2', '--in-place').exit).toBe(0);
+    run('set', ods, 'A1=150', 'B1==A1*TaxRate', '--in-place');
+    expect(run('get', ods, 'B1').out.trim()).toBe('30');
+    expect(run('name', 'list', ods).out).toContain('TaxRate\t=0.2\tworkbook');
+    expect(json(run('name', 'list', ods, '--json').out)).toEqual([
+      { name: 'TaxRate', expression: '0.2', scope: 'workbook' },
+    ]);
+    const r = run('get', ods, 'TaxRate');
+    expect(r.exit).toBe(1);
+    expect(r.err).toMatch(/holds a value/);
+  });
+
   it('name add refuses a name the app refuses', () => {
     const ods = path2('badnames.ods');
     run('new', ods);

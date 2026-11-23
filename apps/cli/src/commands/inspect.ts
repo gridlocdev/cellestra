@@ -2,14 +2,15 @@ import {
   CellAddress,
   CellRange,
   CellValue,
+  type Expr,
   FormulaWriter,
   InputParser,
+  namedRangeDefinition,
   NumberFormats,
   Parser,
   ReferenceAdjuster,
   SheetDimensions,
   Validator,
-  type Expr,
   type Workbook,
   type Worksheet,
 } from '@cellestra/core';
@@ -579,7 +580,7 @@ function checkUnusedNames(workbook: Workbook, index: FormulaIndex, findings: Fin
           'info',
           'unused-name',
           named.name,
-          `named range ${named.name} = ${named.target.toString()} is not used by any formula`,
+          `named range ${named.name} = ${namedRangeDefinition(named)} is not used by any formula`,
         ),
       );
     }

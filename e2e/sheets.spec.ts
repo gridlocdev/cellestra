@@ -35,6 +35,20 @@ test.describe('Sheets and the grid', () => {
     await expect(contents(page)).toHaveValue('Month');
   });
 
+  test('the sheet tabs fill the footer up to the status text, and the active tab stays in view', async ({
+    page,
+  }) => {
+    for (let i = 0; i < 16; i++) await runCommand(page, 'Insert Sheet');
+    await enter(page, 'A1', 'Quarterly totals');
+    const strip = page.getByRole('tablist', { name: 'Sheets' });
+    const status = page.getByText('Edited cell A1');
+    const [tabs, text] = [await strip.boundingBox(), await status.boundingBox()];
+    expect(text!.x - (tabs!.x + tabs!.width), 'no gap between the tabs and the status text').toBeLessThan(24);
+    await expect(page.getByRole('tab', { name: 'Sheet17', selected: true })).toBeInViewport({ ratio: 1 });
+    const active = await page.getByRole('tab', { name: 'Sheet17' }).boundingBox();
+    expect(active!.x + active!.width).toBeLessThanOrEqual(tabs!.x + tabs!.width + 1);
+  });
+
   test('the status bar sums the selection', async ({ page }) => {
     await goTo(page, 'B2:C3');
     await expect(page.getByText('Sum 2,995')).toBeVisible();

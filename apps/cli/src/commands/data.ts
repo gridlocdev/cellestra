@@ -1,4 +1,4 @@
-import { CleanUp, cleanUpNoteText, type StructuralAxis } from '@cellestra/core';
+import { CleanUp, cleanUpNoteText, namedRangeDefinition, type StructuralAxis } from '@cellestra/core';
 import { pickSheet } from '../infra/cells.ts';
 import { EditSession } from '../infra/editSession.ts';
 import { CliError } from '../infra/errors.ts';
@@ -283,18 +283,21 @@ export const name: CommandSpec = {
           return 0;
         }
         for (const named of loaded.workbook.namedRanges) {
-          con.outLine(`${named.name}\t${named.target.toString()}\t${named.scope ?? 'workbook'}`);
+          con.outLine(`${named.name}\t${namedRangeDefinition(named)}\t${named.scope ?? 'workbook'}`);
         }
         return 0;
       },
     },
     {
       name: 'add',
-      description: 'Define a workbook-scoped named range',
+      description: 'Define a workbook-scoped name for a range or a value',
       args: [
         fileArg(),
         { name: 'name', description: 'Name to define, e.g. TaxRate' },
-        { name: 'range', description: 'Range it points to, e.g. Sheet1.B1:B10' },
+        {
+          name: 'range',
+          description: 'Range it points to, e.g. Sheet1.B1:B10, or a value or formula after =, e.g. =0.2',
+        },
       ],
       options: [inPlaceOpt, outputOpt, jsonOpt],
       run: (p, con) => dispatch(p, con, 'name', { name: p.arg('name'), range: p.arg('range') }),

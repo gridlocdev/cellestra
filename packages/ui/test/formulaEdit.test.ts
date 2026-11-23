@@ -44,6 +44,25 @@ describe('formulaReferences', () => {
     ]);
   });
 
+  it('outlines a 3D range on every sheet it spans, in tab order', () => {
+    const order = ['Sheet1', 'Middle', 'Sheet3', 'After'];
+    const between = (first: string, last: string): readonly string[] | null => {
+      const a = order.indexOf(first);
+      const b = order.indexOf(last);
+      return a < 0 || b < 0 ? null : order.slice(Math.min(a, b), Math.max(a, b) + 1);
+    };
+    const text = '=SUM(Sheet1.A1:Sheet3.B2)+C3';
+    const span = { range: { top: 0, left: 0, bottom: 1, right: 1 }, color: REFERENCE_COLORS[0] };
+    const c3 = { range: { top: 2, left: 2, bottom: 2, right: 2 }, color: REFERENCE_COLORS[1] };
+    expect(formulaReferences(text, 'Middle', between)).toEqual([span, c3]);
+    expect(formulaReferences(text, 'sheet3', between)).toEqual([span, c3]);
+    // A sheet outside the span shows only its own reference, which keeps its colour slot.
+    expect(formulaReferences(text, 'After', between)).toEqual([c3]);
+    // Without the tab order, only the end sheets are known to be in it.
+    expect(formulaReferences(text, 'Middle')).toEqual([c3]);
+    expect(formulaReferences(text, 'Sheet1')).toEqual([span, c3]);
+  });
+
   it('is empty for text and broken formulas', () => {
     expect(formulaReferences('A1', 'Sheet1')).toEqual([]);
     expect(formulaReferences('=SUM(A1', 'Sheet1')).toEqual([]);

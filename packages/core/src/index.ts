@@ -28,7 +28,14 @@ export {
   getHostLocale,
   setHostLocale,
 } from './model/documentSettings.ts';
-export { type NamedRange, namedRangeError } from './model/namedRange.ts';
+export { type NameDefinition, readNameDefinition } from './formulas/evaluation/namedExpressions.ts';
+export {
+  type NamedExpression,
+  type NamedRange,
+  namedRangeDefinition,
+  namedRangeError,
+  type NamedTarget,
+} from './model/namedRange.ts';
 export { MergedRegion } from './model/mergedRegion.ts';
 export {
   type PageMargins,
@@ -367,6 +374,7 @@ export {
   type ProjectedWrite,
   type ReferenceSnapshot,
   type ReferenceTransform,
+  moveSheet,
   RenameSheetCommand,
   requireSheet,
   restoreFormulas,

@@ -1,28 +1,29 @@
 import { batch, computed, signal, type ReadonlySignal } from '@preact/signals';
 import {
+  type CalculationMode,
+  type CellStyle,
+  type CellValue,
   CsvOptions,
+  DeleteSheetCommand,
+  type EditCommand,
   EditHistory,
   EditRefusedError,
-  NumberFormatter,
+  EditResult,
+  moveSheet,
   NumberFormats,
+  NumberFormatter,
+  type OdsPackage,
   OdsReader,
   OdsWriter,
+  readCsv,
   RecalculationEngine,
-  DeleteSheetCommand,
   RenameSheetCommand,
   SheetName,
   Workbook,
-  XlsxReader,
-  readCsv,
-  writeCsv,
-  type CellStyle,
-  type CalculationMode,
-  type CellValue,
-  type EditCommand,
-  EditResult,
-  type OdsPackage,
   type Worksheet,
+  writeCsv,
   type XlsxImportReport,
+  XlsxReader,
 } from '@cellestra/core';
 import type { TextMeasure } from '../grid/cellText.ts';
 import { canvasMeasure, fitCsvColumns } from '../grid/columnFit.ts';
@@ -562,7 +563,7 @@ export class WorkbookSession {
   moveSheet(from: number, to: number): void {
     const wb = this.#workbook.peek();
     const active = this.activeSheet.peek();
-    wb.moveSheet(from, to);
+    moveSheet(wb, from, to);
     this.#structural();
     this.setActiveSheet(wb.indexOf(active));
   }

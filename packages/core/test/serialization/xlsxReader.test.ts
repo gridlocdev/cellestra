@@ -1,6 +1,7 @@
 import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { Defaults } from '../../src/defaults.ts';
+import { namedRangeDefinition } from '../../src/model/namedRange.ts';
 import { describeXlsxImport, OdsUnsupportedFileError, XlsxReader } from '../../src/serialization/index.ts';
 import { applyTint } from '../../src/serialization/xlsx/xlsxColors.ts';
 import { excelToInternal } from '../../src/serialization/xlsx/xlsxFormulas.ts';
@@ -160,11 +161,13 @@ describe('reading an .xlsx', () => {
         '<definedNames><definedName name="Rate">Sheet1!$B$1</definedName>' +
         '<definedName name="Local" localSheetId="1">Two!$A$1:$A$3</definedName>' +
         '<definedName name="_xlnm.Print_Area" localSheetId="0">Sheet1!$A$1:$C$3</definedName>' +
-        '<definedName name="Constant">0.07</definedName></definedNames>',
+        '<definedName name="Constant">0.07</definedName>' +
+        '<definedName name="Broken">SUM(</definedName></definedNames>',
     });
-    expect(workbook.namedRanges.map((n) => [n.name, n.target.toString(), n.scope ?? null])).toEqual([
+    expect(workbook.namedRanges.map((n) => [n.name, namedRangeDefinition(n), n.scope ?? null])).toEqual([
       ['Rate', 'Sheet1.$B$1', null],
       ['Local', 'Two.$A$1:$A$3', 'Two'],
+      ['Constant', '=0.07', null],
     ]);
     expect(workbook.worksheets[0]!.find(0, 0)?.formula).toBe('Rate*2');
     expect(report.leftOut.has('names')).toBe(true);

@@ -168,8 +168,11 @@ function indexSource(args: readonly Expr[], ev: FunctionEvaluator): RangeValues 
     const value = ev.evaluate(args[0]!);
     return value.kind === 'error' ? value : CellValue.error(CellError.value('INDEX needs a range.'));
   }
+  // As LibreOffice: an area below 1 is a bad argument (Err:502, saved to .xlsx as #VALUE!), one past
+  // the last area is #REF!.
+  if (area < 1) return CellValue.error(CellError.value('INDEX areas are numbered from 1.'));
   const source = areas[area - 1];
-  if (area < 1 || !source)
+  if (!source)
     return CellValue.error(CellError.reference(`INDEX has no area ${area}; it has ${areas.length}.`));
   return source;
 }

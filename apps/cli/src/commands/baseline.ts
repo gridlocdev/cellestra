@@ -1,14 +1,15 @@
 import {
   CellAddress,
+  type CellRange,
   Defaults,
   evaluateFormula,
+  namedRangeDefinition,
   NumberFormatter,
   parseErrorToString,
   Parser,
   Workbook,
-  writeCsv,
-  type CellRange,
   type Worksheet,
+  writeCsv,
 } from '@cellestra/core';
 import {
   buildGrid,
@@ -330,7 +331,7 @@ export const info: CommandSpec = {
     }
     con.outLine(`Named ranges: ${workbook.namedRanges.length}`);
     for (const named of workbook.namedRanges) {
-      con.outLine(`  ${named.name} = ${named.target.toString()}  (${named.scope ?? 'workbook'})`);
+      con.outLine(`  ${named.name} = ${namedRangeDefinition(named)}  (${named.scope ?? 'workbook'})`);
     }
     con.outLine(`Locale: ${workbook.settings.locale ?? '(unspecified — system default)'}`);
     con.outLine(`Calculation: ${calculation}`);

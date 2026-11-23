@@ -350,6 +350,25 @@ export const ReferenceAdjuster = {
   },
 
   /**
+   * A 3D range names its end sheets in tab order, as LibreOffice writes it after a sheet moves: when
+   * the last sheet now comes before the first, the two swap. The sheets it spans stay the same.
+   * `position` gives a sheet's tab index, or -1 when there is no such sheet.
+   */
+  forSheetOrder(expr: Expr, position: (sheet: string) => number): Expr {
+    return rewrite(
+      expr,
+      (a) => a,
+      (r) => r,
+      (span) => {
+        const first = span.range.sheet!;
+        const last = position(span.lastSheet);
+        if (last < 0 || last >= position(first)) return span;
+        return Expr.sheetSpan(span.range.withSheet(span.lastSheet), first);
+      },
+    );
+  },
+
+  /**
    * Give every unqualified reference an explicit `sheet`, so the formula still means the same cells
    * after it moves to another sheet (a cut pasted across sheets).
    */

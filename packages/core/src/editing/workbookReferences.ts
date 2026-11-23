@@ -7,6 +7,7 @@ import { CellRange } from '../model/cellRange.ts';
 import type { NamedRange } from '../model/namedRange.ts';
 import { SheetDimensions } from '../model/sheetDimensions.ts';
 import type { Workbook } from '../model/workbook.ts';
+import { rewriteFormula } from './formulaRewrite.ts';
 import type { Worksheet } from '../model/worksheet.ts';
 import {
   captureStyleMaps,
@@ -175,6 +176,13 @@ export function transformReferences(
 ): void {
   const names: NamedRange[] = [];
   for (const n of workbook.namedRanges) {
+    if (n.expression !== undefined) {
+      // An unqualified reference in an expression means the using formula's sheet, which varies, so
+      // only a sheet-local name's (whose formulas are all on its sheet) or a qualified one moves.
+      const expression = rewriteFormula(n.expression, (e) => transform(e, n.scope ?? ''));
+      names.push(expression === n.expression ? n : { ...n, expression });
+      continue;
+    }
     // A name's unqualified target means its scope's sheet; a global one has no home to resolve.
     const home = n.scope ?? n.target.sheet;
     if (home === null || home === undefined) {

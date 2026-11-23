@@ -24,7 +24,7 @@ While a file from the NAS is open, Cellestra checks every 30 seconds whether som
 
 ## Formulas
 
-Formulas have 47 functions, automatic recalculation and circular-reference detection. The formula syntax matches LibreOffice Calc. **Insert Function…** picks a function, autocomplete suggests names and arguments as you type, and **Recalculate** (F9) recalculates everything. **Manual Calculation** (or a click on the Auto/Manual badge in the status bar) stops formulas recalculating after each edit until you press F9, which helps in a slow workbook; the mode is saved with the file, and switching back to automatic recalculates at once. **Show Formulas** shows the formulas in place of their results, and **Named Ranges…** names a cell or range.
+Formulas have 47 functions, automatic recalculation and circular-reference detection. The formula syntax matches LibreOffice Calc. **Insert Function…** picks a function, autocomplete suggests names and arguments as you type, and **Recalculate** (F9) recalculates everything. **Manual Calculation** (or a click on the Auto/Manual badge in the status bar) stops formulas recalculating after each edit until you press F9, which helps in a slow workbook; the mode is saved with the file, and switching back to automatic recalculates at once. **Show Formulas** shows the formulas in place of their results, and **Named Ranges…** names a cell or range, or a value such as `TaxRate` = `0.2` that formulas can use (`=A1*TaxRate`).
 
 ## Formatting
 

@@ -44,6 +44,8 @@ export interface GridHost {
   conditionalStyle?(style: CellStyle, row: number, column: number): CellStyle;
   /** What the inline editor starts with (`=SUM(A1:A3)` for formulas, the raw input otherwise). */
   editText(row: number, column: number): string;
+  /** The sheets a 3D range from `first` to `last` spans, in tab order; null when either is missing. */
+  sheetsBetween?(first: string, last: string): readonly string[] | null;
   /**
    * The inline editor's text as it is typed (so the formula bar can mirror it), and null once
    * the edit ends.
@@ -185,6 +187,7 @@ export function Grid({ host, selection, zoom, palette, showFormulas, controller 
       editText: (row, column) => host.editText(row, column),
       commit: (row, column, text) => host.commit(row, column, text),
       draft: (text) => host.draft?.(text),
+      sheetsBetween: (first, last) => host.sheetsBetween?.(first, last) ?? null,
     },
     get editor() {
       return editorRef.current;
