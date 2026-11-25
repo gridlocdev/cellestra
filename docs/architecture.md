@@ -154,6 +154,8 @@ stateDiagram-v2
 ## Desktop (`apps/desktop`)
 
 - **Isolation.** The renderer runs with `sandbox`, `contextIsolation` and no Node.
+- **Fuses.** Packaging flips Electron's fuses (`electronFuses` in `electron-builder.yml`) before signing: no `ELECTRON_RUN_AS_NODE`, no `NODE_OPTIONS`, no `--inspect` flags, and only the integrity-checked `app.asar` loads. So no other program can reuse the signed binary as a Node.js runtime.
+- **Key lookup.** While Keyboard Shortcuts looks up keys, `before-input-event` holds key-downs back from the menu bar and sends them to the page (`keyCapture.ts`). Escape always goes through and ends the capture, as do the window losing focus, a navigation and a renderer crash.
 - **Bridge.** The preload exposes exactly one object, `window.cellestraNative`. Its contract is in `bridge.ts` and is mirrored in `packages/ui/src/platform/native.ts`.
 - **Loading.** The UI loads from `app://cellestra/`, a privileged standard scheme backed by `out/web`. Navigation away from it is blocked, and links open in the system browser.
 - **Main process.** It handles open and save dialogs, atomic saves with a content-hash conflict check, the native menu (built from the renderer's catalog), document state (title, the edited dot, represented file), the close guard, the external-change watcher, recent documents, and file associations through `open-file` and argv.

@@ -9,6 +9,15 @@ files:
   # The window icon on Linux and Windows (macOS takes the bundle's icon.icns).
   - build/icon.png
 asar: true
+# Electron's build-time switches, flipped before signing. The app never runs as plain Node, takes no
+# NODE_OPTIONS or --inspect flags, and loads only its own checked app.asar, so no other program can
+# reuse the signed binary as a Node runtime or point it at other code.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
 # One naming scheme on every system: Cellestra-0.1.0-mac-arm64.dmg, Cellestra-0.1.0-win-x64.exe, …
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 fileAssociations:

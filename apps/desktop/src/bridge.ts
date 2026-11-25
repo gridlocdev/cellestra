@@ -41,6 +41,16 @@ export interface DocumentState {
   readonly path: string | null;
 }
 
+/** A key held back during the Keyboard Shortcuts lookup, with the fields shortcuts read. */
+export interface CapturedKey {
+  readonly key: string;
+  readonly code: string;
+  readonly shiftKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly altKey: boolean;
+  readonly metaKey: boolean;
+}
+
 /** The paper a print job uses, as the page setup gives it (mm, as the page lies). */
 export interface PrintPaper {
   readonly width: number;
@@ -63,11 +73,14 @@ export const Channels = {
   watch: 'cellestra:watch',
   print: 'cellestra:print',
   exportPdf: 'cellestra:export-pdf',
+  /** Turn the Keyboard Shortcuts lookup's key capture on or off (see keyCapture.ts). */
+  captureKeys: 'cellestra:capture-keys',
   // main → renderer
   command: 'cellestra:command',
   openFile: 'cellestra:open-file',
   closeRequested: 'cellestra:close-requested',
   externalChange: 'cellestra:external-change',
+  capturedKey: 'cellestra:captured-key',
 } as const;
 
 /** Thrown (as an IPC error message prefix) when the file changed on disk since it was opened. */

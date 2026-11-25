@@ -1,4 +1,4 @@
-import { formatShortcut, matchKind, parseShortcut, type Shortcut } from './shortcut.ts';
+import { formatShortcut, isMac, type KeyPress, matchKind, parseShortcut, type Shortcut } from './shortcut.ts';
 
 /** Menu groups — the native menu bar and the palette's section labels. */
 export type CommandGroup =
@@ -84,11 +84,23 @@ export class CommandCatalog {
   }
 
   /** The command a key event triggers, if any. `inText` = focus is in a text field. */
-  forEvent(e: KeyboardEvent, inText: boolean): Command | undefined {
+  forEvent(e: KeyPress, inText: boolean): Command | undefined {
     const keys = (c: Command) => (!inText || c.global ? [c.shortcutKey, ...c.alternateKeys] : []);
     const find = (kind: 'exact' | 'loose') =>
       this.all.find((c) => keys(c).some((k) => k !== null && matchKind(k, e) === kind));
     return find('exact') ?? find('loose');
+  }
+
+  /**
+   * Every command a key press runs, wherever focus is: those on its exact key first, else those
+   * whose key only types the same character (as `forEvent` picks). Alternate keys count too.
+   */
+  commandsForKey(e: KeyPress, mac = isMac): Command[] {
+    const keys = (c: Command) => [c.shortcutKey, ...c.alternateKeys];
+    const find = (kind: 'exact' | 'loose') =>
+      this.all.filter((c) => keys(c).some((k) => k !== null && matchKind(k, e, mac) === kind));
+    const exact = find('exact');
+    return exact.length > 0 ? exact : find('loose');
   }
 
   /**

@@ -54,10 +54,16 @@ export {
   formatShortcut,
   inOrder,
   isMac,
+  type KeyCapture,
+  KeyLookup,
+  type KeyLookupOptions,
+  type KeyLookupResult,
+  type KeyPress,
   matches,
   matchKind,
   parseShortcut,
   type Shortcut,
+  shortcutOf,
   toAccelerator,
 } from './commands/index.ts';
 export {

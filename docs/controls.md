@@ -81,4 +81,4 @@ In a browser tab, `⌘W` (`Ctrl+W`) belongs to the browser and closes the tab, s
 
 **Go to** puts the cursor in the Name Box, left of the formula bar: type a cell (`B7`), a range (`B2:D9`), a cell on another sheet (`Sheet2!A1`) or a named range, then press `Enter` to go there or `Esc` to go back.
 
-In multi-line text, `↑` and `↓` move between lines first, and only leave the cell from the first or last line. **Keyboard Shortcuts** (`⌘/`) shows every shortcut in the app.
+In multi-line text, `↑` and `↓` move between lines first, and only leave the cell from the first or last line. **Keyboard Shortcuts** (`⌘/`) shows every shortcut in the app. Its **Look Up a Key…** button shows which command each key you press runs, without running it; `Esc` stops.

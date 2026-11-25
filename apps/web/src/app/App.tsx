@@ -41,6 +41,7 @@ import { ChartPane } from './ChartPane.tsx';
 import { cellAnnouncement } from './announce.ts';
 import { Ribbon } from './Ribbon.tsx';
 import { GridContextMenu } from './ContextMenu.tsx';
+import { ShortcutsDialog } from './ShortcutsDialog.tsx';
 
 const TOOLBAR: readonly (string | '|')[] = [
   'file.new',
@@ -955,6 +956,7 @@ function Overlays({ app, catalog }: { readonly app: AppController; readonly cata
       {d?.kind === 'shortcuts' && (
         <ShortcutsDialog
           catalog={catalog}
+          native={app.native}
           onClose={() => {
             app.dialog.value = null;
             refocus();
@@ -1190,53 +1192,6 @@ function FindDialog({ app }: { readonly app: AppController }) {
             )}
           </ul>
         )}
-      </div>
-    </Dialog>
-  );
-}
-
-function ShortcutsDialog({
-  catalog,
-  onClose,
-}: {
-  readonly catalog: CommandCatalog;
-  readonly onClose: () => void;
-}) {
-  const groups = new Map<string, { title: string; keys: string }[]>();
-  for (const c of catalog.all) {
-    if (!c.shortcutText || c.hidden) continue;
-    const list = groups.get(c.group) ?? [];
-    list.push({ title: c.title, keys: c.shortcutText });
-    groups.set(c.group, list);
-  }
-  return (
-    <Dialog
-      title="Keyboard Shortcuts"
-      onClose={onClose}
-      actions={
-        <button type="submit" class="cs-btn primary">
-          Done
-        </button>
-      }
-      onSubmit={onClose}
-    >
-      <div style={{ columns: '2', columnGap: '28px', minWidth: '560px' }}>
-        {[...groups].map(([group, items]) => (
-          <section key={group} style={{ breakInside: 'avoid', marginBottom: '12px' }}>
-            <h3 style={{ margin: '0 0 4px', fontSize: '13px' }}>{group}</h3>
-            {items.map((i) => (
-              <div
-                key={i.title}
-                style={{ display: 'flex', gap: '12px', fontSize: '13px', lineHeight: '22px' }}
-              >
-                <span>{i.title}</span>
-                <span class="cs-kbd" style={{ marginLeft: 'auto', opacity: 0.7 }}>
-                  {i.keys}
-                </span>
-              </div>
-            ))}
-          </section>
-        ))}
       </div>
     </Dialog>
   );

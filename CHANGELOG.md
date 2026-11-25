@@ -21,6 +21,9 @@
 - **Moving a sheet keeps 3D ranges in order.** When a sheet move puts a 3D range's last sheet before its first, the formula swaps them, as LibreOffice does.
 - `INDEX` with area number 0 gives `#VALUE!`, as LibreOffice does, instead of `#REF!`.
 - The sheet tabs use all the space up to the status text, and the active sheet's tab stays in view when there are more tabs than fit.
+- **Look up a key.** **Keyboard Shortcuts** (`⌘/`) has **Look Up a Key…**: press any keys to see which command each one runs, with the command highlighted in the list. Keys only show what they do while it listens, so `⌘Q` and `⌘W` are safe to try in the desktop app. `Esc`, **Stop**, switching windows, closing the window or 30 seconds without a key all end it.
+- **Desktop app hardening.** The packaged app can't be run as a plain Node.js program, ignores `NODE_OPTIONS` and `--inspect`, and loads only its own checked app code.
+- `just install-desktop` asks to quit a running Cellestra, installs, then opens it again, instead of refusing.
 
 ## 1.0.0
 

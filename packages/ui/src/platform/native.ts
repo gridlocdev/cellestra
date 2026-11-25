@@ -34,6 +34,15 @@ export interface PrintPaper {
   readonly width: number;
   readonly height: number;
 }
+/** A key the desktop app held back during a lookup, with the fields shortcuts read. */
+export interface CapturedKey {
+  readonly key: string;
+  readonly code: string;
+  readonly shiftKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly altKey: boolean;
+  readonly metaKey: boolean;
+}
 export interface CellestraNative {
   readonly platform: string;
   openDialog(): Promise<NativeFile | null>;
@@ -60,6 +69,13 @@ export interface CellestraNative {
   print?(html: string, paper: PrintPaper): Promise<boolean>;
   /** Save a document as PDF where the user picks; the path, or null when cancelled. */
   exportPdf?(html: string, suggestedName: string): Promise<string | null>;
+  /**
+   * While on, the window holds keys back from the menu bar and the page and sends them to
+   * `onCapturedKey` instead (the Keyboard Shortcuts lookup). Escape always gets through and turns
+   * it off. Optional: older desktop builds.
+   */
+  captureKeys?(on: boolean): void;
+  onCapturedKey?(cb: (key: CapturedKey) => void): () => void;
   onCommand(cb: (id: string) => void): () => void;
   onOpenFile(cb: (path: string) => void): () => void;
   onCloseRequested(cb: () => void): () => void;

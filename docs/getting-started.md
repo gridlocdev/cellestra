@@ -46,7 +46,7 @@ just package-desktop  # build a .dmg / AppImage / installer in apps/desktop/rele
 just install-desktop  # macOS: package and install into /Applications
 ```
 
-The desktop app has native menus, file associations for `.ods` and `.csv`, and normal Open and Save dialogs. `just install-desktop` moves an existing copy to the Trash first, and refuses while the app is running.
+The desktop app has native menus, file associations for `.ods` and `.csv`, and normal Open and Save dialogs. `just install-desktop` moves an existing copy to the Trash first. If Cellestra is running, it asks to quit it and opens it again after the install.
 
 ## Run it in the browser
 

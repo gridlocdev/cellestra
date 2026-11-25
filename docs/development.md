@@ -84,7 +84,7 @@ just install-desktop      # macOS: package and install into /Applications
 ```
 
 - The package is signed ad hoc so it runs on Apple silicon. Swap the identity in `apps/desktop/electron-builder.yml` for a Developer ID to distribute it.
-- `just install-desktop` moves an existing copy to the Trash first, and refuses while the app is running. It registers the installed copy with Launch Services, so it answers **Open With** for `.ods` and `.csv`.
+- `just install-desktop` moves an existing copy to the Trash first. If Cellestra is running, a dialog asks to quit it, and it opens again after the install. It registers the installed copy with Launch Services, so it answers **Open With** for `.ods` and `.csv`.
 
 ### The app icon
 

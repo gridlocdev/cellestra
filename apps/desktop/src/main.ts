@@ -36,6 +36,7 @@ import {
   readLockFile,
   writeAtomic,
 } from './files.ts';
+import { capturedKey, keyCaptureAction } from './keyCapture.ts';
 import { withStandardMenus } from './menu.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -99,6 +100,8 @@ interface WindowState {
   /** The renderer crashed or was killed: nothing is left to ask about unsaved changes. */
   rendererGone: boolean;
   unresponsive: boolean;
+  /** The Keyboard Shortcuts lookup holds keys back from the menu bar (see keyCapture.ts). */
+  capturingKeys: boolean;
 }
 const windows = new Map<number, WindowState>();
 /** Files the renderer may touch: picked in a dialog, opened by the OS, or opened before. */
@@ -160,6 +163,7 @@ function createWindow(): BrowserWindow {
     closeTimer: null,
     rendererGone: false,
     unresponsive: false,
+    capturingKeys: false,
   };
   windows.set(win.id, state);
 
@@ -181,10 +185,22 @@ function createWindow(): BrowserWindow {
     if (state.closeTimer) clearTimeout(state.closeTimer);
     windows.delete(win.id);
   });
+  // Key capture never outlives the lookup: it ends on Escape, when the window loses focus, and
+  // when the page reloads or dies.
+  win.webContents.on('before-input-event', (e, input) => {
+    const action = keyCaptureAction(state.capturingKeys, input);
+    if (action === 'release') state.capturingKeys = false;
+    if (action !== 'forward') return;
+    e.preventDefault();
+    win.webContents.send(Channels.capturedKey, capturedKey(input));
+  });
+  win.on('blur', () => (state.capturingKeys = false));
+  win.webContents.on('did-start-navigation', () => (state.capturingKeys = false));
   win.on('unresponsive', () => (state.unresponsive = true));
   win.on('responsive', () => (state.unresponsive = false));
   win.webContents.on('render-process-gone', () => {
     state.rendererGone = true;
+    state.capturingKeys = false;
     stopWatching(state);
     // A close or quit was waiting on this renderer: finish it.
     if (state.closeTimer || quitting) {
@@ -446,6 +462,12 @@ function registerIpc(): void {
     if (!win || !trusted(e)) return;
     const template = withStandardMenus(toTemplate(items, win), process.platform);
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  });
+  ipcMain.on(Channels.captureKeys, (e, on: unknown) => {
+    const win = fromEvent(e);
+    const state = win && windows.get(win.id);
+    if (!win || !state || !trusted(e) || typeof on !== 'boolean') return;
+    state.capturingKeys = on && win.isFocused();
   });
   ipcMain.on(Channels.closeAck, (e) => {
     const win = fromEvent(e);

@@ -212,6 +212,8 @@ Tooltips on every tool carry its name, shortcut, and one-line description; drawe
 
 Shortcuts use macOS modifiers (⌘ Command, ⇧ Shift, ⌥ Option, ⌃ Control). The single source of truth is the command catalog (`apps/web/src/app/commands.ts`, see `architecture.md`): the menu bar, the Command Menu, the Keyboard Shortcuts sheet (⌘/) and key handling all read it, and the tables below mirror it. Where they disagree, the catalog is right and this table needs fixing. On Windows and Linux, ⌘ and ⌃ both mean Ctrl, with one exception: Find Next is **F3** on Windows and Linux, because Ctrl+G is Go To there. Keys marked *grid* are handled by the grid itself rather than the catalog.
 
+**Look Up a Key.** The Keyboard Shortcuts sheet has **Look Up a Key…**. While it listens, every key press is looked up in the catalog (exact match first, then the same loose match key handling uses) and shown with its command and group, and the command's row is highlighted; nothing runs. A key with no command that the grid answers (letters, arrows, Enter) says so. In the desktop app the main process also holds keys back from the menu bar, so ⌘Q and ⌘W are looked up rather than run; a browser keeps some keys (⌘W, ⌘T) for itself. Keys must never stay swallowed, so each of these ends listening: Escape (handled separately by the page and the main process), **Stop**, the window losing focus, closing the sheet, 30 s with no key, any error during a lookup, and in the main process a navigation or renderer crash. The first Escape only stops listening; the next closes the sheet.
+
 **Files & app**
 | Action | Shortcut |
 |---|---|

@@ -82,7 +82,28 @@ test.describe('The keyboard', () => {
     await page.keyboard.press('ControlOrMeta+Slash');
     const shortcuts = page.getByRole('dialog', { name: 'Keyboard Shortcuts' });
     await expect(shortcuts).toContainText('Bold⌘B');
-    await expect(shortcuts.getByRole('button', { name: 'Done' })).toBeFocused();
+    await expect(shortcuts.getByRole('button', { name: 'Look Up a Key…' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(shortcuts).toBeHidden();
+  });
+
+  test('Look Up a Key says what a key does without running it, and Escape gets out', async ({ page }) => {
+    await page.keyboard.press('ControlOrMeta+Slash');
+    const shortcuts = page.getByRole('dialog', { name: 'Keyboard Shortcuts' });
+    await shortcuts.getByRole('button', { name: 'Look Up a Key…' }).click();
+    await expect(shortcuts.getByRole('button', { name: 'Stop' })).toBeVisible();
+    // ⌘/ would close this window if it ran; here it is only looked up.
+    await page.keyboard.press('ControlOrMeta+Slash');
+    await expect(shortcuts).toContainText('Keyboard Shortcuts (Help)');
+    await page.keyboard.press('ControlOrMeta+KeyB');
+    await expect(shortcuts).toContainText('⌘B: Bold');
+    await expect(shortcuts.locator('[data-command="format.bold"]')).toHaveClass(/found/);
+    await page.keyboard.press('ArrowDown');
+    await expect(shortcuts).toContainText('the grid uses it');
+    // The first Escape only stops looking up; the second closes the window as usual.
+    await page.keyboard.press('Escape');
+    await expect(shortcuts.getByRole('button', { name: 'Look Up a Key…' })).toBeVisible();
+    await expect(shortcuts).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(shortcuts).toBeHidden();
   });

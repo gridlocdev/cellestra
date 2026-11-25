@@ -27,6 +27,9 @@ export function parseShortcut(spec: string): Shortcut {
   };
 }
 
+/** The parts of a key press that shortcuts read: a KeyboardEvent, or a key the desktop app passed on. */
+export type KeyPress = Pick<KeyboardEvent, 'key' | 'code' | 'shiftKey' | 'ctrlKey' | 'altKey' | 'metaKey'>;
+
 export const isMac: boolean =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
@@ -45,7 +48,7 @@ const PUNCTUATION: Record<string, string> = {
 };
 
 /** Which key a keyboard event pressed, normalised to the names `parseShortcut` uses. */
-function eventKey(e: KeyboardEvent): string {
+function eventKey(e: KeyPress): string {
   // The layout's own letter or digit wins (AZERTY ⌘Z is the key labelled Z, Dvorak too) ...
   if (/^[a-z0-9]$/i.test(e.key)) return e.key.toLowerCase();
   // ... else the physical key, so ⌥/⇧ layers don't change the match (⌥K → "˚").
@@ -66,7 +69,7 @@ function eventKey(e: KeyboardEvent): string {
   return names[k] ?? k;
 }
 
-export function matches(s: Shortcut, e: KeyboardEvent, mac = isMac): boolean {
+export function matches(s: Shortcut, e: KeyPress, mac = isMac): boolean {
   return matchKind(s, e, mac) !== null;
 }
 
@@ -75,12 +78,36 @@ export function matches(s: Shortcut, e: KeyboardEvent, mac = isMac): boolean {
  * the character matches — punctuation produced with shift (e.g. "+" on ⇧=) matches a spec without
  * shift. A loose match must not beat an exact one: ⇧⌘= is Insert Rows, not ⌘+ (zoom in).
  */
-export function matchKind(s: Shortcut, e: KeyboardEvent, mac = isMac): 'exact' | 'loose' | null {
+export function matchKind(s: Shortcut, e: KeyPress, mac = isMac): 'exact' | 'loose' | null {
   // On macOS `mod` is ⌘ and `ctrl` is ⌃. Elsewhere both mean the one Ctrl key.
   const modifiers = mac ? e.metaKey === s.mod && e.ctrlKey === s.ctrl : e.ctrlKey === (s.mod || s.ctrl);
   if (!modifiers || e.altKey !== s.alt) return null;
   if (eventKey(e) === s.key && e.shiftKey === s.shift) return 'exact';
   return !/^[a-z0-9]$/.test(s.key) && e.key === s.key && !s.shift ? 'loose' : null;
+}
+
+const MODIFIER_KEYS = new Set([
+  'Shift',
+  'Control',
+  'Alt',
+  'Meta',
+  'CapsLock',
+  'Fn',
+  'FnLock',
+  'OS',
+  'AltGraph',
+]);
+
+/** The shortcut a key press is, as the catalog writes it; null for a modifier key pressed on its own. */
+export function shortcutOf(e: KeyPress, mac = isMac): Shortcut | null {
+  if (MODIFIER_KEYS.has(e.key)) return null;
+  return {
+    key: eventKey(e),
+    mod: mac ? e.metaKey : e.ctrlKey,
+    ctrl: mac && e.ctrlKey,
+    alt: e.altKey,
+    shift: e.shiftKey,
+  };
 }
 
 const MAC_SYMBOLS: Record<string, string> = {

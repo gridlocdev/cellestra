@@ -75,7 +75,7 @@ The status bar under the grid narrates the last edit ("Pasted A1:C4", "Inserted 
 
 ## The keyboard
 
-Every command can be reached from the keyboard. `⌘K` opens the command menu, which searches every command and shows its shortcut, and `⌘⇧P` switches sheets. **Keyboard Shortcuts** (`⌘/`) lists them all in the app. See [Controls](controls.md) for the full list.
+Every command can be reached from the keyboard. `⌘K` opens the command menu, which searches every command and shows its shortcut, and `⌘⇧P` switches sheets. **Keyboard Shortcuts** (`⌘/`) lists them all in the app, and **Look Up a Key…** there tells you what any key does. See [Controls](controls.md) for the full list.
 
 ## Accessibility
 
