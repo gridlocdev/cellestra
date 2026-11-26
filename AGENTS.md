@@ -32,6 +32,7 @@ A TypeScript spreadsheet editor. The `.ods` engine runs entirely in the browser;
 6. **Formula semantics follow LibreOffice Calc** (PRD §8 and §10). For example, `-2^2 = 4` (the sign binds tighter than `^`), ROUND rounds half away from zero, and serial dates start at 1899-12-30. Dates never use the local time zone.
 7. **The UI only talks to files through `FileStore`.** It never knows whether bytes came from the browser, the NAS or Electron. `DocumentStores` (`apps/web/src/app/documentStores.ts`) picks the store for a document and the `FilePicker` for Open and Save As.
 8. **Security.** The Electron renderer runs sandboxed with context isolation, and the only native access it has is the `cellestraNative` bridge. The server confines every path to its root, including symlink escapes, writes atomically, honours If-Match, and respects LibreOffice lock files.
+9. **One word per concept.** Use the terms in [GLOSSARY.md](GLOSSARY.md) in code, docs and commit messages, and add a term there when a new concept appears.
 
 ## TypeScript conventions
 

@@ -12,3 +12,4 @@ These pages cover running and using Cellestra, and working on its code.
 
 - [Development](development.md): setting up, every `just` recipe, checking your work, the `cellestra` CLI, the NAS server, and packaging the desktop app.
 - [Architecture](architecture.md): how the code is organized, its layer rules, and how each host reaches your files.
+- [Glossary](../GLOSSARY.md): the words Cellestra uses for its own things, and the words to avoid.
