@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { Icon } from './Icon.tsx';
+import { followFocus, ROVING_GROUP, rovingItem, rovingStep } from './roving.ts';
 
 /** Scroll a tab into view within the strip, only as far as needed. */
 const reveal = (tab: HTMLElement | null): void =>
   tab?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
 
+/** The active tab: in view, and holding the keyboard when an arrow key moved to it. */
+const activeTab = (tab: HTMLElement | null): void => {
+  reveal(tab);
+  followFocus(tab);
+};
+
 export interface SheetTabsProps {
   readonly names: readonly string[];
   readonly active: number;
-  readonly onSelect: (index: number) => void;
+  /** `keyboard`: an arrow key moved along the strip, and the keyboard stays on the tabs. */
+  readonly onSelect: (index: number, via?: 'keyboard') => void;
   readonly onAdd: () => void;
   /** Returns an error message to show, or null when the rename succeeded. */
   readonly onRename: (index: number, name: string) => string | null;
@@ -16,7 +24,10 @@ export interface SheetTabsProps {
   readonly onMenu: (index: number, x: number, y: number) => void;
 }
 
-/** Sheet tabs: click to switch, double-click to rename, drag to reorder, right-click for more. */
+/**
+ * Sheet tabs: click to switch, double-click to rename, drag to reorder, right-click for more. One Tab
+ * stop, the active sheet's tab; ← → Home End switch sheets from there.
+ */
 export function SheetTabs(props: SheetTabsProps) {
   const [renaming, setRenaming] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
@@ -47,7 +58,20 @@ export function SheetTabs(props: SheetTabsProps) {
   };
 
   return (
-    <div class="cs-tabs" role="tablist" aria-label="Sheets" ref={watchStrip}>
+    <div
+      class="cs-tabs"
+      role="tablist"
+      aria-label="Sheets"
+      ref={watchStrip}
+      {...ROVING_GROUP}
+      onKeyDown={(e) => {
+        if (renaming !== null || !(e.target as HTMLElement).matches('.cs-tab')) return;
+        const next = rovingStep(e, props.active, props.names.length, 'horizontal');
+        if (next === undefined) return;
+        e.preventDefault();
+        if (next !== props.active) props.onSelect(next, 'keyboard');
+      }}
+    >
       {props.names.map((name, i) =>
         renaming === i ? (
           <input
@@ -78,7 +102,7 @@ export function SheetTabs(props: SheetTabsProps) {
             role="tab"
             aria-selected={i === props.active}
             // The active sheet's tab comes into view, also when there are more tabs than fit.
-            ref={i === props.active ? reveal : undefined}
+            {...rovingItem(i === props.active, activeTab)}
             draggable
             onClick={() => props.onSelect(i)}
             onDblClick={() => {

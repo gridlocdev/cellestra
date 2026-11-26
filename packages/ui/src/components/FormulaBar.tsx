@@ -44,7 +44,7 @@ export function FormulaBar(props: {
         ref={(el) => {
           if (props.nameBoxRef) props.nameBoxRef.current = el;
         }}
-        class="cs-name-box"
+        class="cs-name-box cs-focus-inset"
         aria-label="Cell reference"
         disabled={props.disabled}
         value={props.disabled ? '' : name}
@@ -76,7 +76,7 @@ export function FormulaBar(props: {
       </span>
       <div class="cs-formula-field">
         <textarea
-          class={`cs-formula-input${lines > 1 ? ' cs-formula-input-open' : ''}`}
+          class={`cs-formula-input cs-focus-inset${lines > 1 ? ' cs-formula-input-open' : ''}`}
           aria-label="Cell contents"
           spellcheck={false}
           rows={1}

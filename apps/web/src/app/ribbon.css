@@ -603,7 +603,7 @@
 }
 
 .rb-swatch:hover {
-  outline: 2px solid var(--rb-accent);
+  outline: 2px solid var(--cs-focus);
   outline-offset: 1px;
 }
 

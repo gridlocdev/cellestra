@@ -197,4 +197,69 @@ test.describe('Accessibility', () => {
     await expect(dialog).toBeHidden();
     await expect(page.getByRole('grid', { name: 'Spreadsheet' })).toBeFocused();
   });
+  test('no control shows the browser’s own focus ring, and each one shows the app’s', async ({ page }) => {
+    await openFile(page, 'budget.ods');
+    const rings = () =>
+      page.evaluate(() => {
+        const found: string[] = [];
+        const all = document.querySelectorAll<HTMLInputElement>(
+          'button, input, select, textarea, [tabindex], a[href], [contenteditable="true"]',
+        );
+        for (const el of all) {
+          // The search box opens the command menu as it takes focus; the menu's own box is checked in a dialog.
+          if (el.closest('[hidden], [inert]') || el.getClientRects().length === 0 || el.readOnly) continue;
+          el.focus({ focusVisible: true } as FocusOptions);
+          if (document.activeElement !== el) continue;
+          const style = getComputedStyle(el);
+          if (style.outlineStyle === 'auto') found.push(`${el.tagName}.${el.className}`);
+        }
+        return found;
+      });
+    expect(await rings()).toEqual([]);
+    await page.getByRole('grid', { name: 'Spreadsheet' }).focus();
+    await page.keyboard.press('ControlOrMeta+Slash');
+    await expect(page.getByRole('dialog', { name: 'Keyboard Shortcuts' })).toBeVisible();
+    expect(await rings()).toEqual([]);
+  });
+
+  test('arrow keys move the current sheet tab and the focus together', async ({ page }) => {
+    await runCommand(page, 'Insert Sheet');
+    const first = page.getByRole('tab', { name: 'Sheet1' });
+    const second = page.getByRole('tab', { name: 'Sheet2' });
+    await first.click();
+    await first.focus();
+    await expect(first).toHaveAttribute('data-focused', '');
+    await page.keyboard.press('ArrowRight');
+    await expect(second).toHaveAttribute('aria-selected', 'true');
+    await expect(second).toBeFocused();
+    await expect(second).toHaveAttribute('data-focused', '');
+    await expect(first).not.toHaveAttribute('data-focused', '');
+    await expect(first).toHaveAttribute('tabindex', '-1');
+    await page.keyboard.press('Home');
+    await expect(first).toBeFocused();
+    await expect(first).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('arrow keys move the ribbon tab and the focus together, and focus comes back after a dialog', async ({
+    page,
+  }) => {
+    const tabs = page.locator('.rb-tabs [role="tab"]');
+    const start = await tabs.evaluateAll((all) =>
+      all.findIndex((t) => t.getAttribute('aria-selected') === 'true'),
+    );
+    await tabs.nth(start).focus();
+    await page.keyboard.press('ArrowRight');
+    const next = tabs.nth(start + 1);
+    await expect(next).toHaveAttribute('aria-selected', 'true');
+    await expect(next).toBeFocused();
+    await expect(next).toHaveAttribute('data-focused', '');
+    const outline = await next.evaluate((el) => getComputedStyle(el).outlineStyle);
+    expect(outline).toBe('solid');
+    await page.keyboard.press('ControlOrMeta+Slash');
+    const dialog = page.getByRole('dialog', { name: 'Keyboard Shortcuts' });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(next).toBeFocused();
+  });
 });

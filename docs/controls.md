@@ -67,6 +67,17 @@ In a browser tab, `⌘W` (`Ctrl+W`) belongs to the browser and closes the tab, s
 | Clear the selection's contents | `Delete` or `Backspace`                       |
 | Tick a checkbox cell           | `Space`                                       |
 
+## Tabs, menus and lists
+
+|                                                         | Key            |
+| ------------------------------------------------------- | -------------- |
+| Next / previous sheet tab, ribbon tab or toolbar button | `→` / `←`      |
+| Next / previous item in a menu or list                  | `↓` / `↑`      |
+| First / last item                                       | `Home` / `End` |
+| Open the folder or item                                 | `Enter`        |
+
+Only the current item in each group is a `Tab` stop, and it carries the focus outline. Moving along the sheet tabs or ribbon tabs switches to that tab.
+
 ## While editing a cell
 
 |                               | Key                                     |

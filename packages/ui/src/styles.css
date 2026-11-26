@@ -13,6 +13,8 @@
   --cs-text-2: #6e6e73;
   --cs-accent: #2a7de1;
   --cs-accent-text: #ffffff;
+  /* The one focus colour: rings, the current item in a list, tab strip or menu. */
+  --cs-focus: #1f6fd6;
   --cs-hover: rgba(0, 0, 0, 0.06);
   --cs-danger: #d93025;
   --cs-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
@@ -30,6 +32,7 @@
     --cs-text: #e6e6e6;
     --cs-text-2: #a0a0a0;
     --cs-accent: #4a90e2;
+    --cs-focus: #7cb2ff;
     --cs-hover: rgba(255, 255, 255, 0.08);
     --cs-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
@@ -43,6 +46,7 @@
   --cs-text: #e6e6e6;
   --cs-text-2: #a0a0a0;
   --cs-accent: #4a90e2;
+  --cs-focus: #7cb2ff;
   --cs-hover: rgba(255, 255, 255, 0.08);
   --cs-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
@@ -66,6 +70,28 @@ body {
 button {
   font: inherit;
   color: inherit;
+}
+
+/*
+ * Focus. The app draws it in --cs-focus; the browser's own ring never shows. Buttons and fields get
+ * the ring from :focus-visible. A tab strip, list or menu marks its current item from app state
+ * ([data-focused] inside [data-roving], see roving.ts), and DOM focus follows that state. The grid
+ * shows its focus as the cell cursor; text fields with no border of their own get an inset ring.
+ */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--cs-focus);
+  outline-offset: 1px;
+}
+[data-roving]:focus-within [data-focused] {
+  outline: 2px solid var(--cs-focus);
+  outline-offset: -2px;
+}
+.cs-focus-inset:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--cs-focus);
 }
 
 .cs-app {
@@ -614,7 +640,7 @@ button {
   cursor: pointer;
 }
 .cs-toast-undo:focus-visible {
-  outline: 2px solid var(--cs-accent);
+  outline: 2px solid var(--cs-focus);
   outline-offset: 1px;
 }
 /* Picking cells for a chart field: a prompt bar above the grid. */
@@ -685,11 +711,9 @@ button {
   width: 15px;
   height: 15px;
 }
-.cs-context-item:hover:not(:disabled),
-.cs-context-item:focus-visible {
+.cs-context-item:hover:not(:disabled) {
   background: var(--cs-accent);
   color: var(--cs-accent-text);
-  outline: none;
 }
 .cs-context-item:disabled {
   opacity: 0.4;

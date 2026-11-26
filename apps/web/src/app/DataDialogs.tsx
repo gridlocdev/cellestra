@@ -21,7 +21,7 @@ import {
   type ValidationOperator,
   type ValidationResponse,
 } from '@cellestra/core';
-import { chipColors, Dialog, QuickPick } from '@cellestra/ui';
+import { chipColors, Dialog, QuickPick, ROVING_GROUP, rovingItem, rovingStep } from '@cellestra/ui';
 import type { AppController, DataTarget } from './controller.ts';
 
 type Anchor = { x: number; y: number; w: number; h: number };
@@ -52,7 +52,12 @@ function Popover(props: {
     };
     addEventListener('pointerdown', down, true);
     addEventListener('keydown', key, true);
-    ref.current?.querySelector<HTMLElement>('input, button, [tabindex]')?.focus();
+    // A list starts on its current item; anything else on its first field or button.
+    const panel = ref.current;
+    (
+      panel?.querySelector<HTMLElement>('[data-focused]') ??
+      panel?.querySelector<HTMLElement>('input, button, [tabindex]')
+    )?.focus();
     return () => {
       removeEventListener('pointerdown', down, true);
       removeEventListener('keydown', key, true);
@@ -182,6 +187,13 @@ export function ValidationListPopup(props: {
   const items = app.listItems(props.rule);
   const colors = app.chipColors(props.row, props.column);
   const current = app.session.editText(props.row, props.column).toUpperCase();
+  // The highlighted item: the cell's own value to start with; ↑ ↓ Home End move it.
+  const [at, setAt] = useState(() =>
+    Math.max(
+      0,
+      items.findIndex((t) => t.toUpperCase() === current),
+    ),
+  );
   const pick = (text: string) => {
     close(app);
     app.commit(props.row, props.column, text);
@@ -189,12 +201,23 @@ export function ValidationListPopup(props: {
   return (
     <Popover anchor={props.anchor} onClose={() => close(app)} class="cs-list-popup">
       {items.length === 0 && <div class="cs-muted">The list is empty.</div>}
-      <div role="listbox" class="cs-filter-list">
-        {items.map((t) => (
+      <div
+        role="listbox"
+        class="cs-filter-list"
+        {...ROVING_GROUP}
+        onKeyDown={(e) => {
+          const next = rovingStep(e, at, items.length, 'vertical');
+          if (next === undefined) return;
+          e.preventDefault();
+          setAt(next);
+        }}
+      >
+        {items.map((t, i) => (
           <button
             type="button"
             role="option"
             aria-selected={t.toUpperCase() === current}
+            {...rovingItem(i === at)}
             class="cs-list-item"
             onClick={() => pick(t)}
           >

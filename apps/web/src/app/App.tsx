@@ -9,7 +9,6 @@ import {
   PageSetupDialog,
   FormulaBar,
   Grid,
-  Icon,
   NasBrowser,
   QuickPick,
   SheetTabs,
@@ -42,51 +41,7 @@ import { cellAnnouncement } from './announce.ts';
 import { Ribbon } from './Ribbon.tsx';
 import { GridContextMenu } from './ContextMenu.tsx';
 import { ShortcutsDialog } from './ShortcutsDialog.tsx';
-
-const TOOLBAR: readonly (string | '|')[] = [
-  'file.new',
-  'file.open',
-  'file.save',
-  '|',
-  'edit.undo',
-  'edit.redo',
-  '|',
-  'format.bold',
-  'format.italic',
-  'format.underline',
-  'format.strikethrough',
-  '|',
-  'format.alignLeft',
-  'format.alignCenter',
-  'format.alignRight',
-  'format.wrap',
-  'format.merge',
-  '|',
-  'format.asCurrency',
-  'format.asPercent',
-  'format.decreaseDecimal',
-  'format.increaseDecimal',
-  '|',
-  'format.borderAll',
-  'edit.formatPainter',
-  'edit.autoSum',
-  'data.sortAsc',
-  'data.sortDesc',
-  '|',
-  'view.freezePanes',
-  '|',
-  'data.toggleFilter',
-  'data.createTable',
-  'insert.chartSheet',
-  'insert.function',
-  '|',
-  'insert.rowsAbove',
-  'insert.columnsLeft',
-  '|',
-  'edit.find',
-  'edit.clearFormats',
-  'format.cells',
-];
+import { Toolbar } from './Toolbar.tsx';
 
 export function App({ app, catalog }: { readonly app: AppController; readonly catalog: CommandCatalog }) {
   const s = app.session;
@@ -357,70 +312,6 @@ function TitleBar({ app }: { readonly app: AppController }) {
   );
 }
 
-function Toolbar({
-  app,
-  catalog,
-  titleInline,
-}: {
-  readonly app: AppController;
-  readonly catalog: CommandCatalog;
-  /** Show the workbook's name in the toolbar (when there is no title bar of our own). */
-  readonly titleInline: boolean;
-}) {
-  const s = app.session;
-  // Read the signals the enabled/active checks depend on, so the toolbar re-renders with them.
-  void s.version.value;
-  void app.selection.state.value;
-  void app.formatPainter.value;
-  void app.recents.value;
-  return (
-    <div class="cs-toolbar" role="toolbar" aria-label="Commands">
-      {/* Buttons that don't fit wrap onto a hidden second line: whole buttons drop off the
-          end instead of the row overflowing. All of them are in ⌘K and the menus. */}
-      <div class="cs-toolbar-items">
-        {TOOLBAR.map((id, i) => {
-          if (id === '|') return <span key={i} class="cs-sep" />;
-          const c = catalog.get(id);
-          if (!c) return null;
-          const label = c.shortcutText ? `${c.title} (${c.shortcutText})` : c.title;
-          return (
-            <button
-              key={id}
-              type="button"
-              class="cs-btn"
-              title={label}
-              aria-label={c.title}
-              aria-pressed={c.active ? c.active() : undefined}
-              disabled={!catalog.isEnabled(c)}
-              onPointerDown={(e) => e.preventDefault() /* keep focus (and the selection) in the grid */}
-              onClick={() => void catalog.run(id)}
-            >
-              <Icon name={c.icon ?? 'square'} />
-            </button>
-          );
-        })}
-      </div>
-      {titleInline ? (
-        <span class="cs-title">
-          {s.modified.value ? '• ' : ''}
-          {s.title.value}
-        </span>
-      ) : (
-        <span class="cs-toolbar-fill" />
-      )}
-      <button
-        type="button"
-        class="cs-btn"
-        title="Command Menu (⌘K)"
-        aria-label="Command Menu"
-        onClick={() => (app.paletteOpen.value = true)}
-      >
-        <Icon name="command" />
-      </button>
-    </div>
-  );
-}
-
 const cellLabel = (row: number, column: number) => SheetDimensions.columnToLetters(column) + (row + 1);
 
 /** `A1:C9` for a range of more than one cell, null for a single cell. */
@@ -533,9 +424,11 @@ function Footer({ app }: { readonly app: AppController }) {
       <SheetTabs
         names={s.sheetNames.value}
         active={s.activeIndex.value}
-        onSelect={(i) => {
+        onSelect={(i, via) => {
           // An open cell edit belongs to the sheet it was typed on.
           if (app.grid.current?.commitEdit() ?? true) s.setActiveSheet(i);
+          // An arrow key along the tabs keeps the keyboard there.
+          if (via === 'keyboard') return;
           // The tab button took focus with the click: hand the keyboard back to the grid so arrows
           // and typing act on the new sheet's active cell.
           queueMicrotask(() => app.grid.current?.focus());
@@ -745,19 +638,25 @@ function selectionSummary(app: AppController, scope: NonNullable<ReturnType<type
 /** Above this many cells the summary waits for the selection to settle instead of following each move. */
 const SUMMARY_SYNC_CELLS = 20_000;
 
+/** Focus the grid when nothing in particular has it, as after a dialog whose opener has gone. */
+function focusGridIfLost(app: AppController): void {
+  const active = document.activeElement;
+  if (!active || active === document.body || !active.isConnected) app.grid.current?.focus();
+}
+
 function Overlays({ app, catalog }: { readonly app: AppController; readonly catalog: CommandCatalog }) {
   const s = app.session;
   const d = app.dialog.value;
-  const refocus = () => queueMicrotask(() => app.grid.current?.focus());
-  // A dialog hands focus back to whatever opened it. When that was a menu item that has since gone
-  // (or nothing), focus would be left on the page itself, where no key reaches the grid: use the grid.
+  // A dialog hands focus back to whatever opened it (a sheet tab, a ribbon tab, the grid). When that
+  // was a menu item that has since gone (or nothing), focus would be left on the page itself, where
+  // no key reaches the grid: use the grid.
+  const refocus = () => queueMicrotask(() => focusGridIfLost(app));
   const open = d !== null;
   const wasOpen = useRef(open);
   useEffect(() => {
     const closed = wasOpen.current && !open;
     wasOpen.current = open;
-    const lost = !document.activeElement || document.activeElement === document.body;
-    if (closed && lost) app.grid.current?.focus();
+    if (closed) focusGridIfLost(app);
   }, [open]);
   return (
     <>
@@ -1120,7 +1019,7 @@ function FindDialog({ app }: { readonly app: AppController }) {
   const close = () => {
     app.findQuery.value = query;
     app.dialog.value = null;
-    queueMicrotask(() => app.grid.current?.focus());
+    queueMicrotask(() => focusGridIfLost(app));
   };
   const next = (back = false) => {
     app.findQuery.value = query;

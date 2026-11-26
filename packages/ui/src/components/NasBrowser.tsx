@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import { AuthError, latestOnly, type NasEntry, type NasRoot, type NasStore } from '../platform/nasStore.ts';
 import { Dialog } from './Dialog.tsx';
 import { Icon } from './Icon.tsx';
+import { ROVING_GROUP, rovingItem, rovingStep } from './roving.ts';
+
+/** The parent-folder row's place in the list. */
+const UP = '..';
 
 export type NasBrowserResult = { readonly root: string; readonly path: string };
 
@@ -53,6 +57,8 @@ export function NasBrowser(props: {
   }, [root, path]);
 
   const crumbs = path ? path.split('/') : [];
+  // The list's one Tab stop: the selected row, else the parent row, else the first.
+  const focusedRow = selected ?? (path ? UP : (entries[0]?.path ?? ''));
   const open = (e: NasEntry) => {
     if (e.kind === 'dir') setPath(e.path);
     else if (mode === 'open') props.onDone({ root: root!, path: e.path });
@@ -155,11 +161,37 @@ export function NasBrowser(props: {
       </div>
       {roots && roots.length === 0 && <p>The server has no folders configured (CELLESTRA_ROOTS).</p>}
       {root && (
-        <ul class="cs-file-list" role="listbox" aria-label="Files">
+        <ul
+          class="cs-file-list"
+          role="listbox"
+          aria-label="Files"
+          {...ROVING_GROUP}
+          onKeyDown={(k) => {
+            // ↑ ↓ Home End move the selection, Enter opens it: a folder, or the file to open.
+            const rows = [...(path ? [UP] : []), ...entries.map((e) => e.path)];
+            const at = Math.max(0, rows.indexOf(focusedRow));
+            if (k.key === 'Enter') {
+              const entry = entries.find((e) => e.path === rows[at]);
+              if (rows[at] === UP) setPath(crumbs.slice(0, -1).join('/'));
+              else if (entry && (entry.kind === 'dir' || mode === 'open')) open(entry);
+              else return;
+              k.preventDefault();
+              return;
+            }
+            const next = rovingStep(k, at, rows.length, 'vertical');
+            if (next === undefined) return;
+            k.preventDefault();
+            const row = rows[next]!;
+            const entry = entries.find((e) => e.path === row);
+            setSelected(row === UP ? null : row);
+            if (mode === 'save' && entry?.kind === 'file') setName(entry.name);
+          }}
+        >
           {path && (
             <li
               role="option"
               aria-selected={false}
+              {...rovingItem(focusedRow === UP)}
               onDblClick={() => setPath(crumbs.slice(0, -1).join('/'))}
               onClick={() => setSelected(null)}
             >
@@ -171,6 +203,7 @@ export function NasBrowser(props: {
               key={e.path}
               role="option"
               aria-selected={selected === e.path}
+              {...rovingItem(focusedRow === e.path)}
               onClick={() => {
                 setSelected(e.path);
                 if (mode === 'save' && e.kind === 'file') setName(e.name);

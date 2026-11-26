@@ -147,6 +147,7 @@ function ListPopup(props: {
       <div class="cs-dialog cs-palette" role="dialog" aria-modal="true" aria-label={props.name}>
         <input
           ref={input}
+          class="cs-focus-inset"
           value={props.query}
           placeholder={props.placeholder}
           onInput={(e) => props.onQuery((e.target as HTMLInputElement).value)}

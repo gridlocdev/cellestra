@@ -205,7 +205,7 @@
 }
 .cs-chart-field input:focus,
 .cs-chart-field select:focus {
-  outline: 2px solid var(--cs-accent);
+  outline: 2px solid var(--cs-focus);
   outline-offset: -1px;
 }
 .cs-chart-check {
@@ -269,7 +269,7 @@
   color: var(--cs-accent-text);
 }
 .cs-chart-mode > button:focus-visible {
-  outline: 2px solid var(--cs-accent);
+  outline: 2px solid var(--cs-focus);
   outline-offset: -2px;
 }
 .cs-chart-error {
@@ -370,7 +370,7 @@
   cursor: default;
 }
 .cs-chart-type:focus-visible {
-  outline: 2px solid var(--cs-accent);
+  outline: 2px solid var(--cs-focus);
   outline-offset: 1px;
 }
 
@@ -431,7 +431,7 @@
   color: var(--cs-text-2);
 }
 .cs-chart-series-toggle:focus-visible {
-  outline: 2px solid var(--cs-accent);
+  outline: 2px solid var(--cs-focus);
   outline-offset: 1px;
 }
 

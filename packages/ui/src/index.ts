@@ -116,6 +116,14 @@ export { Icon } from './components/Icon.tsx';
 export { Dialog } from './components/Dialog.tsx';
 export { CommandMenu, QuickPick } from './components/CommandMenu.tsx';
 export { listStep } from './components/listStep.ts';
+export {
+  followFocus,
+  ROVING_GROUP,
+  rovingItem,
+  rovingStep,
+  type RovingAxis,
+  takeFocus,
+} from './components/roving.ts';
 export { FormulaBar } from './components/FormulaBar.tsx';
 export { SheetTabs } from './components/SheetTabs.tsx';
 export { NasBrowser } from './components/NasBrowser.tsx';

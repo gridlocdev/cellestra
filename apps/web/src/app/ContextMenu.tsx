@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { Icon, type CommandCatalog } from '@cellestra/ui';
+import { Icon, ROVING_GROUP, rovingItem, rovingStep, takeFocus, type CommandCatalog } from '@cellestra/ui';
 import type { AppController } from './controller.ts';
 
 /** What each part of the grid offers on right-click, as command ids (`|` is a separator). */
@@ -76,6 +76,10 @@ export function GridContextMenu({
   const menu = app.contextMenu.value;
   const ref = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  // The item the arrow keys are on, among the enabled ones; null until an arrow key is pressed, so a
+  // right-click leaves the keyboard on the grid.
+  const [current, setCurrent] = useState<number | null>(null);
+  const pickable = useRef<readonly string[]>([]);
 
   const close = () => {
     app.contextMenu.value = null;
@@ -83,6 +87,7 @@ export function GridContextMenu({
   };
 
   useEffect(() => {
+    setCurrent(null);
     if (!menu) return;
     const away = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) close();
@@ -92,7 +97,15 @@ export function GridContextMenu({
         e.preventDefault();
         e.stopPropagation();
         close();
+        return;
       }
+      const count = pickable.current.length;
+      // From no item yet, ↑ starts at the bottom and ↓ at the top.
+      const from = (c: number | null) => c ?? (e.key === 'ArrowUp' ? 0 : -1);
+      if (rovingStep(e, from(null), count, 'vertical') === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setCurrent((c) => rovingStep(e, from(c), count, 'vertical') ?? c);
     };
     addEventListener('pointerdown', away, true);
     addEventListener('keydown', key, true);
@@ -126,12 +139,18 @@ export function GridContextMenu({
     menu.zone === 'cell' && app.activeTable
       ? [...list, ...MENUS.cell, ...TABLE_ITEMS]
       : [...list, ...MENUS[menu.zone]];
+  pickable.current = items.filter((id) => {
+    const c = id === '|' ? undefined : catalog.get(id);
+    return c !== undefined && !c.hidden && catalog.isEnabled(c);
+  });
+  const focused = current === null ? undefined : pickable.current[current];
   return (
     <div
       ref={ref}
       class="cs-context-menu"
       role="menu"
       aria-label="Cell actions"
+      {...ROVING_GROUP}
       style={{
         left: `${(at ?? menu).x}px`,
         top: `${(at ?? menu).y}px`,
@@ -152,6 +171,7 @@ export function GridContextMenu({
             aria-checked={on}
             class="cs-context-item"
             disabled={!catalog.isEnabled(c)}
+            {...rovingItem(id === focused, takeFocus)}
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => {
               close();

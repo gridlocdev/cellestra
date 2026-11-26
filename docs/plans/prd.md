@@ -342,9 +342,10 @@ I use Nielsen's heuristics as a checklist to keep the design honest. Each below 
 - All controls expose **accessibility labels and roles** for **VoiceOver**.
 - The app is **fully operable from the keyboard**.
 - Respects system **text-size/zoom**, **reduced-motion**, and **increased-contrast** settings; the sheet has its own zoom too.
-- Clear, visible **focus indicators** on the active cell and focused controls.
+- Clear, visible **focus indicators** on the active cell and focused controls. The browser's own focus ring is never shown: one focus colour (`--cs-focus`, light and dark) draws it everywhere, and the grid shows focus as its cell cursor.
+- **Roving focus** in tab strips, the toolbar, menus and lists: the current item is app state, only it is a `Tab` stop, and focus follows it. The arrow keys along the group move it and wrap, `Home` and `End` go to the ends, and disabled items are stepped over. On the sheet tabs and ribbon tabs, moving picks the tab; in the font-size and list-entry lists it previews the choice. A menu opened from the keyboard takes focus; one opened with the mouse leaves it on the grid.
 - A polite **live region** announces the active cell's address and shown value on every move, and toasts are announced as status (errors as alerts).
-- Modal dialogs **trap focus**: `Tab` cycles inside, `Esc` closes, and focus returns to the control that opened the dialog (the grid when that control is gone).
+- Modal dialogs **trap focus**: `Tab` cycles inside, `Esc` closes, and focus returns to the control that opened the dialog, such as a sheet tab or ribbon tab (the grid when that control is gone).
 
 ### UX success criteria
 - A new user can open, edit, and save a file without reading any instructions.

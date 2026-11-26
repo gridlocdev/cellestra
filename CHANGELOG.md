@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Focus you can see, in one colour.** The browser's own focus ring is gone; every control shows focus in the app's focus colour, in light and dark.
+- **Arrow keys in tab strips, the toolbar, menus and lists.** The arrows, `Home` and `End` move along the sheet tabs, ribbon tabs, toolbar, right-click menu, ribbon menus, font sizes, list entries and the NAS folder list, and focus moves with them.
+- Closing a dialog puts focus back on the sheet tab or ribbon tab that had it, not always on the grid.
 - **Make a table from the chart panel.** A range chart whose cells could be a table offers **Make a Table…**: name it, and the cells become a table the chart plots by column name, in one undo step. **Use Whole Columns** and **Keep These Cells** give a way forward when switching between Table and Range can't go as asked.
 - **The chart panel says what's wrong.** A line under the heading says where the data comes from, and a range that can't plot says why under its field.
 - **Chart types as pictures.** Types the table's columns can't fill are greyed out with the reason.

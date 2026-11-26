@@ -2,7 +2,17 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 import { Argb, type ArgbColor, type CellStyle } from '@cellestra/core';
-import { Icon, NUMBER_FORMAT_PRESETS, presetIndex, type Command, type CommandCatalog } from '@cellestra/ui';
+import {
+  Icon,
+  NUMBER_FORMAT_PRESETS,
+  presetIndex,
+  ROVING_GROUP,
+  rovingItem,
+  rovingStep,
+  takeFocus,
+  type Command,
+  type CommandCatalog,
+} from '@cellestra/ui';
 import type { AppController } from './controller.ts';
 import './ribbon.css';
 
@@ -122,7 +132,19 @@ export function Ribbon({
         </label>
       </div>
 
-      <div class="rb-tabs" role="tablist" aria-label="Ribbon">
+      <div
+        class="rb-tabs"
+        role="tablist"
+        aria-label="Ribbon"
+        {...ROVING_GROUP}
+        onKeyDown={(e) => {
+          const index = TABS.findIndex((t) => t.id === tab.value);
+          const next = rovingStep(e, index, TABS.length, 'horizontal');
+          if (next === undefined) return;
+          e.preventDefault();
+          tab.value = TABS[next]!.id;
+        }}
+      >
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -130,6 +152,7 @@ export function Ribbon({
             role="tab"
             class={`rb-tab ${tab.value === t.id && !collapsed ? 'on' : ''}`}
             aria-selected={tab.value === t.id}
+            {...rovingItem(tab.value === t.id)}
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => {
               if (collapsed) app.ribbonCollapsed.value = false;
@@ -700,7 +723,11 @@ function MenuAnchor(
   },
 ) {
   const [open, setOpen] = useState(false);
+  // Opened from the keyboard, the menu takes it, on its current item; from the mouse, the grid keeps it.
+  const [byKeyboard, setByKeyboard] = useState(false);
   const commands = props.items.map((id) => (id === '|' ? '|' : usable(props.catalog, id)));
+  const pickable = commands.flatMap((c) => (c && c !== '|' && props.catalog.isEnabled(c) ? [c.id] : []));
+  const [current, setCurrent] = useState(0);
   return (
     <Popover
       open={open}
@@ -714,13 +741,28 @@ function MenuAnchor(
           aria-haspopup="menu"
           aria-expanded={open}
           onPointerDown={(e) => e.preventDefault()}
-          onClick={() => setOpen(!open)}
+          onClick={(e) => {
+            setByKeyboard(e.detail === 0);
+            setCurrent(0);
+            setOpen(!open);
+          }}
         >
           {props.children}
         </button>
       }
     >
-      <div class="rb-menu" role="menu" aria-label={props.label}>
+      <div
+        class="rb-menu"
+        role="menu"
+        aria-label={props.label}
+        {...ROVING_GROUP}
+        onKeyDown={(e) => {
+          const next = rovingStep(e, current, pickable.length, 'vertical');
+          if (next === undefined) return;
+          e.preventDefault();
+          setCurrent(next);
+        }}
+      >
         {commands.map((c, i) =>
           c === '|' ? (
             <div key={i} class="rb-menu-sep" role="separator" />
@@ -731,6 +773,7 @@ function MenuAnchor(
               role="menuitem"
               class="rb-menu-item"
               disabled={!props.catalog.isEnabled(c)}
+              {...rovingItem(pickable[current] === c.id, byKeyboard ? takeFocus : undefined)}
               onPointerDown={(e) => e.preventDefault()}
               onClick={() => {
                 setOpen(false);
@@ -767,7 +810,10 @@ function Popover(props: {
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
+        // Focus inside the panel goes back to the button that opened it, not to the page.
+        const inside = ref.current?.querySelector('.rb-pop-panel')?.contains(document.activeElement);
         onClose();
+        if (inside) ref.current?.querySelector<HTMLElement>('[aria-haspopup]')?.focus();
       }
     };
     addEventListener('pointerdown', away, true);
@@ -838,6 +884,9 @@ function FontSizeBox({ app, style, disabled }: BoxProps) {
   const size = style.font.sizePoints;
   const sizes = FONT_SIZES.includes(size) ? FONT_SIZES : [...FONT_SIZES, size].sort((a, b) => a - b);
   const [open, setOpen] = useState(false);
+  const [byKeyboard, setByKeyboard] = useState(false);
+  // The highlighted size in the list: the current one to start with; ↑ ↓ Home End move and preview it.
+  const [at, setAt] = useState(0);
   const [text, setText] = useState(String(size));
   useEffect(() => setText(String(size)), [size]);
   const resize =
@@ -861,7 +910,7 @@ function FontSizeBox({ app, style, disabled }: BoxProps) {
       anchor={
         <span class="rb-size">
           <input
-            class="rb-dd rb-size-input"
+            class="rb-dd rb-size-input cs-focus-inset"
             aria-label="Font size"
             title="Font size"
             disabled={disabled}
@@ -892,20 +941,38 @@ function FontSizeBox({ app, style, disabled }: BoxProps) {
             disabled={disabled}
             aria-expanded={open}
             onPointerDown={(e) => e.preventDefault()}
-            onClick={() => (open ? close() : setOpen(true))}
+            onClick={(e) => {
+              if (open) return close();
+              setByKeyboard(e.detail === 0);
+              setAt(Math.max(0, sizes.indexOf(size)));
+              setOpen(true);
+            }}
           >
             <Icon name="chevron-down" />
           </button>
         </span>
       }
     >
-      <div class="rb-menu rb-size-list" role="listbox" aria-label="Font sizes">
-        {sizes.map((n) => (
+      <div
+        class="rb-menu rb-size-list"
+        role="listbox"
+        aria-label="Font sizes"
+        {...ROVING_GROUP}
+        onKeyDown={(e) => {
+          const next = rovingStep(e, at, sizes.length, 'vertical');
+          if (next === undefined) return;
+          e.preventDefault();
+          setAt(next);
+          app.previewStyle(resize(sizes[next]!));
+        }}
+      >
+        {sizes.map((n, i) => (
           <button
             key={n}
             type="button"
             role="option"
             aria-selected={n === size}
+            {...rovingItem(i === at, byKeyboard ? takeFocus : undefined)}
             class={`rb-menu-item${n === size ? ' on' : ''}`}
             onPointerDown={(e) => e.preventDefault()}
             onPointerEnter={() => app.previewStyle(resize(n))}
