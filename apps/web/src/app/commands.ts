@@ -8,7 +8,14 @@ import {
   type HorizontalAlignment,
   type VerticalAlignment,
 } from '@cellestra/core';
-import { CHART_TYPE_ICONS, CHART_TYPE_LABELS, CommandCatalog, isMac, type CommandSpec } from '@cellestra/ui';
+import {
+  CHART_TYPE_ICONS,
+  CHART_TYPE_LABELS,
+  CommandCatalog,
+  focusRegion,
+  isMac,
+  type CommandSpec,
+} from '@cellestra/ui';
 import type { AppController } from './controller.ts';
 import { MAX_ZOOM, MIN_ZOOM, NAS_BUILD } from './controller.ts';
 
@@ -459,6 +466,24 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
       icon: 'layers',
       run: () => void (app.sheetPickerOpen.value = true),
       global: true,
+    },
+    {
+      id: 'view.nextRegion',
+      title: 'Next Region',
+      description: 'Move the focus to the next part of the window: ribbon, grid, sheet tabs',
+      group: 'View',
+      shortcut: 'f6',
+      keywords: 'focus pane area ribbon toolbar sheet tabs grid keyboard',
+      run: () => void focusRegion(document, 1),
+    },
+    {
+      id: 'view.previousRegion',
+      title: 'Previous Region',
+      description: 'Move the focus to the previous part of the window',
+      group: 'View',
+      shortcut: 'shift+f6',
+      keywords: 'focus pane area ribbon toolbar sheet tabs grid keyboard',
+      run: () => void focusRegion(document, -1),
     },
     {
       id: 'view.freezePanes',

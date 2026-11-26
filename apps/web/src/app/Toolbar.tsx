@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import { Icon, ROVING_GROUP, rovingItem, rovingStep, type CommandCatalog } from '@cellestra/ui';
+import { Icon, region, ROVING_GROUP, rovingItem, rovingStep, type CommandCatalog } from '@cellestra/ui';
 import type { AppController } from './controller.ts';
 
 /** The classic toolbar (without the ribbon): one row of buttons, all from the catalog. */
@@ -87,6 +87,7 @@ export function Toolbar({
       role="toolbar"
       aria-label="Commands"
       {...ROVING_GROUP}
+      {...region('toolbar')}
       onKeyDown={(e) => {
         const next = rovingStep(e, stops.indexOf(at), stops.length, 'horizontal');
         if (next === undefined) return;

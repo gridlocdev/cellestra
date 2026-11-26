@@ -79,7 +79,7 @@ Every command can be reached from the keyboard. `⌘K` opens the command menu, w
 
 ## Accessibility
 
-A screen reader such as VoiceOver hears the active cell's address and what it shows each time the selection moves (`B7, 1,234.50`, or `B7, blank`), with the selected range when there is one, and hears each message the app pops up at the bottom. In a dialog, `Tab` and `⇧Tab` cycle through its controls without leaving it, `Esc` closes it, and focus goes back to where it was before the dialog opened. Focus is always drawn in the app's own focus colour, in light and dark. In the sheet tabs, ribbon tabs, toolbar, menus and lists the arrow keys move the current item and the focus with it. With **Reduce motion** on in the system settings, the dashed border around copied cells stands still and nothing in the app animates or scrolls smoothly.
+A screen reader such as VoiceOver hears the active cell's address and what it shows each time the selection moves (`B7, 1,234.50`, or `B7, blank`), with the selected range when there is one, and hears each message the app pops up at the bottom. In a dialog, `Tab` and `⇧Tab` cycle through its controls without leaving it, `Esc` closes it, and focus goes back to where it was before the dialog opened. Focus is always drawn in the app's own focus colour, in light and dark. In the sheet tabs, ribbon tabs, toolbar, menus and lists the arrow keys move the current item and the focus with it, and `F6` and `Shift+F6` jump between the ribbon (or toolbar), the grid and the sheet tabs. With **Reduce motion** on in the system settings, the dashed border around copied cells stands still and nothing in the app animates or scrolls smoothly.
 
 ## Command line
 

@@ -6,6 +6,7 @@ import {
   Icon,
   NUMBER_FORMAT_PRESETS,
   presetIndex,
+  region,
   ROVING_GROUP,
   rovingItem,
   rovingStep,
@@ -137,6 +138,7 @@ export function Ribbon({
         role="tablist"
         aria-label="Ribbon"
         {...ROVING_GROUP}
+        {...region('ribbon')}
         onKeyDown={(e) => {
           const index = TABS.findIndex((t) => t.id === tab.value);
           const next = rovingStep(e, index, TABS.length, 'horizontal');

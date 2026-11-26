@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { Icon } from './Icon.tsx';
+import { region } from './regions.ts';
 import { followFocus, ROVING_GROUP, rovingItem, rovingStep } from './roving.ts';
 
 /** Scroll a tab into view within the strip, only as far as needed. */
@@ -64,6 +65,7 @@ export function SheetTabs(props: SheetTabsProps) {
       aria-label="Sheets"
       ref={watchStrip}
       {...ROVING_GROUP}
+      {...region('sheets')}
       onKeyDown={(e) => {
         if (renaming !== null || !(e.target as HTMLElement).matches('.cs-tab')) return;
         const next = rovingStep(e, props.active, props.names.length, 'horizontal');

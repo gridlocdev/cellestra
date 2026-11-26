@@ -262,4 +262,44 @@ test.describe('Accessibility', () => {
     await expect(dialog).toBeHidden();
     await expect(next).toBeFocused();
   });
+
+  test('F6 and Shift+F6 cycle the focus through the ribbon, the grid and the sheet tabs, onto each current item', async ({
+    page,
+  }) => {
+    await runCommand(page, 'Insert Sheet');
+    const grid = page.getByRole('grid', { name: 'Spreadsheet' });
+    const ribbonTab = page.locator('.rb-tabs [aria-selected="true"]');
+    const sheetTab = page.getByRole('tab', { name: 'Sheet2' });
+    await grid.click();
+    await expect(grid).toBeFocused();
+    await page.keyboard.press('F6');
+    await expect(sheetTab).toBeFocused();
+    await expect(sheetTab).toHaveAttribute('data-focused', '');
+    await page.keyboard.press('F6');
+    await expect(ribbonTab).toBeFocused();
+    // An arrow moves the ribbon's current tab, and the next visit lands on it.
+    await page.keyboard.press('ArrowRight');
+    const moved = page.locator('.rb-tabs [aria-selected="true"]');
+    const name = await moved.textContent();
+    await page.keyboard.press('F6');
+    await expect(grid).toBeFocused();
+    await page.keyboard.press('Shift+F6');
+    await expect(page.getByRole('tab', { name: name!, exact: true })).toBeFocused();
+    await page.keyboard.press('Shift+F6');
+    await expect(sheetTab).toBeFocused();
+    await page.keyboard.press('Shift+F6');
+    await expect(grid).toBeFocused();
+  });
+
+  test('F6 reaches the compact toolbar in place of the ribbon', async ({ page }) => {
+    await runCommand(page, 'Ribbon Layout');
+    const toolbar = page.getByRole('toolbar', { name: 'Commands' });
+    await expect(toolbar).toBeVisible();
+    const grid = page.getByRole('grid', { name: 'Spreadsheet' });
+    await grid.click();
+    await page.keyboard.press('Shift+F6');
+    await expect(toolbar.locator('[data-focused]')).toBeFocused();
+    await page.keyboard.press('F6');
+    await expect(grid).toBeFocused();
+  });
 });

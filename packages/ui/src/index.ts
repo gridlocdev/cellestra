@@ -124,6 +124,7 @@ export {
   type RovingAxis,
   takeFocus,
 } from './components/roving.ts';
+export { focusRegion, nextRegion, region, type RegionNode } from './components/regions.ts';
 export { FormulaBar } from './components/FormulaBar.tsx';
 export { SheetTabs } from './components/SheetTabs.tsx';
 export { NasBrowser } from './components/NasBrowser.tsx';

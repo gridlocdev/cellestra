@@ -9,6 +9,7 @@
 | Go to sheet | `⇧⌘P` | `Ctrl+Shift+P` |
 | Next / previous sheet | `⌃⇟` / `⌃⇞` | `Ctrl+Page Down` / `Ctrl+Page Up` |
 | Keyboard shortcuts | `⌘/` | `Ctrl+/` |
+| Next / previous region | `F6` / `⇧F6` | `F6` / `Shift+F6` |
 | New / open / save | `⌘N` / `⌘O` / `⌘S` | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` |
 | Save as | `⇧⌘S` | `Ctrl+Shift+S` |
 | Close | `⌘W` | `Ctrl+W` |
@@ -77,6 +78,8 @@ In a browser tab, `⌘W` (`Ctrl+W`) belongs to the browser and closes the tab, s
 | Open the folder or item                                 | `Enter`        |
 
 Only the current item in each group is a `Tab` stop, and it carries the focus outline. Moving along the sheet tabs or ribbon tabs switches to that tab.
+
+`F6` moves the focus to the next part of the window, in order: the ribbon tabs (or the compact toolbar), the grid and the sheet tabs. `Shift+F6` goes back. Each part takes the focus on its current item, so you come back where you left it.
 
 ## While editing a cell
 

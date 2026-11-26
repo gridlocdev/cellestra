@@ -11,6 +11,7 @@ import {
   Grid,
   NasBrowser,
   QuickPick,
+  region,
   SheetTabs,
   after,
   calculationBadge,
@@ -257,7 +258,7 @@ export function App({ app, catalog }: { readonly app: AppController; readonly ca
       )}
       <FormulaBarConnected app={app} draft={draft} />
       {app.chartPick.value && <ChartPickBanner app={app} />}
-      <main class="cs-main" onPointerUp={() => app.selectionDone()}>
+      <main class="cs-main" {...region('grid')} onPointerUp={() => app.selectionDone()}>
         {s.activeSheet.value.isChartSheet ? (
           <ChartPane app={app} />
         ) : (
