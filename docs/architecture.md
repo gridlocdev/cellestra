@@ -154,7 +154,7 @@ stateDiagram-v2
 ## Desktop (`apps/desktop`)
 
 - **Isolation.** The renderer runs with `sandbox`, `contextIsolation` and no Node.
-- **Fuses.** Packaging flips Electron's fuses (`electronFuses` in `electron-builder.yml`) before signing: no `ELECTRON_RUN_AS_NODE`, no `NODE_OPTIONS`, no `--inspect` flags, and only the integrity-checked `app.asar` loads. So no other program can reuse the signed binary as a Node.js runtime.
+- **Fuses.** Packaging flips Electron's fuses (`electronFuses` in `electron-builder.yml`) before signing: no `ELECTRON_RUN_AS_NODE`, no `NODE_OPTIONS`, no `--inspect` flags, cookies encrypted, and only the integrity-checked `app.asar` loads. File protocol privileges stay at Electron's default, because printing loads a temporary `file://` page. So no other program can reuse the signed binary as a Node.js runtime.
 - **Key lookup.** While Keyboard Shortcuts looks up keys, `before-input-event` holds key-downs back from the menu bar and sends them to the page (`keyCapture.ts`). Escape always goes through and ends the capture, as do the window losing focus, a navigation and a renderer crash.
 - **Bridge.** The preload exposes exactly one object, `window.cellestraNative`. Its contract is in `bridge.ts` and is mirrored in `packages/ui/src/platform/native.ts`.
 - **Loading.** The UI loads from `app://cellestra/`, a privileged standard scheme backed by `out/web`. Navigation away from it is blocked, and links open in the system browser.
