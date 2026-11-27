@@ -123,6 +123,8 @@ test.describe('Files', () => {
     await enter(page, 'B2', '999');
     await page.keyboard.press('ControlOrMeta+KeyW');
     const ask = page.getByRole('dialog', { name: 'Unsaved changes' });
+    // Enter must save, not throw the changes away: focus starts on Save.
+    await expect(ask.getByRole('button', { name: 'Save', exact: true })).toBeFocused();
     await ask.getByRole('button', { name: 'Cancel' }).click();
     await expect(ask).toBeHidden();
     await expect(page).toHaveTitle('• budget.ods — Cellestra');

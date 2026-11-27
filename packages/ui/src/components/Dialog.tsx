@@ -18,7 +18,13 @@ export function Dialog(props: {
   // Before the next key event: keys typed right after the dialog opens must not reach what is behind it.
   useLayoutEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    const first = ref.current?.querySelector<HTMLElement>('[autofocus], input, select, button');
+    // The control marked autofocus wins, then a list's current item, then the first control: a
+    // selector list would pick whichever comes first in the page, such as a Don't Save button.
+    const form = ref.current;
+    const first =
+      form?.querySelector<HTMLElement>('[autofocus]') ??
+      form?.querySelector<HTMLElement>('[data-focused]') ??
+      form?.querySelector<HTMLElement>('input, select, button');
     first?.focus();
     return () => {
       if (previous?.isConnected && previous !== document.body) previous.focus();
