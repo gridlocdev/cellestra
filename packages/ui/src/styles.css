@@ -525,6 +525,7 @@ button {
   color: var(--cs-text-2);
   font-size: 12px;
 }
+.cs-dialog input:not([type]),
 .cs-dialog input[type='text'],
 .cs-dialog input[type='password'],
 .cs-dialog select {

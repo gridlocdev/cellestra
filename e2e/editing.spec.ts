@@ -56,7 +56,13 @@ test.describe('Find and Replace', () => {
     await page.keyboard.type('.');
     await dialog.getByRole('button', { name: 'Replace All' }).click();
     await expect(dialog).toContainText('Replaced 2 cell(s).');
-    await page.keyboard.press('Escape');
+    // The fields are drawn like every other dialog's, and Close is a button, not only Esc.
+    const border = await dialog
+      .getByRole('textbox', { name: 'Find' })
+      .evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
+    expect(border).not.toBe('0px');
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(dialog).toBeHidden();
     await save(page);
     expect(readCell('budget.ods', 'A2')).toBe('Jan.');
     expect(readCell('budget.ods', 'A3')).toBe('Febr.');

@@ -1039,6 +1039,9 @@ function FindDialog({ app }: { readonly app: AppController }) {
       onSubmit={() => next()}
       actions={
         <>
+          <button type="button" class="cs-btn" onClick={close}>
+            Close
+          </button>
           <button
             type="button"
             class="cs-btn"
@@ -1061,11 +1064,11 @@ function FindDialog({ app }: { readonly app: AppController }) {
       <div style={{ display: 'grid', gap: '8px', minWidth: '320px' }}>
         <label style={{ display: 'grid', gap: '4px' }}>
           Find
-          <input value={query} autofocus onInput={(e) => setQuery(e.currentTarget.value)} />
+          <input type="text" value={query} autofocus onInput={(e) => setQuery(e.currentTarget.value)} />
         </label>
         <label style={{ display: 'grid', gap: '4px' }}>
           Replace with
-          <input value={replacement} onInput={(e) => setReplacement(e.currentTarget.value)} />
+          <input type="text" value={replacement} onInput={(e) => setReplacement(e.currentTarget.value)} />
         </label>
         <span class="cs-status" style={{ padding: 0 }} aria-live="polite">
           {note || (query ? count : '')}
