@@ -1,8 +1,13 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { AuthError, latestOnly, type NasEntry, type NasRoot, type NasStore } from '../platform/nasStore.ts';
 import { Dialog } from './Dialog.tsx';
 import { Icon } from './Icon.tsx';
-import { ROVING_GROUP, rovingItem, rovingStep } from './roving.ts';
+import { followFocus, ROVING_GROUP, rovingItem, rovingStep } from './roving.ts';
+
+/** When a file was last changed, to the minute: seconds are noise in a file list. */
+export function modifiedText(at: number, locale?: string): string {
+  return new Date(at).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
+}
 
 /** The parent-folder row's place in the list. */
 const UP = '..';
@@ -24,6 +29,10 @@ export function NasBrowser(props: {
   const [root, setRoot] = useState<string | null>(null);
   const [path, setPath] = useState('');
   const [entries, setEntries] = useState<NasEntry[]>([]);
+  // Until a folder's list arrives, say so: an empty list would read as "No spreadsheets here".
+  const [loading, setLoading] = useState(true);
+  // Opening a file, the list takes focus once its rows arrive, so the arrows work at once.
+  const focusList = useRef(mode === 'open');
   const [selected, setSelected] = useState<string | null>(null);
   const [name, setName] = useState(props.suggestedName ?? 'Untitled.ods');
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +53,10 @@ export function NasBrowser(props: {
         setNeedsToken(false);
         if (r.length === 1) setRoot(r[0]!.id);
       })
-      .catch(fail);
+      .catch((e: unknown) => {
+        setLoading(false);
+        fail(e);
+      });
 
   useEffect(() => {
     void loadRoots();
@@ -53,10 +65,27 @@ export function NasBrowser(props: {
   useEffect(() => {
     if (!root) return;
     setSelected(null);
-    listing(store.list(root, path), setEntries, fail);
+    setLoading(true);
+    listing(
+      store.list(root, path),
+      (e) => {
+        setEntries(e);
+        setLoading(false);
+      },
+      (e) => {
+        setLoading(false);
+        fail(e);
+      },
+    );
   }, [root, path]);
 
   const crumbs = path ? path.split('/') : [];
+  const takeListFocus = (el: HTMLElement | null) => {
+    if (el && focusList.current) {
+      focusList.current = false;
+      el.focus();
+    } else followFocus(el);
+  };
   // The list's one Tab stop: the selected row, else the parent row, else the first.
   const focusedRow = selected ?? (path ? UP : (entries[0]?.path ?? ''));
   const open = (e: NasEntry) => {
@@ -159,6 +188,7 @@ export function NasBrowser(props: {
           </span>
         ))}
       </div>
+      {!roots && !error && <p class="cs-muted">Loading…</p>}
       {roots && roots.length === 0 && <p>The server has no folders configured (CELLESTRA_ROOTS).</p>}
       {root && (
         <ul
@@ -191,7 +221,7 @@ export function NasBrowser(props: {
             <li
               role="option"
               aria-selected={false}
-              {...rovingItem(focusedRow === UP)}
+              {...rovingItem(focusedRow === UP, takeListFocus)}
               onDblClick={() => setPath(crumbs.slice(0, -1).join('/'))}
               onClick={() => setSelected(null)}
             >
@@ -203,7 +233,7 @@ export function NasBrowser(props: {
               key={e.path}
               role="option"
               aria-selected={selected === e.path}
-              {...rovingItem(focusedRow === e.path)}
+              {...rovingItem(focusedRow === e.path, takeListFocus)}
               onClick={() => {
                 setSelected(e.path);
                 if (mode === 'save' && e.kind === 'file') setName(e.name);
@@ -212,12 +242,12 @@ export function NasBrowser(props: {
             >
               <Icon name={e.kind === 'dir' ? 'folder' : 'file'} />
               {e.name}
-              {e.kind === 'file' && <span class="cs-meta">{new Date(e.modified).toLocaleString()}</span>}
+              {e.kind === 'file' && <span class="cs-meta">{modifiedText(e.modified)}</span>}
             </li>
           ))}
           {entries.length === 0 && (
             <li role="option" aria-disabled="true" aria-selected={false} style={{ opacity: 0.6 }}>
-              No spreadsheets here
+              {loading ? 'Loading…' : 'No spreadsheets here'}
             </li>
           )}
         </ul>

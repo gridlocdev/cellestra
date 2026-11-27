@@ -127,7 +127,7 @@ export {
 export { focusRegion, nextRegion, region, type RegionNode } from './components/regions.ts';
 export { FormulaBar } from './components/FormulaBar.tsx';
 export { SheetTabs } from './components/SheetTabs.tsx';
-export { NasBrowser } from './components/NasBrowser.tsx';
+export { modifiedText, NasBrowser } from './components/NasBrowser.tsx';
 export {
   type CellPosition,
   type DocumentFormat,

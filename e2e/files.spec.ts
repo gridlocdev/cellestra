@@ -35,6 +35,29 @@ test.describe('Files', () => {
     await expect(contents(page)).toHaveValue('日本語のテキスト');
   });
 
+  test('Open from NAS says it is loading, then puts focus on the list, with times to the minute', async ({
+    page,
+  }) => {
+    let release = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    await page.route('**/api/list?**', async (route) => {
+      await held;
+      await route.continue();
+    });
+    await page.keyboard.press('ControlOrMeta+KeyO');
+    const dialog = page.getByRole('dialog', { name: 'Open from NAS' });
+    await expect(dialog.getByText('Loading…')).toBeVisible();
+    await expect(dialog.getByText('No spreadsheets here')).toHaveCount(0);
+    release();
+    const first = dialog.getByRole('option').first();
+    await expect(first).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(dialog.getByRole('option').nth(1)).toBeFocused();
+    const times = await dialog.locator('.cs-meta').allTextContents();
+    expect(times.length).toBeGreaterThan(0);
+    for (const t of times) expect(t).not.toMatch(/\d:\d\d:\d\d/);
+  });
+
   test('opens an .xlsx as a new .ods workbook, and the first save asks where to put it', async ({ page }) => {
     await page.keyboard.press('ControlOrMeta+KeyO');
     const dialog = page.getByRole('dialog', { name: 'Open from NAS' });
