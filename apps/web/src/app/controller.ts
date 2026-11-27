@@ -29,6 +29,7 @@ import {
   EdgeNavigator,
   FilterEngine,
   InputParser,
+  Parser,
   ValidationPreflight,
   CellValue,
   EditCommands,
@@ -1060,6 +1061,8 @@ export class AppController {
     if (rule && rule.response !== 'none')
       this.info(rule.errorMessage || 'That value does not match the cell’s validation rule.');
     this.run(entry.command);
+    const problem = formulaProblem(this.sheet.find(row, column));
+    if (problem) this.info(problem);
     return true;
   }
 
@@ -2305,4 +2308,20 @@ function range(from: number, to: number): number[] {
 
 function normalize(text: string): string {
   return text.replace(/\r\n?/g, '\n').replace(/\n$/, '');
+}
+
+/**
+ * What to tell you after entering a formula that can't work as typed: one that doesn't parse (an
+ * unclosed bracket, a trailing operator) or one that shows #NAME? (a misspelt function or name).
+ * Other errors, such as #DIV/0!, come from the data and show in the cell alone.
+ */
+export function formulaProblem(
+  cell: { formula: string | null; value: CellValue } | undefined,
+): string | null {
+  if (!cell || cell.formula === null) return null;
+  const parsed = Parser.tryParse(cell.formula);
+  if (!parsed.ok) return `This formula isn’t complete: ${parsed.error.reason}`;
+  const v = cell.value;
+  if (v.kind === 'error' && v.error.code === 'name') return `#NAME?: ${v.error.reason}`;
+  return null;
 }

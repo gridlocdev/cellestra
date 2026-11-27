@@ -25,6 +25,13 @@ test.describe('Formulas', () => {
     expect(readCell('budget.ods', 'D2')).toBe('1310');
   });
 
+  test('an incomplete formula and #NAME? each say what is wrong', async ({ page }) => {
+    await enter(page, 'H20', '=SUM(A1:');
+    await expect(page.locator('.cs-toast')).toContainText('This formula isn’t complete');
+    await enter(page, 'H21', '=NOPE(1)');
+    await expect(page.locator('.cs-toast')).toContainText("#NAME?: Unknown function 'NOPE'");
+  });
+
   test('a new formula shows its source in the formula bar and its result in the file', async ({ page }) => {
     await enter(page, 'B4', '=SUM(B2:B3)');
     await goTo(page, 'B4');
