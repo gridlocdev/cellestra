@@ -798,14 +798,16 @@ button {
   border: 0;
 }
 
-/* Reduced motion: no animation, transition or smooth scrolling anywhere. */
+/* Reduced motion: no animation, transition or smooth scrolling anywhere. Transitions are turned
+   off, not shortened: a tiny duration still transitions every property, `visibility` included, so a
+   menu just shown would stay hidden for a moment and refuse focus. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition: none !important;
     scroll-behavior: auto !important;
   }
 }

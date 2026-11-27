@@ -302,4 +302,26 @@ test.describe('Accessibility', () => {
     await page.keyboard.press('F6');
     await expect(grid).toBeFocused();
   });
+
+  test('with reduced motion, a menu opened from the keyboard has focus at once and Esc closes it', async ({
+    page,
+  }) => {
+    // The project runs every scenario with reducedMotion: 'reduce'; this one depends on it.
+    expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
+    const button = page.getByRole('button', { name: 'Paste options' });
+    await button.focus();
+    await page.keyboard.press('Enter');
+    const menu = page.getByRole('menu', { name: 'Paste options' });
+    const first = menu.getByRole('menuitem').first();
+    await expect(first).toBeFocused();
+    // Transitions are off, not merely short: a short one still holds back `visibility` and focus.
+    const transition = await first.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return [style.transitionProperty, style.transitionDuration];
+    });
+    expect(transition).toEqual(['none', '0s']);
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(button).toBeFocused();
+  });
 });
