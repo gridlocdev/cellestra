@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { CommandCatalog, Shortcut } from '@cellestra/ui';
 
@@ -48,5 +49,29 @@ describe('command catalog shortcuts', () => {
     const catalog = await catalogFor(false);
     expect(chord(catalog.get('edit.selectRow')!.shortcutKey!, false)).toBe('shift+space');
     expect(chord(catalog.get('edit.selectColumn')!.shortcutKey!, false)).toBe('ctrl+space');
+  });
+});
+
+describe('command icons', () => {
+  it('gives every command on the ribbon, toolbar and right-click menu an icon that exists', async () => {
+    // Without one, the button falls back to a plain square, which reads as a checkbox.
+    const catalog = await catalogFor(true);
+    const app = new URL('../src/app/', import.meta.url);
+    const icons = new URL('../../../packages/ui/src/icons/', import.meta.url);
+    const shown = new Set(
+      ['Ribbon.tsx', 'Toolbar.tsx', 'ContextMenu.tsx'].flatMap((f) =>
+        [...readFileSync(new URL(f, app), 'utf8').matchAll(/['"]([a-z]+\.[a-zA-Z]+)['"]/g)].map((m) => m[1]!),
+      ),
+    );
+    const problems = catalog.all
+      .filter((c) => shown.has(c.id))
+      .flatMap((c) =>
+        !c.icon
+          ? [`${c.id}: no icon`]
+          : existsSync(new URL(`${c.icon}.svg`, icons))
+            ? []
+            : [`${c.id}: ${c.icon}.svg missing`],
+      );
+    expect(problems).toEqual([]);
   });
 });

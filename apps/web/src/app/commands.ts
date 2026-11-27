@@ -125,6 +125,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'file.saveAs',
+      icon: 'save',
       title: 'Save As…',
       description: 'Save a copy under a new name',
       group: 'File',
@@ -152,6 +153,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'file.importCsv',
+      icon: 'file-up',
       title: 'Import CSV…',
       description: 'Replace the active sheet with a CSV or TSV file’s data',
       group: 'File',
@@ -185,6 +187,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'file.printSelection',
+      icon: 'printer',
       title: 'Print Selection…',
       description: 'Print only the selected cells',
       group: 'File',
@@ -276,6 +279,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'edit.clearAll',
+      icon: 'eraser',
       title: 'Clear All',
       description: 'Clear contents and formatting',
       group: 'Edit',
@@ -345,6 +349,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'edit.findNext',
+      icon: 'search',
       title: 'Find Next',
       description: 'Go to the next match',
       group: 'Edit',
@@ -391,6 +396,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'edit.deleteRows',
+      icon: 'trash-2',
       title: 'Delete Rows',
       description: 'Delete the selected rows',
       group: 'Edit',
@@ -399,6 +405,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'edit.deleteColumns',
+      icon: 'trash-2',
       title: 'Delete Columns',
       description: 'Delete the selected columns',
       group: 'Edit',
@@ -517,6 +524,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'view.zoomReset',
+      icon: 'maximize',
       title: 'Actual Size',
       description: 'Reset zoom to 100%',
       group: 'View',
@@ -710,6 +718,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'insert.time',
+      icon: 'history',
       title: 'Insert Current Time',
       description: 'Type the current time into the cell',
       group: 'Insert',
@@ -938,6 +947,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'format.borderTop',
+      icon: 'border-top',
       title: 'Top Border',
       description: 'Border along the top of the selection',
       group: 'Format',
@@ -946,6 +956,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'format.borderBottom',
+      icon: 'border-bottom',
       title: 'Bottom Border',
       description: 'Border along the bottom of the selection',
       group: 'Format',
@@ -956,6 +967,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'format.borderLeft',
+      icon: 'border-left',
       title: 'Left Border',
       description: 'Border along the left of the selection',
       group: 'Format',
@@ -964,6 +976,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'format.borderRight',
+      icon: 'border-right',
       title: 'Right Border',
       description: 'Border along the right of the selection',
       group: 'Format',
@@ -1014,6 +1027,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'format.hideColumns',
+      icon: 'eye-off',
       title: 'Hide Columns',
       description: 'Hide the selected columns',
       group: 'Format',
@@ -1021,6 +1035,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'format.unhideColumns',
+      icon: 'eye',
       title: 'Unhide Columns',
       description: 'Show hidden columns in the selection',
       group: 'Format',
@@ -1036,6 +1051,7 @@ export function buildCommands(app: AppController, mac = isMac): CommandCatalog {
     },
     {
       id: 'format.cleanUpWorkbook',
+      icon: 'sparkles',
       title: 'Clean Up Workbook',
       description: 'Clean up every sheet',
       group: 'Format',
