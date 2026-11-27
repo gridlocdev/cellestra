@@ -307,7 +307,7 @@ export function SortFilterDialog(props: { app: AppController; target: DataTarget
         <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.currentTarget.checked)} />
         First row is a header
       </label>
-      <h3>Sort by</h3>
+      <h3>Sort</h3>
       {levels.map((l, i) => (
         <div class="cs-form-row" key={i}>
           <span class="cs-muted">{i === 0 ? 'Sort by' : 'Then by'}</span>

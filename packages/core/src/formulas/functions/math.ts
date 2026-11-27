@@ -441,7 +441,7 @@ export function mathFunctions(): FormulaFunction[] {
         createMetadata(
           'SUMIF',
           'math',
-          'Adds the cells that meet a criteria.',
+          'Adds the cells that meet a condition.',
           'number',
           'SUMIF(A1:A10, ">5")',
           Arg.range('range'),
@@ -456,7 +456,7 @@ export function mathFunctions(): FormulaFunction[] {
       createMetadata(
         'COUNTIF',
         'statistical',
-        'Counts the cells that meet a criteria.',
+        'Counts the cells that meet a condition.',
         'number',
         'COUNTIF(A1:A10, ">5")',
         Arg.range('range'),
