@@ -126,7 +126,7 @@ Cellestra is a spreadsheet editor for OpenDocument spreadsheets (`.ods`) that ru
 ## Flagged ambiguities
 
 - "Named range" was used for every **Name**, though a name can hold a value or formula, not only a range. Resolved: the concept is a **Name**; **Named Ranges…** stays the dialog's title because LibreOffice and Excel users look for it.
-- "Edited" was shown for two states. Resolved: **Edited** means the workbook has a file and has changed; **Not saved** means it has changes and no file yet. The status bar follows this; the title bar still says "Edited" for both.
+- "Edited" was shown for two states. Resolved: **Edited** means the workbook has a file and has changed; **Not saved** means it has changes and no file yet. The status bar and the title bar both follow this.
 - "Toast" and "notice" were both used for the message at the bottom. Resolved: it is a **Notice**; "toast" remains only in old code names.
 - "Palette" is the code's name for the **Command menu** (`paletteOpen`) and also the fixed set of **List** item colours. Resolved: the menu is the **Command menu**; "palette" means only the colour set.
 - "Tab" can mean a **Sheet tab**, a **Ribbon** tab or the `Tab` key. Always say which.

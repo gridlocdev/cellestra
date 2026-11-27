@@ -8,6 +8,7 @@ import {
   presetIndex,
   region,
   ROVING_GROUP,
+  titleSaveState,
   rovingItem,
   rovingStep,
   takeFocus,
@@ -105,7 +106,7 @@ export function Ribbon({
   void app.isDark.value;
   const collapsed = app.ribbonCollapsed.value;
   const ctx: Ctx = { app, catalog };
-  const status = s.modified.value ? 'Edited' : s.document.value ? 'Saved' : '';
+  const status = titleSaveState(s.modified.value, s.document.value !== null);
 
   return (
     <div class="rb">

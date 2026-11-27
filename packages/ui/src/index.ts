@@ -139,6 +139,7 @@ export {
 export { csvLosses } from './session/csvLoss.ts';
 export {
   calculationBadge,
+  titleSaveState,
   clockTime,
   describeCells,
   describeRange,

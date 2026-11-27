@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { EditResult } from '@cellestra/core';
 import {
   calculationBadge,
+  titleSaveState,
   clockTime,
   describeCells,
   describeRange,
@@ -88,5 +89,14 @@ describe('save state and calculation badge', () => {
   it('labels the calculation mode', () => {
     expect(calculationBadge('automatic')).toBe('Auto');
     expect(calculationBadge('manual')).toBe('Manual');
+  });
+});
+
+describe('titleSaveState', () => {
+  it('tells changes to a file from changes that have no file yet', () => {
+    expect(titleSaveState(true, true)).toBe('Edited');
+    expect(titleSaveState(true, false)).toBe('Not saved');
+    expect(titleSaveState(false, true)).toBe('Saved');
+    expect(titleSaveState(false, false)).toBe('');
   });
 });

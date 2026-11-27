@@ -132,6 +132,15 @@ export function saveStateText(modified: boolean, hasFile: boolean, savedAt: Date
   return savedAt ? `Saved ${clockTime(savedAt)}` : '';
 }
 
+/**
+ * The title bar's short save state: "Edited" for changes to a file, "Not saved" for changes that
+ * have no file yet, "Saved" for a file with none. Empty for a fresh blank workbook.
+ */
+export function titleSaveState(modified: boolean, hasFile: boolean): string {
+  if (modified) return hasFile ? 'Edited' : 'Not saved';
+  return hasFile ? 'Saved' : '';
+}
+
 /** The calculation-mode badge. */
 export function calculationBadge(mode: CalculationMode): string {
   return mode === 'manual' ? 'Manual' : 'Auto';
